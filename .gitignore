@@ -2,4 +2,13 @@
 # This .gitignore file was automatically created by Microsoft(R) Visual Studio.
 ################################################################################
 
+*.user
+*.filters
 /.vs
+/Debug
+/Release
+/x64
+/SetNetworkCategory/Debug
+/SetNetworkCategory/Release
+/SetNetworkCategory/x64
+
