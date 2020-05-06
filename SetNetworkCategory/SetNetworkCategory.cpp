@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #include <iostream>
 #include <windows.h>
 #include <netlistmgr.h>
