@@ -8,7 +8,15 @@
 /Debug
 /Release
 /x64
+/ARM64
+
 /SetNetworkCategory/Debug
 /SetNetworkCategory/Release
 /SetNetworkCategory/x64
+/SetNetworkCategory/ARM64
 
+/PrintConnectionProfiles/Debug
+/PrintConnectionProfiles/Release
+/PrintConnectionProfiles/x64
+/PrintConnectionProfiles/ARM64
+/PrintConnectionProfiles/.vs
