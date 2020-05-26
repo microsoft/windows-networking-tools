@@ -5,7 +5,7 @@ This includes a variety of tools for managing networks and configurations on Win
   * This tool programmatically changes the Network Category (Firewall Profile) of the currently connected networks to either Public or Private.
   * It also demonstrates how to use the INetworkListManager APIs using modern C++, greatly simplifying the COM coding requirements. (https://docs.microsoft.com/en-us/windows/win32/api/netlistmgr/nn-netlistmgr-inetworklistmanager)
 
-**PrintConnectionProfiles**
+* **PrintConnectionProfiles**
   * This tool programmatically enumerates all the profiles on the device and prints all properties of the profile.
   * It also demonstrates how to use the Windows.Networking.NetworkInformation WinRT APIs using modern C++, greatly simplifying WinRT coding requirements. (https://docs.microsoft.com/en-us/uwp/api/Windows.Networking.Connectivity.NetworkInformation)
 
