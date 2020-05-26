@@ -170,9 +170,6 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="PropertySheet.props" />
-    <Text Include="readme.txt">
-      <DeploymentContent>false</DeploymentContent>
-    </Text>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ToString.hpp" />

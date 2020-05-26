@@ -1,4 +1,7 @@
-﻿#include <iostream>
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+#include <iostream>
 #include <string>
 
 #include <winrt/Windows.Foundation.Collections.h>

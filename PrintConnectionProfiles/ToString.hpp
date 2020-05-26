@@ -1,11 +1,15 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #pragma once
 #include <iostream>
 #include <chrono>
 #include <string>
+
 #include <windows.h>
 #include <Rpc.h>
-#include <winrt/Windows.Networking.Connectivity.h>
 
+#include <winrt/Windows.Networking.Connectivity.h>
 #include <wil/resource.h>
 
 using std::to_wstring;

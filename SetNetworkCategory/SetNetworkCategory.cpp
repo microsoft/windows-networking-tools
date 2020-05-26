@@ -2,8 +2,11 @@
 // Licensed under the MIT License.
 
 #include <iostream>
+#include <string>
+
 #include <windows.h>
 #include <netlistmgr.h>
+
 #include <wil/com.h>
 
 int __cdecl wmain(int argc, wchar_t** argv)
