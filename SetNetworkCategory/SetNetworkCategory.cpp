@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-#include <windows.h>
+#include <Windows.h>
 #include <netlistmgr.h>
 
 #include <wil/com.h>
@@ -18,9 +18,11 @@ try
         return ERROR_INVALID_PARAMETER;
     }
 
+    std::wstring param(argv[1]);
+
     NLM_NETWORK_CATEGORY targetCategory{};
     const auto bIgnoreCase = TRUE;
-    const auto privateComparison = CompareStringOrdinal(argv[1], -1, L"private", -1, bIgnoreCase);
+    const auto privateComparison = CompareStringOrdinal(param.c_str(), -1, L"private", -1, bIgnoreCase);
     THROW_LAST_ERROR_IF(privateComparison == 0);
     if (privateComparison == CSTR_EQUAL)
     {
@@ -28,7 +30,7 @@ try
     }
     else
     {
-        const auto publicComparison = CompareStringOrdinal(argv[1], -1, L"public", -1, bIgnoreCase);
+        const auto publicComparison = CompareStringOrdinal(param.c_str(), -1, L"public", -1, bIgnoreCase);
         THROW_LAST_ERROR_IF(publicComparison == 0);
         if (publicComparison == CSTR_EQUAL)
         {
@@ -71,14 +73,14 @@ try
         }
         if (currentCategory == targetCategory)
         {
-            std::wcout << L"The Network " << networkString << L" is already set to " << argv[1] << L" - not updating" << std::endl;
+            std::wcout << L"The Network " << networkString << L" is already set to " << param << L" - not updating" << std::endl;
             continue;
         }
 
         const auto hr = nlmNetworkInstance->SetCategory(targetCategory);
         if (SUCCEEDED(hr))
         {
-            std::wcout << "Successfully updated the Category for the Network " << networkString << L" to " << argv[1] << std::endl;
+            std::wcout << "Successfully updated the Category for the Network " << networkString << L" to " << param << std::endl;
         }
         else if (hr == E_ACCESSDENIED)
         {
