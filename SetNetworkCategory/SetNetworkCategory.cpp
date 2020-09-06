@@ -18,7 +18,7 @@ try
         return ERROR_INVALID_PARAMETER;
     }
 
-    std::wstring param(argv[1]);
+    const std::wstring param(argv[1]);
 
     NLM_NETWORK_CATEGORY targetCategory{};
     const auto bIgnoreCase = TRUE;
@@ -44,7 +44,7 @@ try
     }
 
     const auto coinit = wil::CoInitializeEx();
-    auto nlmInstance = wil::CoCreateInstance<INetworkListManager>(__uuidof(NetworkListManager));
+    auto nlmInstance = wil::CoCreateInstance<INetworkListManager>(CLSID_NetworkListManager);
     wil::com_ptr<IEnumNetworks> nlmEnumNetworks;
     THROW_IF_FAILED(nlmInstance->GetNetworks(NLM_ENUM_NETWORK_CONNECTED, &nlmEnumNetworks));
 

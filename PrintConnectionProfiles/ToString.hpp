@@ -5,14 +5,21 @@
 #include <iostream>
 #include <chrono>
 #include <string>
+#include <sstream>
 
-#include <windows.h>
-#include <Rpc.h>
+#include <Windows.h>
+#include <rpc.h>
 
 #include <winrt/Windows.Networking.Connectivity.h>
-#include <wil/resource.h>
 
 using std::to_wstring;
+
+inline std::wstring exception_to_wstring(hresult_error const& ex)
+{
+    std::wstringstream ss(L"winrt hresult_error thrown :: ");
+    ss << std::hex << ex.to_abi().value << L" :: " << ex.message().c_str() << std::endl;
+    return ss.str();
+}
 
 inline std::wstring tabs_to_wstring(uint32_t count)
 {
@@ -280,7 +287,7 @@ inline std::wstring to_wstring(const LanIdentifierData& data, uint32_t tabs)
     returnString.append(L"Type: ").append(to_wstring(data.Type())).append(L"\n");
     returnString.append(tabs_to_wstring(tabs));
     returnString.append(L"Value: ");
-    for (const auto& byte_value : data.Value())
+    for (const auto byte_value : data.Value())
     {
         wchar_t byteBuff[8]{};
         swprintf_s(byteBuff, L"0x%x", byte_value);
@@ -367,7 +374,7 @@ inline std::wstring to_wstring(const NetworkAdapter& adapter, uint32_t tabs)
     return adapterString;
 }
 
-inline std::wstring to_wstring(const winrt::Windows::Networking::HostName& hostName)
+inline std::wstring to_wstring(const Windows::Networking::HostName& hostName)
 {
     std::wstring hostNameString;
     hostNameString.append(tabs_to_wstring(1));
