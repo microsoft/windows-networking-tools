@@ -63,7 +63,7 @@ try
         wil::unique_bstr currentDescription;
         THROW_IF_FAILED(nlmNetworkInstance->GetDescription(currentDescription.addressof()));
         NLM_NETWORK_CATEGORY currentCategory{};
-        std::wstring networkString(L"[" + std::wstring(currentName.get()) + L" / " + std::wstring(currentDescription.get()) + L"]");
+        std::wstring networkString(L"[Name: " + std::wstring(currentName.get()) + L", Description: " + std::wstring(currentDescription.get()) + L"]");
 
         THROW_IF_FAILED(nlmNetworkInstance->GetCategory(&currentCategory));
         if (currentCategory == NLM_NETWORK_CATEGORY_DOMAIN_AUTHENTICATED)

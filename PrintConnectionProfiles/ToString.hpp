@@ -430,9 +430,7 @@ inline std::wstring to_wstring(const ProxyConfiguration& config, uint32_t tabs)
     {
         ++count;
         proxyString.append(tabs_to_wstring(tabs + 1));
-        proxyString.append(to_wstring(count)).append(L".  ------------------\n");
-        proxyString.append(tabs_to_wstring(tabs + 1));
-        proxyString.append(uri.ToString()).append(L"\n");
+        proxyString.append(to_wstring(count)).append(L". ").append(uri.ToString()).append(L"\n");
     }
     return proxyString;
 }
