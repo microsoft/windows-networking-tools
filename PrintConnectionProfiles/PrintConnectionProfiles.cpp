@@ -229,7 +229,7 @@ try
 
         try
         {
-            profileString.append(PrintHeader(L"GetProviderNetworkUsageAsync (for the past 1 hour)"));
+            profileString.append(PrintHeader(L"GetProviderNetworkUsageAsync (for the past 24 hours)"));
             unsigned networkUsageCount = 0;
             for (const auto& usage : profile.GetProviderNetworkUsageAsync(now - duration, now, usageStates).get())
             {
@@ -251,7 +251,7 @@ try
 
         try
         {
-            profileString.append(PrintHeader(L"GetConnectivityIntervalsAsync (for the past 1 hour)"));
+            profileString.append(PrintHeader(L"GetConnectivityIntervalsAsync (for the past 24 hours)"));
             unsigned connectivityIntervalCount = 0;
             for (const auto& usage : profile.GetConnectivityIntervalsAsync(now - duration, now, usageStates).get())
             {
@@ -271,7 +271,7 @@ try
 
         try
         {
-            profileString.append(PrintHeader(L"GetAttributedNetworkUsageAsync (for the past 1 hour)"));
+            profileString.append(PrintHeader(L"GetAttributedNetworkUsageAsync (for the past 24 hours)"));
             unsigned attributedNetworkUsageCount = 0;
             for (const auto& usage : profile.GetAttributedNetworkUsageAsync(now - duration, now, usageStates).get())
             {
