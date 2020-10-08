@@ -1,6 +1,9 @@
 # Windows Networking Tools
 This includes a variety of tools for managing networks and configurations on Windows devices, as well as tools demonstrating how to use relevant Networking APIs.
 
+Binaries for latest sources are now available: https://github.com/microsoft/windows-networking-tools/tree/master/LatestBuilds
+
+
 * **SetNetworkCategory**
   * This tool programmatically changes the Network Category (Firewall Profile) of the currently connected networks to either Public or Private.
   * It also demonstrates how to use the INetworkListManager APIs using modern C++, greatly simplifying the COM coding requirements. (https://docs.microsoft.com/en-us/windows/win32/api/netlistmgr/nn-netlistmgr-inetworklistmanager)
