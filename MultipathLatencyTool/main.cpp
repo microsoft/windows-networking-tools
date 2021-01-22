@@ -92,6 +92,8 @@ void PrintUsage()
         L"\t\t- sd sends data at 3 megabits per second\n"
         L"\t\t- hd sends data at 5 megabits per second (default)\n"
         L"\t\t- 4k sends data at 25 megabits per second\n"
+        L"-framerate:####\n"
+        L"\t- the number of frames to send during each send operation\n"
         L"-duration:####\n"
         L"\t- the total number of seconds to run (default: 60 seconds)\n");
 }
@@ -356,7 +358,7 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             wil::unique_event completeEvent(wil::EventOptions::ManualReset);
 
             StreamClient client(config.targetAddress, config.bindInterfaces[0], config.bindInterfaces[1], completeEvent.get());
-            client.Start(config.prePostRecvs, config.bitrate, config.duration);
+            client.Start(config.prePostRecvs, config.bitrate, config.framerate, config.duration);
             
             if (!completeEvent.wait(30 * 1000))
             {

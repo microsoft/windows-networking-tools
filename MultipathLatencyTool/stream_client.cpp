@@ -9,10 +9,10 @@
 namespace multipath {
 namespace {
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
-    long long CalculateTickInterval(long long bitRate, unsigned long long datagramSize) noexcept
+    long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
     {
         const long long byteRate = bitRate / 8;
-        const long long datagramRate = byteRate * 60 / static_cast<long long>(datagramSize);
+        const long long datagramRate = byteRate * frameRate / static_cast<long long>(datagramSize);
 
         // now we need to determine how often the timer should tick (in 100 nanos increments)
         long long interval = 1'000'000LL;
@@ -21,10 +21,10 @@ namespace {
         return static_cast<long long>(interval / datagramRate);
     }
 
-    long long CalculateFinalSequenceNumber(long long duration, long long bitRate, unsigned long long datagramSize) noexcept
+    long long CalculateFinalSequenceNumber(long long duration, long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
     {
         const long long byteRate = bitRate / 8;
-        const long long datagramRate = byteRate * 60 / static_cast<long long>(datagramSize);
+        const long long datagramRate = byteRate * frameRate / static_cast<long long>(datagramSize);
 
         return static_cast<long long>(datagramRate * duration);
     }
@@ -71,7 +71,7 @@ StreamClient::~StreamClient()
 {
 }
 
-void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long duration)
+void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
 {
     // allocate our receive contexts
     m_primaryState.receiveStates.resize(prePostRecvs);
@@ -83,8 +83,9 @@ void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, 
         *reinterpret_cast<unsigned short*>(&m_sharedSendBuffer[i * 2]) = static_cast<unsigned short>(i);
     }
 
-    m_tickInterval = ConvertHundredNanosToRelativeFiletime(CalculateTickInterval(sendBitRate, SendBufferSize));
-    m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, SendBufferSize);
+    m_frameRate = sendFrameRate;
+    m_tickInterval = ConvertHundredNanosToRelativeFiletime(CalculateTickInterval(sendBitRate, sendFrameRate, SendBufferSize));
+    m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, sendFrameRate, SendBufferSize);
 
     // allocate statistics buffer
     m_latencyStatistics.resize(m_finalSequenceNumber);
@@ -184,6 +185,10 @@ void StreamClient::PrintStatistics()
     std::cout << '\n';
     std::cout << "Lost frames on primary interface: " << primaryLostFrames << '\n';
     std::cout << "Lost frames on secondary interface: " << secondaryLostFrames << '\n';
+
+    std::cout << '\n';
+    std::cout << "Corrupt frames on primary interface: " << m_primaryState.corruptFrames << '\n';
+    std::cout << "Corrupt frames on secondary interface: " << m_secondaryState.corruptFrames << '\n';
 }
 
 void StreamClient::Connect(SocketState& socketState)
@@ -272,7 +277,7 @@ void StreamClient::Connect(SocketState& socketState)
 
 void StreamClient::TimerCallback() noexcept
 {
-    for (auto i = 0; i < 60; ++i)
+    for (auto i = 0; i < m_frameRate; ++i)
     {
         SendDatagrams();
     }
@@ -310,8 +315,7 @@ void StreamClient::SendDatagrams()
 
 void StreamClient::SendDatagram(SocketState& socketState)
 {
-    DatagramSendRequest sendRequest{
-        m_sequenceNumber, socketState.interfaceIndex, m_sharedSendBuffer.data(), m_sharedSendBuffer.size()};
+    DatagramSendRequest sendRequest{m_sequenceNumber, m_sharedSendBuffer.data(), m_sharedSendBuffer.size()};
 
     auto& buffers = sendRequest.GetBuffers();
 
@@ -356,13 +360,7 @@ void StreamClient::SendDatagram(SocketState& socketState)
         {
             socketState.threadpoolIo->CancelRequest(ov);
             FAILED_WIN32_LOG(error);
-
-            // record that the send failed by using a negative timestamp
         }
-    }
-    else
-    {
-        // save the sent
     }
 }
 

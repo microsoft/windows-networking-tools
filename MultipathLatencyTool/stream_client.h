@@ -18,7 +18,7 @@ class StreamClient
 public:
     StreamClient(const Sockaddr& targetAddress, int primaryInterfaceIndex, int secondaryInterfaceIndex, HANDLE completeEvent);
 
-    void Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long duration);
+    void Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
     void Stop();
 
     void PrintStatistics();
@@ -80,7 +80,7 @@ private:
     void Connect(SocketState& socketState);
 
     // The number of datagrams to send on each timer callback
-    static constexpr unsigned long DatagramsPerTick = 20;
+    long long m_frameRate;
 
     void TimerCallback() noexcept;
 

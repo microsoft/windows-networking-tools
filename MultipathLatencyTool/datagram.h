@@ -13,14 +13,12 @@ constexpr size_t START_MESSAGE_LENGTH = 5; // no null terminator
 
 constexpr unsigned long DatagramSequenceNumberLength = 8;
 constexpr unsigned long DatagramTimestampLength = 8;
-constexpr unsigned long DatagramInterfaceIndexLength = 8;
-constexpr unsigned long DatagramHeaderLength = DatagramSequenceNumberLength + DatagramTimestampLength + DatagramInterfaceIndexLength;
+constexpr unsigned long DatagramHeaderLength = DatagramSequenceNumberLength + DatagramTimestampLength;
 
 struct DatagramHeader
 {
     long long sequenceNumber;
     LARGE_INTEGER qpc;
-    long long interfaceIndex;
 };
 
 class DatagramSendRequest
@@ -28,8 +26,7 @@ class DatagramSendRequest
 private:
     static constexpr int DatagramSequenceNumberOffset = 0;
     static constexpr int DatagramTimestampOffset = 1;
-    static constexpr int DatagramInterfaceIndexOffset = 2;
-    static constexpr int DatagramPayloadOffset = 3;
+    static constexpr int DatagramPayloadOffset = 2;
 
 public:
     ~DatagramSendRequest() = default;
@@ -40,11 +37,11 @@ public:
     DatagramSendRequest(DatagramSendRequest&&) = delete;
     DatagramSendRequest& operator=(DatagramSendRequest&&) = delete;
 
-    static constexpr size_t BufferArraySize = 4;
+    static constexpr size_t BufferArraySize = 3;
     using BufferArray = std::array<WSABUF, BufferArraySize>;
 
-    DatagramSendRequest(long long _sequenceNumber, long long _ifIndex, const char* _sendBuffer, size_t _sendBufferLength) :
-        sequenceNumber(_sequenceNumber), ifIndex(_ifIndex)
+    DatagramSendRequest(long long _sequenceNumber, const char* _sendBuffer, size_t _sendBufferLength) :
+        sequenceNumber(_sequenceNumber)
     {
         // buffer layout: sequence number, timestamp (QPC), then buffer data
         wsabufs[DatagramSequenceNumberOffset].buf = reinterpret_cast<char*>(&sequenceNumber);
@@ -52,9 +49,6 @@ public:
 
         wsabufs[DatagramTimestampOffset].buf = reinterpret_cast<char*>(&qpc.QuadPart);
         wsabufs[DatagramTimestampOffset].len = DatagramTimestampLength;
-
-        wsabufs[DatagramInterfaceIndexOffset].buf = reinterpret_cast<char*>(&ifIndex);
-        wsabufs[DatagramInterfaceIndexOffset].len = DatagramInterfaceIndexLength;
 
         wsabufs[DatagramPayloadOffset].buf = const_cast<char*>(_sendBuffer);
         wsabufs[DatagramPayloadOffset].len = static_cast<ULONG>(_sendBufferLength - DatagramHeaderLength);
@@ -77,7 +71,6 @@ private:
     BufferArray wsabufs{};
     LARGE_INTEGER qpc{};;
     long long sequenceNumber = 0;
-    long long ifIndex = 0;
 };
 
 bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/, size_t completedBytes) noexcept
@@ -100,10 +93,6 @@ DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t /*buff
     buffer += DatagramSequenceNumberLength;
     error = memcpy_s(&header.qpc.QuadPart, DatagramTimestampLength, buffer, DatagramTimestampLength);
     FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the timestamp: %d", error);
-
-    buffer += DatagramTimestampLength;
-    error = memcpy_s(&header.interfaceIndex, DatagramInterfaceIndexLength, buffer, DatagramInterfaceIndexLength);
-    FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the interface index: %d", error);
 
     return header;
 }
