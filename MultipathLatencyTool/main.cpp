@@ -295,9 +295,6 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
             args.erase(foundPrePostRecvs);
         }
-
-        // get connected interfaces
-        config.bindInterfaces = GetConnectedInterfaces();
     }
     catch (const wil::ResultException& ex)
     {
@@ -350,6 +347,17 @@ int __cdecl wmain(int argc, const wchar_t** argv)
                 config.targetAddress.set_port(config.port);
             }
 
+            wil::unique_wlan_handle wlanHandle;
+
+            DWORD clientVersion = 2; // Vista+ APIs
+            DWORD curVersion = 0;
+            error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
+            if (ERROR_SUCCESS != error)
+            {
+                FAIL_FAST_WIN32_MSG(error, "WlanOpenHandle failed");
+            }
+
+            config.bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
             if (config.bindInterfaces.size() != 2)
             {
                 throw std::runtime_error("two connected interfaces are required to run the client");

@@ -3,5 +3,5 @@
 #include <vector>
 
 namespace multipath {
-std::vector<int> GetConnectedInterfaces();
+std::vector<int> GetConnectedWlanInterfaces(HANDLE wlanHandle);
 }

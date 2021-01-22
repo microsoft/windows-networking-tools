@@ -12,6 +12,8 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Networking.Connectivity.h>
 
+#include <wlanapi.h>
+
 #include <wil/result.h>
 #include <wil/resource.h>
 
@@ -25,3 +27,4 @@
 #include <tuple>
 #include <string>
 #include <string_view>
+#include <optional>
