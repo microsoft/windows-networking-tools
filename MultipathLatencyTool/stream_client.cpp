@@ -358,6 +358,11 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
     SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
 
     auto callback = [this, &_socketState = socketState, _sendState = sendState](OVERLAPPED* ov) noexcept {
+        if (!_socketState.socket.is_valid())
+        {
+            return;
+        }
+
         DWORD bytesTransmitted = 0;
         DWORD flags = 0;
         if (WSAGetOverlappedResult(_socketState.socket.get(), ov, &bytesTransmitted, FALSE, &flags))
@@ -418,6 +423,12 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         // snap QPC on entry
         LARGE_INTEGER qpc{};
         QueryPerformanceCounter(&qpc);
+
+        if (!_socketState.socket.is_valid())
+        {
+            // don't process this completion or post another receive if the socket is no longer valid
+            return;
+        }
 
         DWORD bytesReceived = 0;
         DWORD flags = 0;

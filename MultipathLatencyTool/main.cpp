@@ -336,12 +336,6 @@ int __cdecl wmain(int argc, const wchar_t** argv)
     std::wcout << L"Listen Address: " << config.listenAddress.write_complete_address() << L'\n';
     std::wcout << L"Target Address: " << config.targetAddress.write_complete_address() << L'\n';
     std::wcout << L"Port: " << config.port << L'\n';
-    std::wcout << L"Bind Interfaces: ";
-    for (const auto& ifIndex : config.bindInterfaces)
-    {
-        std::wcout << ifIndex << L' ';
-    }
-    std::wcout << L'\n';
 
     try
     {
