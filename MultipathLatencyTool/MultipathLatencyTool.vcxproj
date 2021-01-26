@@ -110,6 +110,7 @@
     <ClInclude Include="adapters.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="datagram.h" />
+    <ClInclude Include="debug.h" />
     <ClInclude Include="sockaddr.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="socket_utils.h" />
@@ -120,6 +121,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="adapters.cpp" />
+    <ClCompile Include="debug.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>

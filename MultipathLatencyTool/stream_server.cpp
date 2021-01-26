@@ -2,6 +2,8 @@
 
 #include "stream_server.h"
 #include "socket_utils.h"
+#include "debug.h"
+#include "datagram.h"
 
 namespace multipath {
 StreamServer::StreamServer(const Sockaddr& listenAddress) : m_listenAddress(listenAddress)
@@ -61,7 +63,7 @@ void StreamServer::InitiateReceive(ReceiveContext& receiveContext)
         {
             // must cancel the threadpool IO request
             m_threadpoolIo->CancelRequest(ov);
-            ov = nullptr;
+            FAIL_FAST_WIN32_MSG(error, "WSARecvFrom failed");
         }
     }
 }
@@ -71,6 +73,10 @@ void StreamServer::ReceiveCompletion(ReceiveContext& receiveContext, OVERLAPPED*
     DWORD bytesReceived = 0;
     if (WSAGetOverlappedResult(m_socket.get(), ov, &bytesReceived, FALSE, &receiveContext.receiveFlags))
     {
+        auto header = ExtractDatagramHeaderFromBuffer(receiveContext.buffer.data(), receiveContext.buffer.size());
+
+        PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.sequenceNumber);
+
         // echo the data received
         WSABUF wsabuf;
         wsabuf.buf = receiveContext.buffer.data();
@@ -86,8 +92,8 @@ void StreamServer::ReceiveCompletion(ReceiveContext& receiveContext, OVERLAPPED*
             if (WSA_IO_PENDING != error)
             {
                 // best effort send
-                FAILED_WIN32_LOG(error);
                 m_threadpoolIo->CancelRequest(echoOv);
+                FAILED_WIN32_LOG(error);
             }
         }
     }

@@ -3,6 +3,7 @@
 #include "stream_client.h"
 #include "socket_utils.h"
 #include "datagram.h"
+#include "debug.h"
 
 #include <wil/result.h>
 
@@ -73,6 +74,8 @@ StreamClient::~StreamClient()
 
 void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
 {
+    PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", prePostRecvs);
+
     // allocate our receive contexts
     m_primaryState.receiveStates.resize(prePostRecvs);
     m_secondaryState.receiveStates.resize(prePostRecvs);
@@ -84,20 +87,25 @@ void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, 
     }
 
     m_frameRate = sendFrameRate;
-    m_tickInterval = ConvertHundredNanosToRelativeFiletime(CalculateTickInterval(sendBitRate, sendFrameRate, SendBufferSize));
+    const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, SendBufferSize);
+    m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
     m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, sendFrameRate, SendBufferSize);
+
+    PRINT_DEBUG_INFO("\tStreamClient::Start - tick interval is %lld\n", tickInterval);
+    PRINT_DEBUG_INFO("\tStreamClient::Start - final sequence number is %lld\n", m_finalSequenceNumber);
 
     // allocate statistics buffer
     m_latencyStatistics.resize(m_finalSequenceNumber);
 
     // connect to target on both sockets
+    PRINT_DEBUG_INFO("\tStreamClient::Start - initiating connect on both sockets\n");
     Connect(m_primaryState);
     Connect(m_secondaryState);
 
     bool initiateIo = false;
 
     HANDLE events[2] = {m_primaryState.connectEvent, m_secondaryState.connectEvent};
-    auto result = WaitForMultipleObjects(2, events, TRUE, 10000); // 1 second delay for connect to complete
+    auto result = WaitForMultipleObjects(2, events, TRUE, 1000); // 1 second delay for connect to complete
     switch (result)
     {
     case WAIT_OBJECT_0:
@@ -115,6 +123,9 @@ void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, 
 
     if (initiateIo)
     {
+        PRINT_DEBUG_INFO("\tStreamClient::Start - connected on both sockets\n");
+
+        PRINT_DEBUG_INFO("\tStreamClient::Start - start posting receives\n");
         // initiate receives before starting the send timer
         for (auto& receiveState : m_primaryState.receiveStates)
         {
@@ -126,17 +137,21 @@ void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, 
         }
 
         // start sends
+        PRINT_DEBUG_INFO("\tStreamClient::Start - scheduling timer callback\n");
         m_threadpoolTimer->Schedule(m_tickInterval);
     }
 }
 
 void StreamClient::Stop()
 {
-    // close the sockets before cancelling the timer callbacks
+    m_stopCalled = true;
+
+    PRINT_DEBUG_INFO("\tStreamClient::Stop - cancelling timer callback\n");
+    m_threadpoolTimer->Stop();
+
+    PRINT_DEBUG_INFO("\tStreamClient::Stop - closing sockets\n");
     m_primaryState.socket.reset();
     m_secondaryState.socket.reset();
-
-    m_threadpoolTimer->Stop();
 }
 
 void StreamClient::PrintStatistics()
@@ -209,6 +224,8 @@ void StreamClient::Connect(SocketState& socketState)
         }
     };
 
+    PRINT_DEBUG_INFO("\tStreamClient::Connect - sending start message\n");
+
     OVERLAPPED* ov = socketState.threadpoolIo->NewRequest(callback);
 
     auto error = WSASendTo(
@@ -227,6 +244,7 @@ void StreamClient::Connect(SocketState& socketState)
 
     if (NO_ERROR == error)
     {
+        PRINT_DEBUG_INFO("\tStreamClient::Connect - successfully sent/pended start message\n");
         static int targetAddressLength = m_targetAddress.length();
 
         // since the server will echo this message back, we also post a receive to discard the message
@@ -248,6 +266,8 @@ void StreamClient::Connect(SocketState& socketState)
             {
                 FAIL_FAST_WIN32_MSG(GetLastError(), "SetEvent failed");
             }
+
+            PRINT_DEBUG_INFO("\tStreamClient::Connect - successfully received echo'd start message\n");
         };
 
         OVERLAPPED* recvOv = socketState.threadpoolIo->NewRequest(recvCallback);
@@ -271,12 +291,16 @@ void StreamClient::Connect(SocketState& socketState)
             {
                 FAIL_FAST_WIN32_MSG(GetLastError(), "SetEvent failed");
             }
+
+            PRINT_DEBUG_INFO("\tStreamClient::Connect - successfully received echo'd start message\n");
         }
     }
 }
 
 void StreamClient::TimerCallback() noexcept
 {
+    PRINT_DEBUG_INFO("\tStreamClient::TimerCallback - timer triggered\n");
+
     for (auto i = 0; i < m_frameRate; ++i)
     {
         SendDatagrams();
@@ -285,26 +309,38 @@ void StreamClient::TimerCallback() noexcept
     // requeue the timer
     if (m_sequenceNumber < m_finalSequenceNumber)
     {
+        PRINT_DEBUG_INFO("\tStreamClient::TimerCallback - rescheduling timer\n");
         m_threadpoolTimer->Schedule(m_tickInterval);
     }
     else
     {
+        PRINT_DEBUG_INFO("\tStreamClient::TimerCallback - final sequence number sent, cancelling timer callback\n");
+
+        FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "FATAL: Exceeded the expected number of packets sent");
+
         m_threadpoolTimer->Stop();
 
         SetEvent(m_completeEvent);
     }
 }
 
-void StreamClient::SendDatagrams()
+void StreamClient::SendDatagrams() noexcept
 {
+    if (m_stopCalled)
+    {
+        return;
+    }
+
     if (m_whichFirst == Interface::Primary)
     {
+        PRINT_DEBUG_INFO("\tStreamClient::SendDatagrams - send primary, secondary\n");
         SendDatagram(m_primaryState);
         SendDatagram(m_secondaryState);
         m_whichFirst = Interface::Secondary;
     }
     else
     {
+        PRINT_DEBUG_INFO("\tStreamClient::SendDatagrams - send secondary, primary\n");
         SendDatagram(m_secondaryState);
         SendDatagram(m_primaryState);
         m_whichFirst = Interface::Primary;
@@ -313,7 +349,7 @@ void StreamClient::SendDatagrams()
     m_sequenceNumber += 1;
 }
 
-void StreamClient::SendDatagram(SocketState& socketState)
+void StreamClient::SendDatagram(SocketState& socketState) noexcept
 {
     DatagramSendRequest sendRequest{m_sequenceNumber, m_sharedSendBuffer.data(), m_sharedSendBuffer.size()};
 
@@ -341,13 +377,12 @@ void StreamClient::SendDatagram(SocketState& socketState)
     };
 
     OVERLAPPED* ov = socketState.threadpoolIo->NewRequest(callback);
-    DWORD bytesTransferred = 0;
 
     auto error = WSASendTo(
         socketState.socket.get(),
         buffers.data(),
         static_cast<DWORD>(buffers.size()),
-        &bytesTransferred,
+        nullptr,
         0,
         m_targetAddress.sockaddr(),
         m_targetAddress.length(),
@@ -359,13 +394,18 @@ void StreamClient::SendDatagram(SocketState& socketState)
         if (WSA_IO_PENDING != error)
         {
             socketState.threadpoolIo->CancelRequest(ov);
-            FAILED_WIN32_LOG(error);
+            FAIL_FAST_WIN32_MSG(error, "WSASendTo failed");
         }
     }
 }
 
 void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& receiveState)
 {
+    if (m_stopCalled)
+    {
+        return;
+    }
+
     receiveState.remoteAddressLen = receiveState.remoteAddress.length();
 
     DWORD flags = 0;
@@ -384,6 +424,8 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         if (WSAGetOverlappedResult(_socketState.socket.get(), ov, &bytesReceived, FALSE, &flags))
         {
             auto header = ExtractDatagramHeaderFromBuffer(_receiveState.buffer.data(), _receiveState.buffer.size());
+
+            PRINT_DEBUG_INFO("\tStreamClient::InitiateReceive [callback] - received sequence number %lld\n", header.sequenceNumber);
 
             if (header.sequenceNumber < 0 || header.sequenceNumber >= m_finalSequenceNumber)
             {
@@ -416,7 +458,7 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         if (WSA_IO_PENDING != error)
         {
             socketState.threadpoolIo->CancelRequest(ov);
-            FAILED_WIN32_LOG(error);
+            FAIL_FAST_WIN32_MSG(error, "WSARecvFrom failed");
         }
     }
 }

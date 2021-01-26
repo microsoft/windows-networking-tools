@@ -2,6 +2,7 @@
 
 #include "adapters.h"
 #include "config.h"
+#include "debug.h"
 #include "sockaddr.h"
 #include "stream_client.h"
 #include "stream_server.h"
@@ -93,7 +94,7 @@ void PrintUsage()
         L"\t\t- hd sends data at 5 megabits per second (default)\n"
         L"\t\t- 4k sends data at 25 megabits per second\n"
         L"-framerate:####\n"
-        L"\t- the number of frames to send during each send operation\n"
+        L"\t- the number of frames to process during each send operation\n"
         L"-duration:####\n"
         L"\t- the total number of seconds to run (default: 60 seconds)\n");
 }
@@ -288,25 +289,43 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             auto value = ParseArgument(*foundPrePostRecvs);
             if (value.empty())
             {
-                throw std::invalid_argument("-prepostrecvs missing paramter");
+                throw std::invalid_argument("-prepostrecvs missing parameter");
             }
 
             config.prePostRecvs = integer_cast<unsigned long>(value);
 
             args.erase(foundPrePostRecvs);
         }
+
+        auto foundConsoleVerbosity = std::find_if(
+            args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-consoleverbosity"); });
+        if (foundConsoleVerbosity != args.end())
+        {
+            auto value = ParseArgument(*foundConsoleVerbosity);
+            if (value.empty())
+            {
+                throw std::invalid_argument("-consoleverbosity missing parameter");
+            }
+
+            SetConsoleVerbosity(integer_cast<unsigned long>(value));
+
+            args.erase(foundConsoleVerbosity);
+        }
     }
     catch (const wil::ResultException& ex)
     {
         std::cerr << "Caught exception: " << ex.what() << '\n';
+        std::exit(-1);
     }
     catch (const std::invalid_argument& ex)
     {
         std::cerr << "Invalid argument: " << ex.what() << '\n';
+        std::exit(-1);
     }
     catch (const std::exception& ex)
     {
         std::cerr << "Caught exception: " << ex.what() << '\n';
+        std::exit(-1);
     }
     catch (...)
     {
@@ -316,6 +335,7 @@ int __cdecl wmain(int argc, const wchar_t** argv)
     std::cout << "--- Configuration ---\n";
     std::wcout << L"Listen Address: " << config.listenAddress.write_complete_address() << L'\n';
     std::wcout << L"Target Address: " << config.targetAddress.write_complete_address() << L'\n';
+    std::wcout << L"Port: " << config.port << L'\n';
     std::wcout << L"Bind Interfaces: ";
     for (const auto& ifIndex : config.bindInterfaces)
     {
@@ -347,6 +367,7 @@ int __cdecl wmain(int argc, const wchar_t** argv)
                 config.targetAddress.set_port(config.port);
             }
 
+            // must have this handle open until we are done to keep the second STA port active
             wil::unique_wlan_handle wlanHandle;
 
             DWORD clientVersion = 2; // Vista+ APIs
@@ -368,7 +389,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             StreamClient client(config.targetAddress, config.bindInterfaces[0], config.bindInterfaces[1], completeEvent.get());
             client.Start(config.prePostRecvs, config.bitrate, config.framerate, config.duration);
             
-            if (!completeEvent.wait(30 * 1000))
+            // wait for twice as long as the duration
+            if (!completeEvent.wait(config.duration * 2 * 1000)) 
             {
                 // timed out waiting for the run to complete
                 client.Stop();
@@ -384,5 +406,9 @@ int __cdecl wmain(int argc, const wchar_t** argv)
     catch (const std::exception& ex)
     {
         std::cout << "Caught exception: " << ex.what() << '\n';
+    }
+    catch (...)
+    {
+        FAIL_FAST_MSG("FATAL: UNHANDLED EXCEPTION");
     }
 }

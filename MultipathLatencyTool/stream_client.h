@@ -84,8 +84,8 @@ private:
 
     void TimerCallback() noexcept;
 
-    void SendDatagrams();
-    void SendDatagram(SocketState& socketState);
+    void SendDatagrams() noexcept;
+    void SendDatagram(SocketState& socketState) noexcept;
 
     void InitiateReceive(SocketState& socketState, ReceiveState& receiveState);
 
@@ -101,6 +101,7 @@ private:
     FILETIME m_tickInterval{};
     long long m_finalSequenceNumber = 0;
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer;
+    bool m_stopCalled = false;
 
     // both the primary and secondary socket will use the same send buffer so that the message payloads are identical
     long long m_sequenceNumber = 0;

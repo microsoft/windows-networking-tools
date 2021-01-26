@@ -73,7 +73,7 @@ private:
     long long sequenceNumber = 0;
 };
 
-bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/, size_t completedBytes) noexcept
+inline bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/, size_t completedBytes) noexcept
 {
     if (completedBytes < DatagramHeaderLength)
     {
@@ -83,7 +83,7 @@ bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/, size_
     return true;
 }
 
-DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t /*bufferLength*/) noexcept
+inline DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t /*bufferLength*/) noexcept
 {
     DatagramHeader header{};
 
@@ -97,7 +97,7 @@ DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t /*buff
     return header;
 }
 
-const char* ExtractDatagramPayloadFromBuffer(const char* buffer, size_t /*bufferLength*/) noexcept
+inline const char* ExtractDatagramPayloadFromBuffer(const char* buffer, size_t /*bufferLength*/) noexcept
 {
     return buffer + DatagramHeaderLength;
 }

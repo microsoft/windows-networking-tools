@@ -3,26 +3,12 @@
 #include <netioapi.h>
 
 #include "adapters.h"
+#include "debug.h"
 
 using namespace winrt;
 using namespace Windows::Networking::Connectivity;
 
 namespace multipath {
-wil::unique_wlan_handle OpenWlanHandle()
-{
-    wil::unique_wlan_handle wlanHandle;
-
-    constexpr DWORD wlanVersion = 2; // Vista+ API
-    DWORD wlanCurVersion = 0;
-    auto error = WlanOpenHandle(wlanVersion, nullptr, &wlanCurVersion, &wlanHandle);
-    if (ERROR_SUCCESS != error)
-    {
-        THROW_WIN32_MSG(error, "WlanOpenHandle failed");
-    }
-
-    return wlanHandle;
-}
-
 std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
 {
     std::vector<GUID> primaryInterfaces{};
@@ -57,6 +43,9 @@ void SetSecondaryInterfaceEnabled(HANDLE wlanHandle, const GUID& primaryInterfac
     {
         THROW_WIN32_MSG(error, "WlanSetInterface(wlan_intf_opcode_secondary_sta_synchronized_connections) failed");
     }
+
+    PRINT_DEBUG_INFO("\tSetSecondaryInterfaceEnabled - successfully set opcode "
+                     "`wlan_intf_opcode_secondary_sta_synchronized_connections`\n");
 }
 
 std::vector<GUID> GetSecondaryInterfaceGuids(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
@@ -78,6 +67,8 @@ std::vector<GUID> GetSecondaryInterfaceGuids(HANDLE wlanHandle, const GUID& prim
     {
         THROW_WIN32_MSG(error, "WlanQueryInterface failed");
     }
+
+    PRINT_DEBUG_INFO("\tGetSecondaryInterfaceGuids - received %lu secondary interface GUIDs\n", secondaryInterfaceList->dwNumberOfItems);
 
     for (auto i = 0u; i < secondaryInterfaceList->dwNumberOfItems; ++i)
     {
@@ -104,10 +95,10 @@ WlanInterfaceGuids GetWlanInterfaces(HANDLE wlanHandle)
         SetSecondaryInterfaceEnabled(wlanHandle, primaryInterface);
 
         auto secondaryInterfaces = GetSecondaryInterfaceGuids(wlanHandle, primaryInterface);
-        if (secondaryInterfaces.size() > 0) 
+        if (secondaryInterfaces.size() > 0)
         {
             // pull the first interface from the list
-            return { primaryInterface, secondaryInterfaces.front() };
+            return {primaryInterface, secondaryInterfaces.front()};
         }
     }
 
@@ -120,21 +111,31 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
     bool secondaryConnected = false;
 
     auto checkForConnected = [&]() {
+        PRINT_DEBUG_INFO(
+            "\tWaitForConnectedWlanInterfaces [callback] - checking for connected primary and secondary interfaces\n");
+
         auto profiles = NetworkInformation::GetConnectionProfiles();
         for (auto const& profile : profiles)
         {
             auto interfaceGuid = profile.NetworkAdapter().NetworkAdapterId();
             if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.primaryInterface)
             {
+                PRINT_DEBUG_INFO(
+                    "\tWaitForConnectedWlanInterfaces [callback] - found primary interface connection profile\n");
                 if (profile.GetNetworkConnectivityLevel() == NetworkConnectivityLevel::InternetAccess)
                 {
+                    PRINT_DEBUG_INFO("\tWaitForConnectedWlanInterfaces [callback] - primary interface is connected\n");
                     primaryConnected = true;
                 }
             }
             else if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.secondaryInterface)
             {
+                PRINT_DEBUG_INFO(
+                    "\tWaitForConnectedWlanInterfaces [callback] - found secondary interface connection profile\n");
                 if (profile.GetNetworkConnectivityLevel() == NetworkConnectivityLevel::InternetAccess)
                 {
+                    PRINT_DEBUG_INFO(
+                        "\tWaitForConnectedWlanInterfaces [callback] - secondary interface is connected\n");
                     secondaryConnected = true;
                 }
             }
@@ -146,13 +147,17 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
     // wait for both connections to become connected
     if (!primaryConnected || !secondaryConnected)
     {
-        wil::unique_event event {wil::EventOptions::ManualReset};
+        wil::unique_event event{wil::EventOptions::ManualReset};
+
+        PRINT_DEBUG_INFO("\tWaitForConnectedWlanInterfaces - one or more interfaces not yet connected, registering for "
+                         "network change notifications\n");
 
         auto eventToken = NetworkInformation::NetworkStatusChanged([&](const auto&) {
             checkForConnected();
 
             if (primaryConnected && secondaryConnected)
             {
+                PRINT_DEBUG_INFO("\tWaitForConnectedWlanInterfaces - primary and secondary interfaces are connected\n");
                 event.SetEvent();
             }
         });
