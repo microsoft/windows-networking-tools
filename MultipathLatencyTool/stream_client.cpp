@@ -358,7 +358,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
     SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
 
     auto callback = [this, &_socketState = socketState, _sendState = sendState](OVERLAPPED* ov) noexcept {
-        if (!_socketState.socket.is_valid())
+        if (m_stopCalled || !_socketState.socket.is_valid())
         {
             return;
         }
@@ -406,7 +406,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
 void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& receiveState)
 {
-    if (m_stopCalled)
+    if (m_stopCalled || !socketState.socket.is_valid())
     {
         return;
     }
