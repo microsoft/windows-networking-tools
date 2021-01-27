@@ -41,7 +41,12 @@ StreamClient::StreamClient(const Sockaddr& _targetAddress, int _primaryInterface
     m_primaryState.interface = Interface::Primary;
     m_primaryState.interfaceIndex = _primaryInterfaceIndex;
     SetSocketReceiveBufferSize(m_primaryState.socket.get(), DefaultSocketReceiveBufferSize);
-    // SetSocketOutgoingInterface(m_primaryState.socket.get(), m_targetAddress.family(), m_primaryState.interfaceIndex);
+    SetSocketOutgoingInterface(m_primaryState.socket.get(), m_targetAddress.family(), m_primaryState.interfaceIndex);
+
+    PRINT_DEBUG_INFO(
+        "\tStreamClient::StreamClient - created primary socket %llu bound to interface index %d",
+        m_primaryState.socket.get(),
+        m_primaryState.interfaceIndex);
 
     m_primaryState.connectEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     if (!m_primaryState.connectEvent)
@@ -56,6 +61,11 @@ StreamClient::StreamClient(const Sockaddr& _targetAddress, int _primaryInterface
     m_secondaryState.interfaceIndex = _secondaryInterfaceIndex;
     SetSocketReceiveBufferSize(m_secondaryState.socket.get(), DefaultSocketReceiveBufferSize);
     SetSocketOutgoingInterface(m_secondaryState.socket.get(), m_targetAddress.family(), m_secondaryState.interfaceIndex);
+
+    PRINT_DEBUG_INFO(
+        "\tStreamClient::StreamClient - created secondary socket %llu on bound to interface index %d",
+        m_secondaryState.socket.get(),
+        m_secondaryState.interfaceIndex);
 
     m_secondaryState.connectEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     if (!m_secondaryState.connectEvent)
@@ -224,7 +234,7 @@ void StreamClient::Connect(SocketState& socketState)
         }
     };
 
-    PRINT_DEBUG_INFO("\tStreamClient::Connect - sending start message\n");
+    PRINT_DEBUG_INFO("\tStreamClient::Connect - sending start message on socket %llu\n", socketState.socket.get());
 
     OVERLAPPED* ov = socketState.threadpoolIo->NewRequest(callback);
 
@@ -267,7 +277,9 @@ void StreamClient::Connect(SocketState& socketState)
                 FAIL_FAST_WIN32_MSG(GetLastError(), "SetEvent failed");
             }
 
-            PRINT_DEBUG_INFO("\tStreamClient::Connect - successfully received echo'd start message\n");
+            PRINT_DEBUG_INFO(
+                "\tStreamClient::Connect - successfully received echo'd start message on socket %llu\n",
+                _socketState.socket.get());
         };
 
         OVERLAPPED* recvOv = socketState.threadpoolIo->NewRequest(recvCallback);
@@ -292,7 +304,9 @@ void StreamClient::Connect(SocketState& socketState)
                 FAIL_FAST_WIN32_MSG(GetLastError(), "SetEvent failed");
             }
 
-            PRINT_DEBUG_INFO("\tStreamClient::Connect - successfully received echo'd start message\n");
+            PRINT_DEBUG_INFO(
+                "\tStreamClient::Connect - successfully received echo'd start message on socket %llu\n",
+                socketState.socket.get());
         }
     }
 }
@@ -333,14 +347,12 @@ void StreamClient::SendDatagrams() noexcept
 
     if (m_whichFirst == Interface::Primary)
     {
-        PRINT_DEBUG_INFO("\tStreamClient::SendDatagrams - send primary, secondary\n");
         SendDatagram(m_primaryState);
         SendDatagram(m_secondaryState);
         m_whichFirst = Interface::Secondary;
     }
     else
     {
-        PRINT_DEBUG_INFO("\tStreamClient::SendDatagrams - send secondary, primary\n");
         SendDatagram(m_secondaryState);
         SendDatagram(m_primaryState);
         m_whichFirst = Interface::Primary;
@@ -357,9 +369,15 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
     SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
 
+    PRINT_DEBUG_INFO(
+        "\tStreamClient::SendDatagram - sending sequence number %lld on socket %llu",
+        m_sequenceNumber,
+        socketState.socket.get());
+
     auto callback = [this, &_socketState = socketState, _sendState = sendState](OVERLAPPED* ov) noexcept {
         if (m_stopCalled || !_socketState.socket.is_valid())
         {
+            PRINT_DEBUG_INFO("Shutting down or socket is no longer valid, ignoring send completion\n");
             return;
         }
 
@@ -424,9 +442,9 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         LARGE_INTEGER qpc{};
         QueryPerformanceCounter(&qpc);
 
-        if (!_socketState.socket.is_valid())
+        if (m_stopCalled || !_socketState.socket.is_valid())
         {
-            // don't process this completion or post another receive if the socket is no longer valid
+            PRINT_DEBUG_INFO("Shutting down or socket is no longer valid, ignoring receive completion\n");
             return;
         }
 
@@ -436,7 +454,10 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         {
             auto header = ExtractDatagramHeaderFromBuffer(_receiveState.buffer.data(), _receiveState.buffer.size());
 
-            PRINT_DEBUG_INFO("\tStreamClient::InitiateReceive [callback] - received sequence number %lld\n", header.sequenceNumber);
+            PRINT_DEBUG_INFO(
+                "\tStreamClient::InitiateReceive [callback] - received sequence number %lld on socket %llu\n",
+                header.sequenceNumber,
+                _socketState.socket.get());
 
             if (header.sequenceNumber < 0 || header.sequenceNumber >= m_finalSequenceNumber)
             {
