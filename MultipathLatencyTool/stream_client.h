@@ -45,7 +45,6 @@ private:
     {
         long long sequenceNumber;
         long long qpc;
-        DWORD flags;
     };
 
     static constexpr size_t ReceiveBufferSize = 1024; // 1KB receive buffer
@@ -56,14 +55,16 @@ private:
         Sockaddr remoteAddress;
         int remoteAddressLen;
         ReceiveBuffer buffer;
+        long long qpc;
     };
 
     struct SocketState
     {
+        wil::critical_section csSocket;
         wil::unique_socket socket;
         std::unique_ptr<ThreadpoolIo> threadpoolIo;
 
-        HANDLE connectEvent;
+        HANDLE connectEvent = INVALID_HANDLE_VALUE;
 
         // the interface index the socket will send outgoing data
         int interfaceIndex;
@@ -74,6 +75,8 @@ private:
         // the contexts used for each posted recieve
         std::vector<ReceiveState> receiveStates;
 
+        long long sentFrames = 0;
+        long long receivedFrames = 0;
         long long corruptFrames = 0;
     };
 
@@ -86,8 +89,10 @@ private:
 
     void SendDatagrams() noexcept;
     void SendDatagram(SocketState& socketState) noexcept;
+    void SendCompletion(SocketState& socketState, const SendState& sendState) noexcept;
 
     void InitiateReceive(SocketState& socketState, ReceiveState& receiveState);
+    void ReceiveCompletion(SocketState& socketState, ReceiveState& receiveState, DWORD messageSize) noexcept;
 
     Sockaddr m_targetAddress;
 

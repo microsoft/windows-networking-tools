@@ -70,6 +70,14 @@ inline long long SnapSystemTimeInMillis() noexcept
     return ConvertFiletimeToMillis(filetime);
 }
 
+inline long long SnapQpc() noexcept
+{
+    LARGE_INTEGER qpc{};
+    QueryPerformanceCounter(&qpc);
+
+    return qpc.QuadPart;
+}
+
 inline long long SnapQpcInMillis() noexcept
 {
     // snap the frequency on first call; C++11 guarantees this is thread-safe
@@ -79,11 +87,10 @@ inline long long SnapQpcInMillis() noexcept
         return _qpf.QuadPart;
     }();
 
-    LARGE_INTEGER qpc{};
-    QueryPerformanceCounter(&qpc);
+    auto qpc = SnapQpc();
 
     // multiply by 1000 as (qpc / qpf) is in seconds
-    return static_cast<long long>(qpc.QuadPart * 1000LL / qpf);
+    return static_cast<long long>(qpc * 1000LL / qpf);
 }
 
 using ThreadpoolTimerCallback = std::function<void()>;
@@ -91,7 +98,8 @@ using ThreadpoolTimerCallback = std::function<void()>;
 class ThreadpoolTimer
 {
 public:
-    explicit ThreadpoolTimer(ThreadpoolTimerCallback _callback, PTP_CALLBACK_ENVIRON _ptpEnv = nullptr) : m_callback(std::move(_callback))
+    explicit ThreadpoolTimer(ThreadpoolTimerCallback _callback, PTP_CALLBACK_ENVIRON _ptpEnv = nullptr) :
+        m_callback(std::move(_callback))
     {
         m_ptpTimer = CreateThreadpoolTimer(TimerCallback, this, _ptpEnv);
         THROW_LAST_ERROR_IF_MSG(!m_ptpTimer, "CreateThreadpoolTimer failed");

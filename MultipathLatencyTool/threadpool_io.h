@@ -7,6 +7,8 @@
 
 #include <wil/result.h>
 
+#include "debug.h"
+
 namespace multipath {
 
 using ThreadpoolIoCallback = std::function<void(OVERLAPPED*)>;
@@ -86,6 +88,7 @@ private:
         try
         {
             auto* info = static_cast<ThreadpoolIoCallbackInfo*>(overlapped);
+            FAIL_FAST_IF_MSG(!info->callback, "IoCompletionCallback - no callback registered");
             info->callback(&info->ov);
             delete info;
         }

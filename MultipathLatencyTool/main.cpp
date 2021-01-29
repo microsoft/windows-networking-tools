@@ -278,6 +278,10 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             }
 
             config.duration = integer_cast<unsigned long>(value);
+            if (config.duration < 1)
+            {
+                throw std::invalid_argument("-duration invalid argument");
+            }
 
             args.erase(foundDuration);
         }
@@ -293,6 +297,10 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             }
 
             config.prePostRecvs = integer_cast<unsigned long>(value);
+            if (config.prePostRecvs < 1)
+            {
+                throw std::invalid_argument("-prepostrecvs invalid argument");
+            }
 
             args.erase(foundPrePostRecvs);
         }

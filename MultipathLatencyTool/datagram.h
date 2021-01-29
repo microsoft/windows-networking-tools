@@ -18,7 +18,7 @@ constexpr unsigned long DatagramHeaderLength = DatagramSequenceNumberLength + Da
 struct DatagramHeader
 {
     long long sequenceNumber;
-    LARGE_INTEGER qpc;
+    long long qpc;
 };
 
 class DatagramSendRequest
@@ -91,7 +91,7 @@ inline DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t
     FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the sequence number: %d", error);
     
     buffer += DatagramSequenceNumberLength;
-    error = memcpy_s(&header.qpc.QuadPart, DatagramTimestampLength, buffer, DatagramTimestampLength);
+    error = memcpy_s(&header.qpc, DatagramTimestampLength, buffer, DatagramTimestampLength);
     FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the timestamp: %d", error);
 
     return header;

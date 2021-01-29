@@ -152,7 +152,9 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
         PRINT_DEBUG_INFO("\tWaitForConnectedWlanInterfaces - one or more interfaces not yet connected, registering for "
                          "network change notifications\n");
 
-        auto eventToken = NetworkInformation::NetworkStatusChanged([&](const auto&) {
+        // by passing winrt::auto_revoke and storing the result, we will be automatically
+        // unsubscribed when this object goes out of scope
+        auto eventRevoker = NetworkInformation::NetworkStatusChanged(winrt::auto_revoke, [&](const auto&) {
             checkForConnected();
 
             if (primaryConnected && secondaryConnected)
