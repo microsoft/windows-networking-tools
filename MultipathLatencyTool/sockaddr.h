@@ -366,7 +366,8 @@ inline bool Sockaddr::write_address(WCHAR (&address)[IpStringMaxLength]) const n
 {
     ::ZeroMemory(address, IpStringMaxLength * sizeof(WCHAR));
 
-    const auto* const addr = AF_INET == m_saddr.si_family ? reinterpret_cast<PVOID>(in_addr()) : reinterpret_cast<PVOID>(in6_addr());
+    const auto* const addr =
+        AF_INET == m_saddr.si_family ? reinterpret_cast<PVOID>(in_addr()) : reinterpret_cast<PVOID>(in6_addr());
     return (nullptr != ::InetNtopW(m_saddr.si_family, addr, address, IpStringMaxLength));
 }
 

@@ -69,7 +69,8 @@ public:
 
 private:
     BufferArray wsabufs{};
-    LARGE_INTEGER qpc{};;
+    LARGE_INTEGER qpc{};
+    ;
     long long sequenceNumber = 0;
 };
 
@@ -89,7 +90,7 @@ inline DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t
 
     auto error = memcpy_s(&header.sequenceNumber, DatagramSequenceNumberLength, buffer, DatagramSequenceNumberLength);
     FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the sequence number: %d", error);
-    
+
     buffer += DatagramSequenceNumberLength;
     error = memcpy_s(&header.qpc, DatagramTimestampLength, buffer, DatagramTimestampLength);
     FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the timestamp: %d", error);

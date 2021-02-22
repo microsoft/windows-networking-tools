@@ -9,7 +9,6 @@
 #include <iostream>
 
 #include <Windows.h>
-
 #include <winrt/Windows.Foundation.h>
 
 #include <wlanapi.h>
@@ -65,14 +64,16 @@ void PrintUsage()
         stdout,
         L"MultipathLatencyTool is a utility to compare the latencies of two network interfaces. "
         L"It is a client/server application that simply sends data at a given rate and echoes it back to the client. "
-        L"It tracks the round-trip latency on each network interface and presents some basic statistics for the session.\n"
+        L"It tracks the round-trip latency on each network interface and presents some basic statistics for the "
+        L"session.\n"
         L"\nOnce started, Ctrl-C or Ctrl-Break will cleanly shutdown the application."
         L"\n\n"
         L"Server-side usage:\n"
         L"\tMultipathLatencyTool -listen:<addr or *> [-port:####] [-prepostrecvs:####]\n"
         L"\n"
         L"Client-side usage:\n"
-        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-rate:<see below>] [-duration:####] [-prepostrecvs:####]\n"
+        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-rate:<see below>] [-duration:####] "
+        L"[-prepostrecvs:####]\n"
         L"\n\n"
         L"---------------------------------------------------------\n"
         L"                      Common Options                     \n"
@@ -151,8 +152,9 @@ int __cdecl wmain(int argc, const wchar_t** argv)
     const wchar_t** argv_end = argv + argc;
     std::vector<const wchar_t*> args{argv_begin, argv_end};
 
-    auto foundHelp = std::find_if(
-        args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-help") || StartsWith(arg, L"-?"); });
+    auto foundHelp = std::find_if(args.begin(), args.end(), [](const wchar_t* arg) {
+        return StartsWith(arg, L"-help") || StartsWith(arg, L"-?");
+    });
     if (foundHelp != args.end())
     {
         PrintUsage();
@@ -163,7 +165,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
     try
     {
-        auto foundListen = std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-listen"); });
+        auto foundListen =
+            std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-listen"); });
         if (foundListen != args.end())
         {
             auto value = ParseArgument(*foundListen);
@@ -190,7 +193,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             args.erase(foundListen);
         }
 
-        auto foundTarget = std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-target"); });
+        auto foundTarget =
+            std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-target"); });
         if (foundTarget != args.end())
         {
             if (config.listenAddress)
@@ -217,7 +221,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             args.erase(foundTarget);
         }
 
-        auto foundPort = std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-port"); });
+        auto foundPort =
+            std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-port"); });
         if (foundPort != args.end())
         {
             auto value = ParseArgument(*foundPort);
@@ -231,7 +236,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             args.erase(foundPort);
         }
 
-        auto foundBitrate = std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-bitrate"); });
+        auto foundBitrate =
+            std::find_if(args.begin(), args.end(), [](const wchar_t* arg) { return StartsWith(arg, L"-bitrate"); });
         if (foundBitrate != args.end())
         {
             auto value = ParseArgument(*foundBitrate);
@@ -418,9 +424,9 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
             std::wcout << L"Start transmitting data...\n";
             client.Start(config.prePostRecvs, config.bitrate, config.framerate, config.duration);
-            
+
             // wait for twice as long as the duration
-            if (!completeEvent.wait(config.duration * 2 * 1000)) 
+            if (!completeEvent.wait(config.duration * 2 * 1000))
             {
                 std::wcout << L"Timed out waiting for run to completion\n";
                 client.Stop();

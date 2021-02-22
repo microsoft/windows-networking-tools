@@ -9,8 +9,8 @@ struct Configuration
 {
     static constexpr unsigned long DefaultFramerate = 30;
 
-    static constexpr unsigned long SendBitrateSd = 3 * 1024 * 1024; // 3 megabits per second
-    static constexpr unsigned long SendBitrateHd = 5 * 1024 * 1024; // 5 megabits per second
+    static constexpr unsigned long SendBitrateSd = 3 * 1024 * 1024;  // 3 megabits per second
+    static constexpr unsigned long SendBitrateHd = 5 * 1024 * 1024;  // 5 megabits per second
     static constexpr unsigned long SendBitrate4k = 25 * 1024 * 1024; // 25 megabits per second
     static constexpr unsigned long DefaultBitrate = SendBitrateHd;
 
@@ -46,4 +46,4 @@ struct Configuration
     // the duration to run the application, in seconds (client only)
     unsigned long duration = DefaultDuration;
 };
-}
+} // namespace multipath
