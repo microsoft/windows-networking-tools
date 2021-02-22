@@ -6,6 +6,8 @@
 #include <WinSock2.h>
 #include <wil/resource.h>
 
+#include <array>
+
 namespace multipath {
 class StreamServer
 {

@@ -1,15 +1,23 @@
-﻿#include "pch.h"
-
-#include "adapters.h"
+﻿#include "adapters.h"
 #include "config.h"
 #include "debug.h"
 #include "sockaddr.h"
 #include "stream_client.h"
 #include "stream_server.h"
 
-using namespace winrt;
-using namespace Windows::Foundation;
+#include <stdexcept>
+#include <iostream>
 
+#include <Windows.h>
+
+#include <winrt/Windows.Foundation.h>
+
+#include <wlanapi.h>
+
+#include <wil/result.h>
+#include <wil/resource.h>
+
+using namespace winrt;
 using namespace multipath;
 
 namespace {
@@ -341,9 +349,21 @@ int __cdecl wmain(int argc, const wchar_t** argv)
     }
 
     std::cout << "--- Configuration ---\n";
-    std::wcout << L"Listen Address: " << config.listenAddress.write_complete_address() << L'\n';
-    std::wcout << L"Target Address: " << config.targetAddress.write_complete_address() << L'\n';
     std::wcout << L"Port: " << config.port << L'\n';
+
+    if (config.listenAddress)
+    {
+        std::wcout << L"Listen Address: " << config.listenAddress.write_complete_address() << L'\n';
+    }
+    else
+    {
+        std::wcout << L"Target Address: " << config.targetAddress.write_complete_address() << L'\n';
+        std::wcout << L"Stream Bitrate: " << config.bitrate << L"bits per second\n";
+        std::wcout << L"Stream Framerate: " << config.framerate << L'\n';
+        std::wcout << L"Stream Duration: " << config.duration << L" seconds\n";
+    }
+
+    std::wcout << L"PrePostRecvs: " << config.prePostRecvs << L'\n';
 
     try
     {
@@ -357,6 +377,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             StreamServer server(config.listenAddress);
 
             server.Start(config.prePostRecvs);
+
+            std::wcout << L"Listening for data...\n";
 
             for (;;)
             {
@@ -386,18 +408,25 @@ int __cdecl wmain(int argc, const wchar_t** argv)
                 throw std::runtime_error("two connected interfaces are required to run the client");
             }
 
-            wil::unique_event completeEvent(wil::EventOptions::ManualReset);
+            std::wcout << L"Bind Interfaces:\n";
+            std::wcout << L'\t' << config.bindInterfaces[0] << L'\n';
+            std::wcout << L'\t' << config.bindInterfaces[1] << L'\n';
 
+            std::wcout << L"Starting connection setup...\n";
+            wil::unique_event completeEvent(wil::EventOptions::ManualReset);
             StreamClient client(config.targetAddress, config.bindInterfaces[0], config.bindInterfaces[1], completeEvent.get());
+
+            std::wcout << L"Start transmitting data...\n";
             client.Start(config.prePostRecvs, config.bitrate, config.framerate, config.duration);
             
             // wait for twice as long as the duration
             if (!completeEvent.wait(config.duration * 2 * 1000)) 
             {
-                // timed out waiting for the run to complete
+                std::wcout << L"Timed out waiting for run to completion\n";
                 client.Stop();
             }
 
+            std::wcout << L"Transmission complete\n";
             client.PrintStatistics();
         }
     }

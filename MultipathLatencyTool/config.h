@@ -1,12 +1,13 @@
 #pragma once
 
 #include "sockaddr.h"
+
 #include <vector>
 
 namespace multipath {
 struct Configuration
 {
-    static constexpr unsigned long DefaultFramerate = 60;
+    static constexpr unsigned long DefaultFramerate = 30;
 
     static constexpr unsigned long SendBitrateSd = 3 * 1024 * 1024; // 3 megabits per second
     static constexpr unsigned long SendBitrateHd = 5 * 1024 * 1024; // 5 megabits per second

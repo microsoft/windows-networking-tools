@@ -1,10 +1,10 @@
 #pragma once
 
-#include <iterator>
-
 #include <WinSock2.h>
 
 #include <wil/result.h>
+
+#include <string.h>
 
 namespace multipath {
 

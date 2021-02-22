@@ -1,9 +1,17 @@
-#include "pch.h"
-
-#include <netioapi.h>
-
 #include "adapters.h"
 #include "debug.h"
+
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Networking.Connectivity.h>
+
+#include <wil/result.h>
+#include <wil/resource.h>
+
+#include <vector>
+
+#include <Windows.h>
+#include <wlanapi.h>
+#include <netioapi.h>
 
 using namespace winrt;
 using namespace Windows::Networking::Connectivity;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdio.h>
+
 namespace multipath {
 unsigned long ConsoleVerbosity() noexcept;
 
