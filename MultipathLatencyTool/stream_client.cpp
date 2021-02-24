@@ -169,22 +169,26 @@ void StreamClient::PrintStatistics()
     // simple average of latencies for received datagrams
     long long primaryLatencyTotal = 0;
     long long secondaryLatencyTotal = 0;
+    long long aggregatedLatencyTotal = 0;
 
     long long primaryLatencySamples = 0;
     long long secondaryLatencySamples = 0;
+    long long aggregatedLatencySamples = 0;
 
     long long primaryLostFrames = 0;
     long long secondaryLostFrames = 0;
+    long long aggregatedLostFrames = 0;
 
-    for (auto i = 0u; i < m_latencyStatistics.size(); ++i)
+    for (const auto& stat: m_latencyStatistics)
     {
-        auto const& stat = m_latencyStatistics[i];
+        long long aggregatedLatency = 0;
         if (stat.sequenceNumber > 0)
         {
             if (stat.primaryLatencyMs > 0)
             {
                 primaryLatencyTotal += stat.primaryLatencyMs;
                 primaryLatencySamples += 1;
+                aggregatedLatency = stat.primaryLatencyMs;
             }
             else
             {
@@ -195,10 +199,21 @@ void StreamClient::PrintStatistics()
             {
                 secondaryLatencyTotal += stat.secondaryLatencyMs;
                 secondaryLatencySamples += 1;
+                aggregatedLatency = min(aggregatedLatency, stat.primaryLatencyMs);
             }
             else
             {
                 secondaryLostFrames += 1;
+            }
+
+            if (aggregatedLatency > 0)
+            {
+                aggregatedLatencyTotal += aggregatedLatency;
+                aggregatedLatencySamples += 1;
+            }
+            else
+            {
+                aggregatedLostFrames += 1;
             }
         }
     }
@@ -214,10 +229,12 @@ void StreamClient::PrintStatistics()
     std::cout << '\n';
     std::cout << "Average latency on primary interface: " << primaryLatencyTotal / primaryLatencySamples << '\n';
     std::cout << "Average latency on secondary interface: " << secondaryLatencyTotal / secondaryLatencySamples << '\n';
+    std::cout << "Average latency on any interface: " << aggregatedLatencyTotal / aggregatedLatencyTotal << '\n';
 
     std::cout << '\n';
     std::cout << "Lost frames on primary interface: " << primaryLostFrames << '\n';
     std::cout << "Lost frames on secondary interface: " << secondaryLostFrames << '\n';
+    std::cout << "Lost frames on both interface simultaneously: " << aggregatedLostFrames << '\n';
 
     std::cout << '\n';
     std::cout << "Corrupt frames on primary interface: " << m_primaryState.corruptFrames << '\n';

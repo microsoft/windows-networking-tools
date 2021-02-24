@@ -58,7 +58,6 @@ public:
     {
         // refresh QPC value at last possible moment
         QueryPerformanceCounter(&qpc);
-
         return wsabufs;
     }
 
@@ -70,7 +69,6 @@ public:
 private:
     BufferArray wsabufs{};
     LARGE_INTEGER qpc{};
-    ;
     long long sequenceNumber = 0;
 };
 
