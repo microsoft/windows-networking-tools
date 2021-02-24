@@ -10,24 +10,21 @@
 namespace multipath {
 namespace {
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
-    long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
+    constexpr long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
     {
-        const long long byteRate = bitRate / 8;
-        const long long datagramRate = byteRate * frameRate / static_cast<long long>(datagramSize);
-
-        // now we need to determine how often the timer should tick (in 100 nanos increments)
-        long long interval = 1'000'000LL;
-        FAIL_FAST_IF_MSG(datagramRate > interval, "datagram send rate higher than the available tick interval");
-
-        return static_cast<long long>(interval / datagramRate);
+        // bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
+        // We look for the tick interval in 100 nanosecond
+        const long long hundredNanoSecInSecond = 10'000'000LL; // hundred ns / s
+        const long long byteRate = bitRate / 8; // byte/s
+        return (datagramSize * frameRate * hundredNanoSecInSecond) / byteRate;
     }
 
-    long long CalculateFinalSequenceNumber(long long duration, long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
+    long long CalculateFinalSequenceNumber(long long duration, long long bitRate, unsigned long long datagramSize) noexcept
     {
-        const long long byteRate = bitRate / 8;
-        const long long datagramRate = byteRate * frameRate / static_cast<long long>(datagramSize);
-
-        return static_cast<long long>(datagramRate * duration);
+        // duration ->s, bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
+        // We look for total number of datagram to send
+        const long long byteRate = bitRate / 8; // byte/s
+        return (duration * byteRate) / datagramSize;
     }
 
 } // namespace
@@ -95,7 +92,7 @@ void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, 
     m_frameRate = sendFrameRate;
     const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, SendBufferSize);
     m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
-    m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, sendFrameRate, SendBufferSize);
+    m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, SendBufferSize);
 
     PRINT_DEBUG_INFO("\tStreamClient::Start - tick interval is %lld\n", tickInterval);
     PRINT_DEBUG_INFO("\tStreamClient::Start - final sequence number is %lld\n", m_finalSequenceNumber);
@@ -319,7 +316,7 @@ void StreamClient::TimerCallback() noexcept
 {
     PRINT_DEBUG_INFO("\tStreamClient::TimerCallback - timer triggered\n");
 
-    for (auto i = 0; i < m_frameRate; ++i)
+    for (auto i = 0; i < m_frameRate && m_sequenceNumber < m_finalSequenceNumber; ++i)
     {
         SendDatagrams();
     }
