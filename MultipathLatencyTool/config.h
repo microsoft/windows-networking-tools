@@ -7,43 +7,47 @@
 namespace multipath {
 struct Configuration
 {
-    static constexpr unsigned long DefaultFramerate = 30;
+    // these values make debugging much easier
+    static constexpr unsigned long c_testSendBitrate = 1024 * 8;
+    static constexpr unsigned long c_testFramerate = 1;
 
-    static constexpr unsigned long SendBitrateSd = 3 * 1024 * 1024;  // 3 megabits per second
-    static constexpr unsigned long SendBitrateHd = 5 * 1024 * 1024;  // 5 megabits per second
-    static constexpr unsigned long SendBitrate4k = 25 * 1024 * 1024; // 25 megabits per second
-    static constexpr unsigned long DefaultBitrate = SendBitrateHd;
+    static constexpr unsigned long c_defaultFramerate = 30;
 
-    static constexpr unsigned short DefaultPort = 8888;
+    static constexpr unsigned long c_sendBitrateSd = 3 * 1024 * 1024; // 3 megabits per second
+    static constexpr unsigned long c_sendBitrateHd = 5 * 1024 * 1024; // 5 megabits per second
+    static constexpr unsigned long c_sendBitrate4K = 25 * 1024 * 1024; // 25 megabits per second
+    static constexpr unsigned long c_defaultBitrate = c_sendBitrateHd;
 
-    static constexpr unsigned long DefaultPrePostRecvs = 2;
+    static constexpr unsigned short c_defaultPort = 8888;
 
-    static constexpr unsigned long DefaultDuration = 60; // 1 minute
+    static constexpr unsigned long c_defaultPrePostRecvs = 1;
 
-    static constexpr DWORD DefaultSocketReceiveBufferSize = 1048576;
+    static constexpr unsigned long c_defaultDuration = 60; // 1 minute
+
+    static constexpr DWORD c_defaultSocketReceiveBufferSize = 1048576;
 
     // the address on which to listen (server only)
-    Sockaddr listenAddress{};
+    ctl::ctSockaddr m_listenAddress{};
 
     // the target address to connect to (client only)
-    Sockaddr targetAddress{};
+    ctl::ctSockaddr m_targetAddress{};
 
     // the list of interfaces to bind against (client only)
-    std::vector<int> bindInterfaces{};
+    std::vector<int> m_bindInterfaces{};
 
     // the port to use for connections
-    unsigned short port = DefaultPort;
+    unsigned short m_port = c_defaultPort;
 
     // the rate at which to send data (client only)
-    unsigned long bitrate = DefaultBitrate;
+    unsigned long m_bitrate = c_defaultBitrate;
 
     // the number of frames to send per tick (client only)
-    unsigned long framerate = DefaultFramerate;
+    unsigned long m_framerate = c_defaultFramerate;
 
     // the number of receives to keep posted on the socket
-    unsigned long prePostRecvs = DefaultPrePostRecvs;
+    unsigned long m_prePostRecvs = c_defaultPrePostRecvs;
 
     // the duration to run the application, in seconds (client only)
-    unsigned long duration = DefaultDuration;
+    unsigned long m_duration = c_defaultDuration;
 };
 } // namespace multipath

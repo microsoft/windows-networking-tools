@@ -4,20 +4,20 @@
 #include "datagram.h"
 
 namespace multipath {
-StreamServer::StreamServer(const Sockaddr& listenAddress) : m_listenAddress(listenAddress)
+StreamServer::StreamServer(ctl::ctSockaddr listenAddress) : m_listenAddress(std::move(listenAddress))
 {
-    constexpr int DefaultSocketReceiveBufferSize = 1048576; // 1MB socket receive buffer
+    constexpr int defaultSocketReceiveBufferSize = 1048576; // 1MB socket receive buffer
 
     m_socket.reset(CreateDatagramSocket());
-    SetSocketReceiveBufferSize(m_socket.get(), DefaultSocketReceiveBufferSize); // TODO: add config parameter
+    SetSocketReceiveBufferSize(m_socket.get(), defaultSocketReceiveBufferSize); // TODO: add config parameter
 
-    auto error = bind(m_socket.get(), m_listenAddress.sockaddr(), m_listenAddress.length());
+    const auto error = bind(m_socket.get(), m_listenAddress.sockaddr(), m_listenAddress.length());
     if (SOCKET_ERROR == error)
     {
         THROW_WIN32_MSG(WSAGetLastError(), "bind failed");
     }
 
-    m_threadpoolIo = std::make_unique<ThreadpoolIo>(m_socket.get());
+    m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
 }
 
 void StreamServer::Start(unsigned long prePostRecvs)
@@ -34,23 +34,23 @@ void StreamServer::Start(unsigned long prePostRecvs)
 
 void StreamServer::InitiateReceive(ReceiveContext& receiveContext)
 {
-    receiveContext.remoteAddressLen = receiveContext.remoteAddress.length();
+    receiveContext.m_remoteAddressLen = receiveContext.m_remoteAddress.length();
 
     WSABUF wsabuf;
-    wsabuf.buf = receiveContext.buffer.data();
-    wsabuf.len = static_cast<ULONG>(receiveContext.buffer.size());
+    wsabuf.buf = receiveContext.m_buffer.data();
+    wsabuf.len = static_cast<ULONG>(receiveContext.m_buffer.size());
 
-    OVERLAPPED* ov = m_threadpoolIo->NewRequest(
-        [this, &receiveContext](OVERLAPPED* ov) noexcept { ReceiveCompletion(receiveContext, ov); });
+    OVERLAPPED* ov =
+        m_threadpoolIo->new_request([this, &receiveContext](OVERLAPPED* ov) noexcept { ReceiveCompletion(receiveContext, ov); });
 
     auto error = WSARecvFrom(
         m_socket.get(),
         &wsabuf,
         1,
         nullptr,
-        &receiveContext.receiveFlags,
-        receiveContext.remoteAddress.sockaddr(),
-        &receiveContext.remoteAddressLen,
+        &receiveContext.m_receiveFlags,
+        receiveContext.m_remoteAddress.sockaddr(),
+        &receiveContext.m_remoteAddressLen,
         ov,
         nullptr);
 
@@ -60,7 +60,7 @@ void StreamServer::InitiateReceive(ReceiveContext& receiveContext)
         if (WSA_IO_PENDING != error)
         {
             // must cancel the threadpool IO request
-            m_threadpoolIo->CancelRequest(ov);
+            m_threadpoolIo->cancel_request(ov);
             FAIL_FAST_WIN32_MSG(error, "WSARecvFrom failed");
         }
     }
@@ -69,31 +69,36 @@ void StreamServer::InitiateReceive(ReceiveContext& receiveContext)
 void StreamServer::ReceiveCompletion(ReceiveContext& receiveContext, OVERLAPPED* ov) noexcept
 {
     DWORD bytesReceived = 0;
-    if (WSAGetOverlappedResult(m_socket.get(), ov, &bytesReceived, FALSE, &receiveContext.receiveFlags))
+    if (WSAGetOverlappedResult(m_socket.get(), ov, &bytesReceived, FALSE, &receiveContext.m_receiveFlags))
     {
-        auto header = ExtractDatagramHeaderFromBuffer(receiveContext.buffer.data(), receiveContext.buffer.size());
+        const auto header = ExtractDatagramHeaderFromBuffer(receiveContext.m_buffer.data(), receiveContext.m_buffer.size());
 
-        PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.sequenceNumber);
+        PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
 
         // echo the data received
         WSABUF wsabuf;
-        wsabuf.buf = receiveContext.buffer.data();
+        wsabuf.buf = receiveContext.m_buffer.data();
         wsabuf.len = bytesReceived;
 
-        OVERLAPPED* echoOv = m_threadpoolIo->NewRequest([](OVERLAPPED*) noexcept {});
+        OVERLAPPED* echoOv = m_threadpoolIo->new_request([](OVERLAPPED*) noexcept {});
 
         auto error = WSASendTo(
-            m_socket.get(), &wsabuf, 1, nullptr, 0, receiveContext.remoteAddress.sockaddr(), receiveContext.remoteAddressLen, echoOv, nullptr);
+            m_socket.get(), &wsabuf, 1, nullptr, 0, receiveContext.m_remoteAddress.sockaddr(), receiveContext.m_remoteAddressLen, echoOv, nullptr);
         if (SOCKET_ERROR == error)
         {
             error = WSAGetLastError();
             if (WSA_IO_PENDING != error)
             {
                 // best effort send
-                m_threadpoolIo->CancelRequest(echoOv);
+                m_threadpoolIo->cancel_request(echoOv);
                 FAILED_WIN32_LOG(error);
             }
         }
+    }
+    else
+    {
+        const auto gle = WSAGetLastError();
+        PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - WSARecvFrom failed %u\n", gle);
     }
 
     // post another receive

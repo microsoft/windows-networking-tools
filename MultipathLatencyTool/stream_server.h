@@ -12,7 +12,7 @@ namespace multipath {
 class StreamServer
 {
 public:
-    StreamServer(const Sockaddr& listenAddress);
+    StreamServer(ctl::ctSockaddr listenAddress);
 
     ~StreamServer() noexcept = default;
 
@@ -25,25 +25,25 @@ public:
     StreamServer& operator=(StreamServer&&) = delete;
 
 private:
-    static constexpr std::size_t ReceiveBufferSize = 1024; // 1KB receive buffer
-    using ReceiveBuffer = std::array<char, ReceiveBufferSize>;
+    static constexpr std::size_t c_receiveBufferSize = 1024; // 1KB receive buffer
+    using ReceiveBuffer = std::array<char, c_receiveBufferSize>;
 
     struct ReceiveContext
     {
-        ReceiveBuffer buffer;
-        Sockaddr remoteAddress;
-        int remoteAddressLen;
-        DWORD receiveFlags;
+        ReceiveBuffer m_buffer;
+        ctl::ctSockaddr m_remoteAddress;
+        int m_remoteAddressLen;
+        DWORD m_receiveFlags;
     };
 
     void InitiateReceive(ReceiveContext& receiveContext);
 
     void ReceiveCompletion(ReceiveContext& receiveContext, OVERLAPPED* ov) noexcept;
 
-    Sockaddr m_listenAddress;
+    ctl::ctSockaddr m_listenAddress;
 
     wil::unique_socket m_socket;
-    std::unique_ptr<ThreadpoolIo> m_threadpoolIo;
+    std::unique_ptr<ctl::ctThreadIocp> m_threadpoolIo;
 
     std::vector<ReceiveContext> m_receiveContexts;
 };

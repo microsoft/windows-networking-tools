@@ -22,7 +22,7 @@ std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
     std::vector<GUID> primaryInterfaces{};
 
     PWLAN_INTERFACE_INFO_LIST primaryInterfaceList = nullptr;
-    auto error = WlanEnumInterfaces(wlanHandle, nullptr, &primaryInterfaceList);
+    const auto error = WlanEnumInterfaces(wlanHandle, nullptr, &primaryInterfaceList);
     if (ERROR_SUCCESS != error)
     {
         THROW_WIN32_MSG(error, "WlanEnumInterfaces failed");
@@ -42,10 +42,18 @@ std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
     return primaryInterfaces;
 }
 
+#ifndef wlan_intf_opcode_secondary_sta_synchronized_connections
+#define wlan_intf_opcode_secondary_sta_synchronized_connections WLAN_INTF_OPCODE(wlan_intf_opcode_ihv_start)
+#endif
+
+#ifndef wlan_intf_opcode_secondary_sta_interfaces
+#define wlan_intf_opcode_secondary_sta_interfaces WLAN_INTF_OPCODE(wlan_intf_opcode_ihv_start + 1)
+#endif
+
 void SetSecondaryInterfaceEnabled(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
 {
     BOOL enable = TRUE;
-    auto error = WlanSetInterface(
+    const auto error = WlanSetInterface(
         wlanHandle, &primaryInterfaceGuid, wlan_intf_opcode_secondary_sta_synchronized_connections, sizeof(BOOL), static_cast<PVOID>(&enable), nullptr);
     if (ERROR_SUCCESS != error)
     {
@@ -63,7 +71,7 @@ std::vector<GUID> GetSecondaryInterfaceGuids(HANDLE wlanHandle, const GUID& prim
     PWLAN_INTERFACE_INFO_LIST secondaryInterfaceList = nullptr;
     DWORD dataSize = 0;
 
-    auto error = WlanQueryInterface(
+    const auto error = WlanQueryInterface(
         wlanHandle,
         &primaryInterfaceGuid,
         wlan_intf_opcode_secondary_sta_interfaces,
@@ -88,8 +96,8 @@ std::vector<GUID> GetSecondaryInterfaceGuids(HANDLE wlanHandle, const GUID& prim
 
 struct WlanInterfaceGuids
 {
-    GUID primaryInterface;
-    GUID secondaryInterface;
+    GUID m_primaryInterface;
+    GUID m_secondaryInterface;
 };
 
 WlanInterfaceGuids GetWlanInterfaces(HANDLE wlanHandle)
@@ -103,7 +111,7 @@ WlanInterfaceGuids GetWlanInterfaces(HANDLE wlanHandle)
         SetSecondaryInterfaceEnabled(wlanHandle, primaryInterface);
 
         auto secondaryInterfaces = GetSecondaryInterfaceGuids(wlanHandle, primaryInterface);
-        if (secondaryInterfaces.size() > 0)
+        if (!secondaryInterfaces.empty())
         {
             // pull the first interface from the list
             return {primaryInterface, secondaryInterfaces.front()};
@@ -126,7 +134,7 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
         for (auto const& profile : profiles)
         {
             auto interfaceGuid = profile.NetworkAdapter().NetworkAdapterId();
-            if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.primaryInterface)
+            if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.m_primaryInterface)
             {
                 PRINT_DEBUG_INFO(
                     "\tWaitForConnectedWlanInterfaces [callback] - found primary interface connection profile\n");
@@ -136,7 +144,7 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
                     primaryConnected = true;
                 }
             }
-            else if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.secondaryInterface)
+            else if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.m_secondaryInterface)
             {
                 PRINT_DEBUG_INFO(
                     "\tWaitForConnectedWlanInterfaces [callback] - found secondary interface connection profile\n");
@@ -195,15 +203,15 @@ std::vector<int> GetConnectedWlanInterfaces(HANDLE wlanHandle)
 {
     std::vector<int> result;
 
-    auto wlanInterfaceGuids = GetWlanInterfaces(wlanHandle);
-    auto connected = WaitForConnectedWlanInterfaces(wlanInterfaceGuids);
+    const auto wlanInterfaceGuids = GetWlanInterfaces(wlanHandle);
+    const auto connected = WaitForConnectedWlanInterfaces(wlanInterfaceGuids);
 
     if (connected)
     {
         // both the primary and secondary interfaces are indicated as connected
         // convert the GUIDs to interface indexes that can be set on the sockets
-        result.push_back(ConvertInterfaceGuidToIndex(wlanInterfaceGuids.primaryInterface));
-        result.push_back(ConvertInterfaceGuidToIndex(wlanInterfaceGuids.secondaryInterface));
+        result.push_back(ConvertInterfaceGuidToIndex(wlanInterfaceGuids.m_primaryInterface));
+        result.push_back(ConvertInterfaceGuidToIndex(wlanInterfaceGuids.m_secondaryInterface));
     }
 
     return result;

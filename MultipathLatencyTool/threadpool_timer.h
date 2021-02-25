@@ -81,16 +81,16 @@ inline long long SnapQpc() noexcept
 inline long long SnapQpcInMillis() noexcept
 {
     // snap the frequency on first call; C++11 guarantees this is thread-safe
-    static const long long qpf = []() {
-        LARGE_INTEGER _qpf;
-        QueryPerformanceFrequency(&_qpf);
-        return _qpf.QuadPart;
+    static const long long c_qpf = []() {
+        LARGE_INTEGER qpf;
+        QueryPerformanceFrequency(&qpf);
+        return qpf.QuadPart;
     }();
 
-    auto qpc = SnapQpc();
+    const auto qpc = SnapQpc();
 
     // multiply by 1000 as (qpc / qpf) is in seconds
-    return static_cast<long long>(qpc * 1000LL / qpf);
+    return static_cast<long long>(qpc * 1000LL / c_qpf);
 }
 
 using ThreadpoolTimerCallback = std::function<void()>;
@@ -98,10 +98,10 @@ using ThreadpoolTimerCallback = std::function<void()>;
 class ThreadpoolTimer
 {
 public:
-    explicit ThreadpoolTimer(ThreadpoolTimerCallback _callback, PTP_CALLBACK_ENVIRON _ptpEnv = nullptr) :
-        m_callback(std::move(_callback))
+    explicit ThreadpoolTimer(ThreadpoolTimerCallback callback, PTP_CALLBACK_ENVIRON ptpEnv = nullptr) :
+        m_callback(std::move(callback))
     {
-        m_ptpTimer = CreateThreadpoolTimer(TimerCallback, this, _ptpEnv);
+        m_ptpTimer = CreateThreadpoolTimer(TimerCallback, this, ptpEnv);
         THROW_LAST_ERROR_IF_MSG(!m_ptpTimer, "CreateThreadpoolTimer failed");
     }
 
@@ -112,13 +112,17 @@ public:
 
         WaitForThreadpoolTimerCallbacks(m_ptpTimer, TRUE);
     }
+    ThreadpoolTimer(const ThreadpoolTimer&) = delete;
+    ThreadpoolTimer& operator=(const ThreadpoolTimer&) = delete;
+    ThreadpoolTimer(ThreadpoolTimer&&) = delete;
+    ThreadpoolTimer& operator=(ThreadpoolTimer&&) = delete;
 
-    void Schedule(FILETIME dueTime)
+    void Schedule(FILETIME dueTime) const
     {
         SetThreadpoolTimer(m_ptpTimer, &dueTime, 0, 0);
     }
 
-    void Stop()
+    void Stop() const
     {
         if (m_ptpTimer)
         {
