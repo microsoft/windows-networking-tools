@@ -312,6 +312,7 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             args.erase(foundPrePostRecvs);
         }
 
+        // Undocumented options for debug purpose
         auto foundConsoleVerbosity =
             std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-consoleverbosity"); });
         if (foundConsoleVerbosity != args.end())
@@ -325,6 +326,21 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             SetConsoleVerbosity(integer_cast<unsigned long>(value));
 
             args.erase(foundConsoleVerbosity);
+        }
+
+        auto foundLocalDebug =
+            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-localdebug"); });
+        if (foundLocalDebug != args.end())
+        {
+            auto value = ParseArgument(*foundLocalDebug);
+            if (value.empty())
+            {
+                throw std::invalid_argument("-foundLocalDebug missing parameter");
+            }
+
+            SetLocalDebugMode(integer_cast<unsigned long>(value) != 0);
+
+            args.erase(foundLocalDebug);
         }
     }
     catch (const wil::ResultException& ex)
@@ -390,18 +406,28 @@ int __cdecl wmain(int argc, const wchar_t** argv)
                 config.m_targetAddress.SetPort(config.m_port);
             }
 
-            // must have this handle open until we are done to keep the second STA port active
-            wil::unique_wlan_handle wlanHandle;
-
-            DWORD clientVersion = 2; // Vista+ APIs
-            DWORD curVersion = 0;
-            error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
-            if (ERROR_SUCCESS != error)
+            if (!LocalDebugMode())
             {
-                FAIL_FAST_WIN32_MSG(error, "WlanOpenHandle failed");
+
+                // must have this handle open until we are done to keep the second STA port active
+                wil::unique_wlan_handle wlanHandle;
+
+                DWORD clientVersion = 2; // Vista+ APIs
+                DWORD curVersion = 0;
+                error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
+                if (ERROR_SUCCESS != error)
+                {
+                    FAIL_FAST_WIN32_MSG(error, "WlanOpenHandle failed");
+                }
+
+                config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
+            }
+            else
+            {
+                config.m_bindInterfaces.push_back(0);
+                config.m_bindInterfaces.push_back(0);
             }
 
-            config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
             if (config.m_bindInterfaces.size() != 2)
             {
                 throw std::runtime_error("two connected interfaces are required to run the client");

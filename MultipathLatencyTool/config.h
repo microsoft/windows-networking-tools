@@ -11,12 +11,11 @@ struct Configuration
     static constexpr unsigned long c_testSendBitrate = 1024 * 8;
     static constexpr unsigned long c_testFramerate = 1;
 
-    static constexpr unsigned long c_defaultFramerate = 30;
-
     static constexpr unsigned long c_sendBitrateSd = 3 * 1024 * 1024; // 3 megabits per second
     static constexpr unsigned long c_sendBitrateHd = 5 * 1024 * 1024; // 5 megabits per second
     static constexpr unsigned long c_sendBitrate4K = 25 * 1024 * 1024; // 25 megabits per second
     static constexpr unsigned long c_defaultBitrate = c_sendBitrateHd;
+    static constexpr unsigned long c_defaultFramerate = 30;
 
     static constexpr unsigned short c_defaultPort = 8888;
 
