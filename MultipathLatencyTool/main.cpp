@@ -251,6 +251,10 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             {
                 config.m_bitrate = Configuration::c_sendBitrate4K;
             }
+            else if (L"test" == value)
+            {
+                config.m_bitrate = Configuration::c_testSendBitrate;
+            }
             else
             {
                 throw std::invalid_argument("-bitrate value must be one of: sd, hd, 4k");
@@ -335,7 +339,7 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             auto value = ParseArgument(*foundLocalDebug);
             if (value.empty())
             {
-                throw std::invalid_argument("-foundLocalDebug missing parameter");
+                throw std::invalid_argument("-localdebug missing parameter");
             }
 
             SetLocalDebugMode(integer_cast<unsigned long>(value) != 0);
