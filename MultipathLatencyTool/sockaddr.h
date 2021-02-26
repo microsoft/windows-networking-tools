@@ -82,8 +82,8 @@ namespace ctl
         };
 
         explicit ctSockaddr(short family = AF_UNSPEC, AddressType type = AddressType::Any) noexcept;
-        explicit ctSockaddr(_In_reads_bytes_(inLength) const SOCKADDR*, int) noexcept;
-        explicit ctSockaddr(_In_reads_bytes_(inLength) const SOCKADDR*, size_t) noexcept;
+        explicit ctSockaddr(_In_reads_bytes_(inLength) const SOCKADDR*, int inLength) noexcept;
+        explicit ctSockaddr(_In_reads_bytes_(inLength) const SOCKADDR*, size_t inLength) noexcept;
         explicit ctSockaddr(const SOCKADDR_IN*) noexcept;
         explicit ctSockaddr(const SOCKADDR_IN6*) noexcept;
         explicit ctSockaddr(const SOCKADDR_INET*) noexcept;

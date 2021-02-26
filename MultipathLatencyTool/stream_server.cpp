@@ -75,24 +75,17 @@ void StreamServer::ReceiveCompletion(ReceiveContext& receiveContext, OVERLAPPED*
 
         PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
 
-        // echo the data received
+        // echo the data received. A synchronous send is enough.
         WSABUF wsabuf;
         wsabuf.buf = receiveContext.m_buffer.data();
         wsabuf.len = bytesReceived;
 
-        OVERLAPPED* echoOv = m_threadpoolIo->new_request([](OVERLAPPED*) noexcept {});
-
         auto error = WSASendTo(
-            m_socket.get(), &wsabuf, 1, nullptr, 0, receiveContext.m_remoteAddress.sockaddr(), receiveContext.m_remoteAddressLen, echoOv, nullptr);
+            m_socket.get(), &wsabuf, 1, nullptr, 0, receiveContext.m_remoteAddress.sockaddr(), receiveContext.m_remoteAddressLen, nullptr, nullptr);
         if (SOCKET_ERROR == error)
         {
-            error = WSAGetLastError();
-            if (WSA_IO_PENDING != error)
-            {
-                // best effort send
-                m_threadpoolIo->cancel_request(echoOv);
-                FAILED_WIN32_LOG(error);
-            }
+            // best effort send
+            FAILED_WIN32_LOG(WSAGetLastError());
         }
     }
     else

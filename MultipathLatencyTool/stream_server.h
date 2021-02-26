@@ -30,10 +30,10 @@ private:
 
     struct ReceiveContext
     {
-        ReceiveBuffer m_buffer;
-        ctl::ctSockaddr m_remoteAddress;
-        int m_remoteAddressLen;
-        DWORD m_receiveFlags;
+        ReceiveBuffer m_buffer{};
+        ctl::ctSockaddr m_remoteAddress{};
+        int m_remoteAddressLen = 0;
+        DWORD m_receiveFlags = 0;
     };
 
     void InitiateReceive(ReceiveContext& receiveContext);
