@@ -412,7 +412,6 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
             if (!LocalDebugMode())
             {
-
                 // must have this handle open until we are done to keep the second STA port active
                 wil::unique_wlan_handle wlanHandle;
 
@@ -428,6 +427,7 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             }
             else
             {
+                // For debugging, use only the default interface
                 config.m_bindInterfaces.push_back(0);
                 config.m_bindInterfaces.push_back(0);
             }

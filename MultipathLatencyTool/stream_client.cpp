@@ -169,7 +169,7 @@ void StreamClient::PrintStatistics()
         long long aggregatedLatency = 0;
         if (stat.m_sequenceNumber > 0)
         {
-            if (stat.m_primaryLatencyMs > 0)
+            if (stat.m_primaryLatencyMs >= 0)
             {
                 primaryLatencyTotal += stat.m_primaryLatencyMs;
                 primaryLatencySamples += 1;
@@ -180,7 +180,7 @@ void StreamClient::PrintStatistics()
                 primaryLostFrames += 1;
             }
 
-            if (stat.m_secondaryLatencyMs > 0)
+            if (stat.m_secondaryLatencyMs >= 0)
             {
                 secondaryLatencyTotal += stat.m_secondaryLatencyMs;
                 secondaryLatencySamples += 1;
@@ -191,7 +191,7 @@ void StreamClient::PrintStatistics()
                 secondaryLostFrames += 1;
             }
 
-            if (aggregatedLatency > 0)
+            if (aggregatedLatency >= 0)
             {
                 aggregatedLatencyTotal += aggregatedLatency;
                 aggregatedLatencySamples += 1;
