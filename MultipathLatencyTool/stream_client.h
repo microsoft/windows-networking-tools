@@ -18,7 +18,7 @@ class StreamClient
 public:
     StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, int secondaryInterfaceIndex, HANDLE completeEvent);
 
-    void Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
+    void Start(unsigned long receiveBufferCount, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
     void Stop();
 
     void PrintStatistics();
@@ -82,7 +82,7 @@ private:
         // whether the this socket is the primary or secondary
         Interface m_interface;
 
-        // the contexts used for each posted recieve
+        // the contexts used for each posted receive
         std::vector<ReceiveState> m_receiveStates;
 
         long long m_sentFrames = 0;

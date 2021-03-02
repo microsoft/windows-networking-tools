@@ -29,7 +29,7 @@ inline void SetSocketOutgoingInterface(SOCKET socket, short family, int outgoing
     {
         // interface index should be in network byte order for IPPROTO_IP
         const DWORD value = htonl(outgoingIfIndex);
-        const auto length = static_cast<int>(sizeof(value));
+        const auto length = sizeof(value);
         const auto error = setsockopt(socket, IPPROTO_IP, IP_UNICAST_IF, reinterpret_cast<const char*>(&value), length);
         if (ERROR_SUCCESS != error)
         {
@@ -39,7 +39,7 @@ inline void SetSocketOutgoingInterface(SOCKET socket, short family, int outgoing
     else if (family == AF_INET6)
     {
         // interface index should be in host byte order for IPPROTO_IPV6
-        const auto length = static_cast<int>(sizeof(outgoingIfIndex));
+        const auto length = sizeof(outgoingIfIndex);
         const auto error = setsockopt(socket, IPPROTO_IPV6, IPV6_UNICAST_IF, reinterpret_cast<const char*>(&outgoingIfIndex), length);
         if (ERROR_SUCCESS != error)
         {
@@ -52,14 +52,14 @@ inline void SetSocketOutgoingInterface(SOCKET socket, short family, int outgoing
     }
 }
 
-inline void SetSocketReceiveBufferSize(SOCKET socket, DWORD size)
+inline void SetSocketReceiveBufferSize(SOCKET socket, int size)
 {
-    const auto value = size;
-    const auto length = static_cast<int>(sizeof(value));
-    const auto error = setsockopt(socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&value), length);
+    const auto optionValue = size;
+    const auto optionLength = sizeof(optionValue);
+    const auto error = setsockopt(socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&optionValue), optionLength);
     if (ERROR_SUCCESS != error)
     {
-        THROW_WIN32_MSG(WSAGetLastError(), "setsocktopt(SOL_SOCKET, SO_RCVBUF) failed");
+        THROW_WIN32_MSG(WSAGetLastError(), "setsocktopt(SOL_SOCKET, SO_RCVBUF) failed to set a buffer size of %i", size);
     }
 }
 

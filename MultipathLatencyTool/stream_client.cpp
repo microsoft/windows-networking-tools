@@ -63,13 +63,13 @@ StreamClient::StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIn
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
 }
 
-void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
+void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
 {
-    PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", prePostRecvs);
+    PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", receiveBufferCount);
 
     // allocate our receive contexts
-    m_primaryState.m_receiveStates.resize(prePostRecvs);
-    m_secondaryState.m_receiveStates.resize(prePostRecvs);
+    m_primaryState.m_receiveStates.resize(receiveBufferCount);
+    m_secondaryState.m_receiveStates.resize(receiveBufferCount);
 
     // initialize our send buffer
     for (size_t i = 0u; i < c_sendBufferSize / 2; ++i)
@@ -97,7 +97,7 @@ void StreamClient::Start(unsigned long prePostRecvs, unsigned long sendBitRate, 
     bool initiateIo = false;
 
     const HANDLE events[2] = {m_primaryState.m_connectEvent.get(), m_secondaryState.m_connectEvent.get()};
-    const auto result = WaitForMultipleObjects(2, events, TRUE, 2000); // 2 second delay for connect to complete
+    const auto result = WaitForMultipleObjects(2, events, true, 2000); // 2 second delay for connect to complete
     switch (result)
     {
     case WAIT_OBJECT_0:
@@ -138,7 +138,7 @@ void StreamClient::Stop()
 {
     m_stopCalled = true;
 
-    PRINT_DEBUG_INFO("\tStreamClient::Stop - cancelling timer callback\n");
+    PRINT_DEBUG_INFO("\tStreamClient::Stop - canceling timer callback\n");
     m_threadpoolTimer->Stop();
 
     PRINT_DEBUG_INFO("\tStreamClient::Stop - closing sockets\n");
@@ -251,7 +251,7 @@ void StreamClient::Connect(SocketState& socketState)
 
     // since the server will echo this message back, we also post a receive to confirm the connection and discard the response
 
-    static int targetAddressLength = m_targetAddress.length();
+    int targetAddressLength = m_targetAddress.length();
 
     auto& receiveBuffer = socketState.m_receiveStates[0].m_buffer; // just use the first receive buffer
 
@@ -306,7 +306,7 @@ void StreamClient::TimerCallback() noexcept
     }
     else
     {
-        PRINT_DEBUG_INFO("\tStreamClient::TimerCallback - final sequence number sent, cancelling timer callback\n");
+        PRINT_DEBUG_INFO("\tStreamClient::TimerCallback - final sequence number sent, canceling timer callback\n");
 
         FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "FATAL: Exceeded the expected number of packets sent");
 

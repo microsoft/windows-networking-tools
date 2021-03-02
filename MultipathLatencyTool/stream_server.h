@@ -16,7 +16,7 @@ public:
 
     ~StreamServer() noexcept = default;
 
-    void Start(unsigned long prePostRecvs);
+    void Start(unsigned long receiveBufferCount);
 
     // not copyable or movable
     StreamServer(const StreamServer&) = delete;
@@ -38,7 +38,7 @@ private:
 
     void InitiateReceive(ReceiveContext& receiveContext);
 
-    void ReceiveCompletion(ReceiveContext& receiveContext, OVERLAPPED* ov) noexcept;
+    void CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* ov) noexcept;
 
     ctl::ctSockaddr m_listenAddress;
 
