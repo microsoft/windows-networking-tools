@@ -94,44 +94,22 @@ void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBit
     Connect(m_primaryState);
     Connect(m_secondaryState);
 
-    bool initiateIo = false;
+    PRINT_DEBUG_INFO("\tStreamClient::Start - connected on both sockets\n");
 
-    const HANDLE events[2] = {m_primaryState.m_connectEvent.get(), m_secondaryState.m_connectEvent.get()};
-    const auto result = WaitForMultipleObjects(2, events, true, 2000); // 2 second delay for connect to complete
-    switch (result)
+    PRINT_DEBUG_INFO("\tStreamClient::Start - start posting receives\n");
+    // initiate receives before starting the send timer
+    for (auto& receiveState : m_primaryState.m_receiveStates)
     {
-    case WAIT_OBJECT_0:
-        [[fallthrough]];
-    case WAIT_OBJECT_0 + 1:
-        initiateIo = true;
-        break;
-
-    case WAIT_TIMEOUT:
-        THROW_WIN32_MSG(ERROR_TIMEOUT, "Timed out waiting for connect to complete on both sockets");
-
-    default:
-        FAIL_FAST_WIN32_MSG(GetLastError(), "WaitForMultipleObjects failed");
+        InitiateReceive(m_primaryState, receiveState);
+    }
+    for (auto& receiveState : m_secondaryState.m_receiveStates)
+    {
+        InitiateReceive(m_secondaryState, receiveState);
     }
 
-    if (initiateIo)
-    {
-        PRINT_DEBUG_INFO("\tStreamClient::Start - connected on both sockets\n");
-
-        PRINT_DEBUG_INFO("\tStreamClient::Start - start posting receives\n");
-        // initiate receives before starting the send timer
-        for (auto& receiveState : m_primaryState.m_receiveStates)
-        {
-            InitiateReceive(m_primaryState, receiveState);
-        }
-        for (auto& receiveState : m_secondaryState.m_receiveStates)
-        {
-            InitiateReceive(m_secondaryState, receiveState);
-        }
-
-        // start sends
-        PRINT_DEBUG_INFO("\tStreamClient::Start - scheduling timer callback\n");
-        m_threadpoolTimer->Schedule(m_tickInterval);
-    }
+    // start sends
+    PRINT_DEBUG_INFO("\tStreamClient::Start - scheduling timer callback\n");
+    m_threadpoolTimer->Schedule(m_tickInterval);
 }
 
 void StreamClient::Stop()
@@ -256,8 +234,7 @@ void StreamClient::Connect(SocketState& socketState)
         FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSASendTo failed");
     }
 
-    // since the server will echo this message back, we also post a receive to confirm the connection and discard the response
-
+    // since the server will echo this message back, wait for the answer.
     int targetAddressLength = m_targetAddress.length();
     auto& receiveBuffer = socketState.m_receiveStates[0].m_buffer; // just use the first receive buffer
 
@@ -265,33 +242,12 @@ void StreamClient::Connect(SocketState& socketState)
     recvWsabuf.buf = receiveBuffer.data();
     recvWsabuf.len = static_cast<ULONG>(receiveBuffer.size());
 
-    OVERLAPPED* ov = socketState.m_threadpoolIo->new_request([this, &_socketState = socketState](OVERLAPPED* ov) noexcept {
-        DWORD bytesTransferred = 0; // unused
-        DWORD flags = 0; // unused
-        if (!WSAGetOverlappedResult(_socketState.m_socket.get(), ov, &bytesTransferred, FALSE, &flags))
-        {
-            const auto lastError = WSAGetLastError();
-            FAIL_FAST_WIN32_MSG(lastError, "WSARecvFrom failed : %u", lastError);
-        }
-
-        _socketState.m_connectEvent.SetEvent();
-
-        PRINT_DEBUG_INFO(
-            "\tStreamClient::Connect [callback] - successfully received echo'd start message on %s socket %zu\n",
-            _socketState.m_interface == Interface::Primary ? "primary" : "secondary",
-            _socketState.m_socket.get());
-    });
-
     DWORD flags = 0;
     error = WSARecvFrom(
-        socketState.m_socket.get(), &recvWsabuf, 1, nullptr, &flags, m_targetAddress.sockaddr(), &targetAddressLength, ov, nullptr);
+        socketState.m_socket.get(), &recvWsabuf, 1, &bytesTransferred, &flags, m_targetAddress.sockaddr(), &targetAddressLength, nullptr, nullptr);
     if (SOCKET_ERROR == error)
     {
-        error = WSAGetLastError();
-        if (WSA_IO_PENDING != error)
-        {
-            THROW_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed");
-        }
+        FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed");
     }
 }
 

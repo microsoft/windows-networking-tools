@@ -74,8 +74,6 @@ private:
         wil::unique_socket m_socket;
         std::unique_ptr<ctl::ctThreadIocp> m_threadpoolIo;
 
-        wil::unique_event m_connectEvent{wil::EventOptions::ManualReset};
-
         // the interface index the socket will send outgoing data
         int m_interfaceIndex;
 
