@@ -70,8 +70,10 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
     DWORD bytesReceived = 0;
     if (WSAGetOverlappedResult(m_socket.get(), ov, &bytesReceived, false, &receiveContext.m_receiveFlags))
     {
-        const auto header = ExtractDatagramHeaderFromBuffer(receiveContext.m_buffer.data(), receiveContext.m_buffer.size());
+        auto& header = *reinterpret_cast<DatagramHeader*>(receiveContext.m_buffer.data());
 
+        // Update the echo timestamp
+        QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&header.m_echoTimestamp));
         PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
 
         // echo the data received. A synchronous send is enough.

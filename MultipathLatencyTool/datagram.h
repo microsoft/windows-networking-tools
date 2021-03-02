@@ -5,25 +5,27 @@
 
 namespace multipath {
 
-constexpr const char* c_startMessage = "START";
-constexpr size_t c_startMessageLength = 5; // no null terminator
-
 constexpr unsigned long c_datagramSequenceNumberLength = 8;
 constexpr unsigned long c_datagramTimestampLength = 8;
-constexpr unsigned long c_datagramHeaderLength = c_datagramSequenceNumberLength + c_datagramTimestampLength;
+constexpr unsigned long c_datagramHeaderLength = c_datagramSequenceNumberLength + 2 * c_datagramTimestampLength;
 
 struct DatagramHeader
 {
     long long m_sequenceNumber;
-    long long m_qpc;
+    long long m_sendTimestamp;
+    long long m_echoTimestamp;
 };
+
+static_assert(sizeof(DatagramHeader) == c_datagramHeaderLength);
+static_assert(c_datagramHeaderLength == c_datagramSequenceNumberLength + 2 * c_datagramTimestampLength);
 
 class DatagramSendRequest
 {
 private:
     static constexpr int c_datagramSequenceNumberOffset = 0;
-    static constexpr int c_datagramTimestampOffset = 1;
-    static constexpr int c_datagramPayloadOffset = 2;
+    static constexpr int c_datagramSendTimestampOffset = 1;
+    static constexpr int c_datagramEchoTimestampOffset = 2;
+    static constexpr int c_datagramPayloadOffset = 3;
 
 public:
     ~DatagramSendRequest() = default;
@@ -34,40 +36,45 @@ public:
     DatagramSendRequest(DatagramSendRequest&&) = delete;
     DatagramSendRequest& operator=(DatagramSendRequest&&) = delete;
 
-    static constexpr size_t c_bufferArraySize = 3;
+    static constexpr size_t c_bufferArraySize = 4;
     using BufferArray = std::array<WSABUF, c_bufferArraySize>;
 
     DatagramSendRequest(long long sequenceNumber, const char* sendBuffer, size_t sendBufferLength) :
         m_sequenceNumber(sequenceNumber)
     {
-        // buffer layout: sequence number, timestamp (QPC), then buffer data
+        static_assert(c_bufferArraySize == c_datagramPayloadOffset + 1);
+
+        // buffer layout: sequence number, send timestamp (QPC), echo timestamp (QPC), then buffer data
         m_wsabufs[c_datagramSequenceNumberOffset].buf = reinterpret_cast<char*>(&m_sequenceNumber);
         m_wsabufs[c_datagramSequenceNumberOffset].len = c_datagramSequenceNumberLength;
 
-        m_wsabufs[c_datagramTimestampOffset].buf = reinterpret_cast<char*>(&m_qpc.QuadPart);
-        m_wsabufs[c_datagramTimestampOffset].len = c_datagramTimestampLength;
+        m_wsabufs[c_datagramSendTimestampOffset].buf = reinterpret_cast<char*>(&m_sendTimestamp.QuadPart);
+        m_wsabufs[c_datagramSendTimestampOffset].len = c_datagramTimestampLength;
+
+        m_wsabufs[c_datagramEchoTimestampOffset].buf = reinterpret_cast<char*>(&m_echoTimestamp.QuadPart);
+        m_wsabufs[c_datagramEchoTimestampOffset].len = c_datagramTimestampLength;
 
         m_wsabufs[c_datagramPayloadOffset].buf = const_cast<char*>(sendBuffer);
         m_wsabufs[c_datagramPayloadOffset].len = static_cast<ULONG>(sendBufferLength - c_datagramHeaderLength);
-        static_assert(c_datagramHeaderLength == c_datagramSequenceNumberLength + c_datagramTimestampLength);
     }
 
     BufferArray& GetBuffers() noexcept
     {
         // refresh QPC value at last possible moment
-        QueryPerformanceCounter(&m_qpc);
+        QueryPerformanceCounter(&m_sendTimestamp);
         return m_wsabufs;
     }
 
     [[nodiscard]] long long GetQpc() const noexcept
     {
-        return m_qpc.QuadPart;
+        return m_sendTimestamp.QuadPart;
     }
 
 private:
     BufferArray m_wsabufs{};
-    LARGE_INTEGER m_qpc{};
     long long m_sequenceNumber = 0;
+    LARGE_INTEGER m_sendTimestamp{};
+    LARGE_INTEGER m_echoTimestamp{};
 };
 
 inline bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/, size_t completedBytes) noexcept
@@ -80,23 +87,9 @@ inline bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/
     return true;
 }
 
-inline DatagramHeader ExtractDatagramHeaderFromBuffer(const char* buffer, size_t /*bufferLength*/) noexcept
+inline DatagramHeader& ParseDatagramHeader(char* buffer) noexcept
 {
-    DatagramHeader header{};
-
-    auto error = memcpy_s(&header.m_sequenceNumber, c_datagramSequenceNumberLength, buffer, c_datagramSequenceNumberLength);
-    FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the sequence number: %d", error);
-
-    buffer += c_datagramSequenceNumberLength;
-    error = memcpy_s(&header.m_qpc, c_datagramTimestampLength, buffer, c_datagramTimestampLength);
-    FAIL_FAST_IF_MSG(error != 0, "ExtractDatagramHeaderFromBuffer: memcpy_s failed trying to copy the timestamp: %d", error);
-
-    return header;
-}
-
-inline const char* ExtractDatagramPayloadFromBuffer(const char* buffer, size_t /*bufferLength*/) noexcept
-{
-    return buffer + c_datagramHeaderLength;
+    return *reinterpret_cast<DatagramHeader*>(buffer);
 }
 
 } // namespace multipath

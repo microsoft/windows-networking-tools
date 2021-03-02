@@ -55,7 +55,7 @@ private:
         ctl::ctSockaddr m_remoteAddress{};
         int m_remoteAddressLen{};
         ReceiveBuffer m_buffer{};
-        long long m_qpc{};
+        long long m_receiveTimestamp{};
     };
 
     struct SocketState

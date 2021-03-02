@@ -229,11 +229,9 @@ void StreamClient::PrintStatistics()
 void StreamClient::Connect(SocketState& socketState)
 {
     // simulate a connect call so that our sockets become bound to their respective interface's IP addresses
-
-    // start message
-    WSABUF wsabuf{};
-    wsabuf.buf = const_cast<char*>(c_startMessage);
-    wsabuf.len = c_startMessageLength;
+    constexpr long long startSequenceNumber = -1;
+    DatagramSendRequest sendRequest{startSequenceNumber, m_sharedSendBuffer.data(), m_sharedSendBuffer.size()};
+    auto& buffers = sendRequest.GetBuffers();
 
     PRINT_DEBUG_INFO(
         "\tStreamClient::Connect - sending start message on %s socket %zu - sending to %ws\n",
@@ -243,16 +241,24 @@ void StreamClient::Connect(SocketState& socketState)
 
     DWORD bytesTransferred = 0;
     auto error = WSASendTo(
-        socketState.m_socket.get(), &wsabuf, 1, &bytesTransferred, 0, m_targetAddress.sockaddr(), m_targetAddress.length(), nullptr, nullptr);
+        socketState.m_socket.get(),
+        buffers.data(),
+        static_cast<DWORD>(buffers.size()),
+        &bytesTransferred,
+        0,
+        m_targetAddress.sockaddr(),
+        m_targetAddress.length(),
+        nullptr,
+        nullptr);
+
     if (SOCKET_ERROR == error)
     {
-        THROW_WIN32_MSG(WSAGetLastError(), "WSASendTo failed");
+        FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSASendTo failed");
     }
 
     // since the server will echo this message back, we also post a receive to confirm the connection and discard the response
 
     int targetAddressLength = m_targetAddress.length();
-
     auto& receiveBuffer = socketState.m_receiveStates[0].m_buffer; // just use the first receive buffer
 
     WSABUF recvWsabuf{};
@@ -264,8 +270,8 @@ void StreamClient::Connect(SocketState& socketState)
         DWORD flags = 0; // unused
         if (!WSAGetOverlappedResult(_socketState.m_socket.get(), ov, &bytesTransferred, FALSE, &flags))
         {
-            const auto gle = WSAGetLastError();
-            FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed : %u", gle);
+            const auto lastError = WSAGetLastError();
+            FAIL_FAST_WIN32_MSG(lastError, "WSARecvFrom failed : %u", lastError);
         }
 
         _socketState.m_connectEvent.SetEvent();
@@ -447,12 +453,12 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
     wsabuf.buf = receiveState.m_buffer.data();
     wsabuf.len = static_cast<ULONG>(receiveState.m_buffer.size());
 
-    auto callback = [this, &_socketState = socketState, &_receiveState = receiveState](OVERLAPPED* ov) noexcept {
-        _receiveState.m_qpc = SnapQpc();
+    auto callback = [this, &socketState, &receiveState](OVERLAPPED* ov) noexcept {
+        receiveState.m_receiveTimestamp = SnapQpc();
 
-        auto lock = _socketState.m_lock.lock();
+        auto lock = socketState.m_lock.lock();
 
-        if (m_stopCalled || !_socketState.m_socket.is_valid())
+        if (m_stopCalled || !socketState.m_socket.is_valid())
         {
             PRINT_DEBUG_INFO("\tStreamClient::InitiateReceive [callback] - Shutting down or socket is no longer valid, "
                              "ignoring receive completion\n");
@@ -461,15 +467,15 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
 
         DWORD bytesTransferred = 0;
         DWORD flags = 0;
-        if (!WSAGetOverlappedResult(_socketState.m_socket.get(), ov, &bytesTransferred, FALSE, &flags))
+        if (!WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransferred, FALSE, &flags))
         {
             const auto gle = WSAGetLastError();
             FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed  : %u", gle);
         }
 
-        ReceiveCompletion(_socketState, _receiveState, bytesTransferred);
+        ReceiveCompletion(socketState, receiveState, bytesTransferred);
 
-        InitiateReceive(_socketState, _receiveState);
+        InitiateReceive(socketState, receiveState);
     };
 
     DWORD bytesTransferred = 0;
@@ -505,7 +511,7 @@ try
 {
     FAIL_FAST_IF_MSG(!ValidateBufferLength(receiveState.m_buffer.data(), receiveState.m_buffer.size(), messageSize), "Received invalid message");
 
-    const auto header = ExtractDatagramHeaderFromBuffer(receiveState.m_buffer.data(), messageSize);
+    const auto& header = ParseDatagramHeader(receiveState.m_buffer.data());
 
     PRINT_DEBUG_INFO(
         "\tStreamClient::ReceiveCompletion - received sequence number %lld on %s socket %zu\n",
@@ -528,11 +534,11 @@ try
 
     if (socketState.m_interface == Interface::Primary)
     {
-        stat.m_primaryLatencyMs = ConvertHundredNanosToMillis(receiveState.m_qpc - header.m_qpc);
+        stat.m_primaryLatencyMs = ConvertHundredNanosToMillis(receiveState.m_receiveTimestamp - header.m_sendTimestamp);
     }
     else
     {
-        stat.m_secondaryLatencyMs = ConvertHundredNanosToMillis(receiveState.m_qpc - header.m_qpc);
+        stat.m_secondaryLatencyMs = ConvertHundredNanosToMillis(receiveState.m_receiveTimestamp - header.m_sendTimestamp);
     }
 }
 catch (...)
