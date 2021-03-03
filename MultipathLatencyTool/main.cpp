@@ -399,9 +399,8 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
             std::wcout << L"Listening for data...\n";
 
-            for (;;)
-            {
-            }
+            // Sleep until the program is interrupted with Ctrl-C
+            Sleep(INFINITE);
         }
         else
         {

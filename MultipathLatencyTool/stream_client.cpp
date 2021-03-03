@@ -239,12 +239,16 @@ void StreamClient::Connect(SocketState& socketState)
     }
 
     // since the server will echo this message back, wait for the answer.
+    // this use a blocking call, it could block the program if the packet is lost
     int targetAddressLength = m_targetAddress.length();
     auto& receiveBuffer = socketState.m_receiveStates[0].m_buffer; // just use the first receive buffer
 
     WSABUF recvWsabuf{};
     recvWsabuf.buf = receiveBuffer.data();
     recvWsabuf.len = static_cast<ULONG>(receiveBuffer.size());
+
+    PRINT_DEBUG_INFO(
+        "\tStreamClient::Connect - listening from the answer from %ws\n", m_targetAddress.WriteCompleteAddress().c_str());
 
     DWORD flags = 0;
     error = WSARecvFrom(
