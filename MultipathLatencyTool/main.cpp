@@ -267,6 +267,85 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
     return config;
 }
 
+void RunServerMode(Configuration& config)
+{
+    if (config.m_listenAddress.port() == 0)
+    {
+        config.m_listenAddress.SetPort(config.m_port);
+    }
+
+    std::wcout << L"Starting the echo server...\n";
+
+    StreamServer server(config.m_listenAddress);
+    server.Start(config.m_prePostRecvs);
+
+    std::wcout << L"Listening for data...\n";
+
+    // Sleep until the program is interrupted with Ctrl-C
+    Sleep(INFINITE);
+}
+
+void RunClientMode(Configuration& config)
+{
+    if (config.m_targetAddress.port() == 0)
+    {
+        config.m_targetAddress.SetPort(config.m_port);
+    }
+
+    // must have this handle open until we are done to keep the second STA port active
+    wil::unique_wlan_handle wlanHandle;
+
+    if (!config.m_ignoreDualSta)
+    {
+        DWORD clientVersion = 2; // Vista+ APIs
+        DWORD curVersion = 0;
+        auto error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
+        FAIL_FAST_IF_WIN32_ERROR_MSG(error, "WlanOpenHandle failed");
+
+        config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
+    }
+    else
+    {
+        // For debugging, use only the default interface
+        config.m_bindInterfaces.push_back(0);
+        config.m_bindInterfaces.push_back(0);
+    }
+
+    if (config.m_bindInterfaces.size() != 2)
+    {
+        throw std::runtime_error("two connected interfaces are required to run the client");
+    }
+
+    std::wcout << L"Bind Interfaces:\n";
+    std::wcout << L'\t' << config.m_bindInterfaces[0] << L'\n';
+    std::wcout << L'\t' << config.m_bindInterfaces[1] << L'\n';
+
+    std::wcout << L"Starting connection setup...\n";
+    wil::unique_event completeEvent(wil::EventOptions::ManualReset);
+    StreamClient client(config.m_targetAddress, config.m_bindInterfaces[0], config.m_bindInterfaces[1], completeEvent.get());
+
+    std::wcout << L"Start transmitting data...\n";
+    client.Start(config.m_prePostRecvs, config.m_bitrate, config.m_framerate, config.m_duration);
+
+    // wait for twice as long as the duration
+    if (!completeEvent.wait(config.m_duration * 2 * 1000))
+    {
+        std::wcout << L"Timed out waiting for run to completion\n";
+        client.Stop();
+    }
+
+    std::wcout << L"Transmission complete\n";
+    client.PrintStatistics();
+
+    if (!config.m_outputFile.empty())
+    {
+        std::wcout << L"Dumping data to " << config.m_outputFile << "\n";
+        std::ofstream file{config.m_outputFile};
+        client.DumpLatencyData(file);
+        file.close();
+    }
+}
+
 } // namespace
 
 int __cdecl wmain(int argc, const wchar_t** argv)
@@ -320,82 +399,13 @@ try
 
     if (config.m_listenAddress.family() != AF_UNSPEC)
     {
-        if (config.m_listenAddress.port() == 0)
-        {
-            config.m_listenAddress.SetPort(config.m_port);
-        }
-
-        StreamServer server(config.m_listenAddress);
-
-        server.Start(config.m_prePostRecvs);
-
-        std::wcout << L"Listening for data...\n";
-
-        // Sleep until the program is interrupted with Ctrl-C
-        Sleep(INFINITE);
+        // Start the server if "-listen" is specified
+        RunServerMode(config);
     }
     else
     {
-        if (config.m_targetAddress.port() == 0)
-        {
-            config.m_targetAddress.SetPort(config.m_port);
-        }
-
-        if (!config.m_ignoreDualSta)
-        {
-            // must have this handle open until we are done to keep the second STA port active
-            wil::unique_wlan_handle wlanHandle;
-
-            DWORD clientVersion = 2; // Vista+ APIs
-            DWORD curVersion = 0;
-            error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
-            if (ERROR_SUCCESS != error)
-            {
-                FAIL_FAST_WIN32_MSG(error, "WlanOpenHandle failed");
-            }
-
-            config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
-        }
-        else
-        {
-            // For debugging, use only the default interface
-            config.m_bindInterfaces.push_back(0);
-            config.m_bindInterfaces.push_back(0);
-        }
-
-        if (config.m_bindInterfaces.size() != 2)
-        {
-            throw std::runtime_error("two connected interfaces are required to run the client");
-        }
-
-        std::wcout << L"Bind Interfaces:\n";
-        std::wcout << L'\t' << config.m_bindInterfaces[0] << L'\n';
-        std::wcout << L'\t' << config.m_bindInterfaces[1] << L'\n';
-
-        std::wcout << L"Starting connection setup...\n";
-        wil::unique_event completeEvent(wil::EventOptions::ManualReset);
-        StreamClient client(
-            config.m_targetAddress, config.m_bindInterfaces[0], config.m_bindInterfaces[1], completeEvent.get());
-        std::wcout << L"Start transmitting data...\n";
-        client.Start(config.m_prePostRecvs, config.m_bitrate, config.m_framerate, config.m_duration);
-
-        // wait for twice as long as the duration
-        if (!completeEvent.wait(config.m_duration * 2 * 1000))
-        {
-            std::wcout << L"Timed out waiting for run to completion\n";
-            client.Stop();
-        }
-
-        std::wcout << L"Transmission complete\n";
-        client.PrintStatistics();
-
-        if (!config.m_outputFile.empty())
-        {
-            std::wcout << L"Dumping data to " << config.m_outputFile << "\n";
-            std::ofstream file{config.m_outputFile};
-            client.DumpLatencyData(file);
-            file.close();
-        }
+        // Start a client if "-target" is specified
+        RunClientMode(config);
     }
 }
 catch (const wil::ResultException& ex)
