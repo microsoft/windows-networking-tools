@@ -22,6 +22,7 @@ public:
     void Stop();
 
     void PrintStatistics();
+    void DumpLatencyData(std::ofstream& file);
 
     // not copyable or movable
     StreamClient(const StreamClient&) = delete;

@@ -8,6 +8,8 @@
 
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 
 #include <Windows.h>
 #include <winrt/Windows.Foundation.h>
@@ -104,7 +106,9 @@ namespace
             L"-framerate:####\n"
             L"\t- the number of frames to process during each send operation\n"
             L"-duration:####\n"
-            L"\t- the total number of seconds to run (default: 60 seconds)\n");
+            L"\t- the total number of seconds to run (default: 60 seconds)\n"
+            L"-output:####\n"
+            L"\t- the path of the file where to output measured data\n");
     }
 
     // implementation of C++20's std::wstring_view::starts_with
@@ -316,6 +320,26 @@ int __cdecl wmain(int argc, const wchar_t** argv)
             args.erase(foundPrePostRecvs);
         }
 
+        auto outputPath =
+            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-output"); });
+        if (outputPath != args.end())
+        {
+            auto value = ParseArgument(*outputPath);
+            if (value.empty())
+            {
+                throw std::invalid_argument("-output missing parameter");
+            }
+
+            config.m_outputFile = value;
+            std::filesystem::path filePath{config.m_outputFile};
+            if (filePath.has_parent_path() && !std::filesystem::exists(filePath.parent_path()))
+            {
+                throw std::invalid_argument("-output invalid argument");
+            }
+
+            args.erase(outputPath);
+        }
+
         // Undocumented options for debug purpose
         auto foundConsoleVerbosity =
             std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-consoleverbosity"); });
@@ -455,6 +479,14 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
             std::wcout << L"Transmission complete\n";
             client.PrintStatistics();
+
+            if (!config.m_outputFile.empty())
+            {
+                std::wcout << L"Dumping data to " << config.m_outputFile << "\n";
+                std::ofstream file{config.m_outputFile};
+                client.DumpLatencyData(file);
+                file.close();
+            }
         }
     }
     catch (const wil::ResultException& ex)

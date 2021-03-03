@@ -2,7 +2,7 @@
 
 #include "sockaddr.h"
 
-#include <vector>
+#include <filesystem>
 
 namespace multipath {
 struct Configuration
@@ -48,5 +48,8 @@ struct Configuration
 
     // the duration to run the application, in seconds (client only)
     unsigned long m_duration = c_defaultDuration;
+
+    // the file to output the results to (as csv)
+    std::filesystem::path m_outputFile{};
 };
 } // namespace multipath

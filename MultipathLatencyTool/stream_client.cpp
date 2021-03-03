@@ -6,6 +6,7 @@
 #include <wil/result.h>
 
 #include <iostream>
+#include <fstream>
 
 namespace multipath {
 namespace {
@@ -120,11 +121,15 @@ void StreamClient::Stop()
     m_threadpoolTimer->Stop();
 
     PRINT_DEBUG_INFO("\tStreamClient::Stop - closing sockets\n");
-    auto primaryLock = m_primaryState.m_lock.lock();
-    m_primaryState.m_socket.reset();
+    {
+        auto primaryLock = m_primaryState.m_lock.lock();
+        m_primaryState.m_socket.reset();
+    }
 
-    auto secondaryLock = m_secondaryState.m_lock.lock();
-    m_secondaryState.m_socket.reset();
+    {
+        auto secondaryLock = m_secondaryState.m_lock.lock();
+        m_secondaryState.m_socket.reset();
+    }
 }
 
 void StreamClient::PrintStatistics()
@@ -206,6 +211,22 @@ void StreamClient::PrintStatistics()
     std::cout << '\n';
     std::cout << "Corrupt frames on primary interface: " << m_primaryState.m_corruptFrames << '\n';
     std::cout << "Corrupt frames on secondary interface: " << m_secondaryState.m_corruptFrames << '\n';
+}
+
+void StreamClient::DumpLatencyData(std::ofstream& file)
+{
+    // Add column header
+    file << "Sequence number, Primary Send timestamp (100ns), Primary Echo timestamp (100ns), Primary Receive "
+            "timestamp (100ns), "
+         << "Secondary Send timestamp (100ns), Secondary Echo timestamp (100ns), Secondary Receive timestamp (100ns)\n";
+    // Add raw timestamp data
+    for (const auto& stat : m_latencyStatistics)
+    {
+        file << stat.m_sequenceNumber << ", ";
+        file << stat.m_primarySendTimestamp << ", " << stat.m_primaryEchoTimestamp << ", " << stat.m_primaryReceiveTimestamp << ", ";
+        file << stat.m_secondarySendTimestamp << ", " << stat.m_secondaryEchoTimestamp << ", " << stat.m_secondaryReceiveTimestamp;
+        file << "\n";
+    }
 }
 
 void StreamClient::Connect(SocketState& socketState)
