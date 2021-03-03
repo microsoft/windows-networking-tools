@@ -67,14 +67,14 @@ void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBit
 {
     PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", receiveBufferCount);
 
-    // allocate our receive contexts
+    // allocate the receive contexts
     m_primaryState.m_receiveStates.resize(receiveBufferCount);
     m_secondaryState.m_receiveStates.resize(receiveBufferCount);
 
-    // initialize our send buffer
-    for (size_t i = 0u; i < c_sendBufferSize / 2; ++i)
+    // initialize the send buffer
+    for (size_t i = 0u; i < m_sharedSendBuffer.size(); ++i)
     {
-        *reinterpret_cast<unsigned short*>(&m_sharedSendBuffer[i * 2]) = static_cast<unsigned short>(i);
+        m_sharedSendBuffer[i] = static_cast<char>(i);
     }
 
     m_frameRate = sendFrameRate;
@@ -144,32 +144,36 @@ void StreamClient::PrintStatistics()
 
     for (const auto& stat : m_latencyStatistics)
     {
-        long long aggregatedLatency = 0;
+        long long aggregatedLatency = MAXLONGLONG;
         if (stat.m_sequenceNumber > 0)
         {
-            if (stat.m_primaryLatencyMs >= 0)
+            if (stat.m_primaryReceiveTimestamp >= 0)
             {
-                primaryLatencyTotal += stat.m_primaryLatencyMs;
+                const auto primaryLatencyMs =
+                    ConvertHundredNanosToMillis(stat.m_primaryReceiveTimestamp - stat.m_primarySendTimestamp);
+                primaryLatencyTotal += primaryLatencyMs;
                 primaryLatencySamples += 1;
-                aggregatedLatency = stat.m_primaryLatencyMs;
+                aggregatedLatency = primaryLatencyMs;
             }
             else
             {
                 primaryLostFrames += 1;
             }
 
-            if (stat.m_secondaryLatencyMs >= 0)
+            if (stat.m_secondaryReceiveTimestamp >= 0)
             {
-                secondaryLatencyTotal += stat.m_secondaryLatencyMs;
+                const auto secondaryLatencyMs =
+                    ConvertHundredNanosToMillis(stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
+                secondaryLatencyTotal += secondaryLatencyMs;
                 secondaryLatencySamples += 1;
-                aggregatedLatency = min(aggregatedLatency, stat.m_primaryLatencyMs);
+                aggregatedLatency = min(aggregatedLatency, secondaryLatencyMs);
             }
             else
             {
                 secondaryLostFrames += 1;
             }
 
-            if (aggregatedLatency >= 0)
+            if (stat.m_secondaryReceiveTimestamp >= 0 || stat.m_primaryReceiveTimestamp >= 0)
             {
                 aggregatedLatencyTotal += aggregatedLatency;
                 aggregatedLatencySamples += 1;
@@ -322,12 +326,12 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
         socketState.m_interface == Interface::Primary ? "primary" : "secondary",
         socketState.m_socket.get());
 
-    auto callback = [this, &_socketState = socketState, _sendState = sendState](OVERLAPPED* ov) noexcept {
+    auto callback = [this, &socketState, sendState](OVERLAPPED* ov) noexcept {
         try
         {
-            auto lock = _socketState.m_lock.lock();
+            auto lock = socketState.m_lock.lock();
 
-            if (m_stopCalled || !_socketState.m_socket.is_valid())
+            if (m_stopCalled || !socketState.m_socket.is_valid())
             {
                 PRINT_DEBUG_INFO("StreamClient::SendDatagram - Shutting down or socket is no longer valid, ignoring send completion\n");
                 return;
@@ -335,9 +339,9 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
             DWORD bytesTransmitted = 0;
             DWORD flags = 0;
-            if (WSAGetOverlappedResult(_socketState.m_socket.get(), ov, &bytesTransmitted, FALSE, &flags))
+            if (WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransmitted, false, &flags))
             {
-                SendCompletion(_socketState, _sendState);
+                SendCompletion(socketState, sendState);
             }
             else
             {
@@ -384,11 +388,11 @@ void StreamClient::SendCompletion(SocketState& socketState, const SendState& sen
     stat.m_sequenceNumber = sendState.m_sequenceNumber;
     if (socketState.m_interface == Interface::Primary)
     {
-        stat.m_primarySendQpc = sendState.m_qpc;
+        stat.m_primarySendTimestamp = sendState.m_sendTimestamp;
     }
     else
     {
-        stat.m_secondarySendQpc = sendState.m_qpc;
+        stat.m_secondarySendTimestamp = sendState.m_sendTimestamp;
     }
 }
 
@@ -423,10 +427,10 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
 
         DWORD bytesTransferred = 0;
         DWORD flags = 0;
-        if (!WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransferred, FALSE, &flags))
+        if (!WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransferred, false, &flags))
         {
-            const auto gle = WSAGetLastError();
-            FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed  : %u", gle);
+            const auto lastError = WSAGetLastError();
+            FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed  : %u", lastError);
         }
 
         ReceiveCompletion(socketState, receiveState, bytesTransferred);
@@ -478,23 +482,24 @@ try
     if (header.m_sequenceNumber < 0 || header.m_sequenceNumber >= m_finalSequenceNumber)
     {
         PRINT_DEBUG_INFO("\tStreamClient::ReceiveCompletion - received corrupt frame\n");
-
         socketState.m_corruptFrames += 1;
         return;
     }
 
     socketState.m_receivedFrames += 1;
 
-    FAIL_FAST_IF_MSG(header.m_sequenceNumber > MAXSIZE_T, "FATAL: received sequence number out of bounds of vector");
     auto& stat = m_latencyStatistics[static_cast<size_t>(header.m_sequenceNumber)];
-
     if (socketState.m_interface == Interface::Primary)
     {
-        stat.m_primaryLatencyMs = ConvertHundredNanosToMillis(receiveState.m_receiveTimestamp - header.m_sendTimestamp);
+        stat.m_primarySendTimestamp = header.m_sendTimestamp;
+        stat.m_primaryEchoTimestamp = header.m_echoTimestamp;
+        stat.m_primaryReceiveTimestamp = receiveState.m_receiveTimestamp;
     }
     else
     {
-        stat.m_secondaryLatencyMs = ConvertHundredNanosToMillis(receiveState.m_receiveTimestamp - header.m_sendTimestamp);
+        stat.m_secondarySendTimestamp = header.m_sendTimestamp;
+        stat.m_secondaryEchoTimestamp = header.m_echoTimestamp;
+        stat.m_secondaryReceiveTimestamp = receiveState.m_receiveTimestamp;
     }
 }
 catch (...)

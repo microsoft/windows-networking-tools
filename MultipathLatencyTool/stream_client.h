@@ -44,7 +44,7 @@ private:
     struct SendState
     {
         long long m_sequenceNumber;
-        long long m_qpc;
+        long long m_sendTimestamp;
     };
 
     static constexpr size_t c_receiveBufferSize = 1024; // 1KB receive buffer
@@ -124,11 +124,14 @@ private:
     {
         long long m_sequenceNumber = -1;
 
-        long long m_primarySendQpc = -1;
-        long long m_secondarySendQpc = -1;
+        long long m_primarySendTimestamp = -1;
+        long long m_secondarySendTimestamp = -1;
 
-        long long m_primaryLatencyMs = -1;
-        long long m_secondaryLatencyMs = -1;
+        long long m_primaryEchoTimestamp = -1;
+        long long m_secondaryEchoTimestamp = -1;
+
+        long long m_primaryReceiveTimestamp = -1;
+        long long m_secondaryReceiveTimestamp = -1;
     };
 
     std::vector<LatencyStatistic> m_latencyStatistics;
