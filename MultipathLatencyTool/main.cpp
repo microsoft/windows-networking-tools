@@ -10,6 +10,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <locale>
 
 #include <Windows.h>
 #include <winrt/Windows.Foundation.h>
@@ -21,120 +22,255 @@ using namespace winrt;
 using namespace Windows::Foundation;
 using namespace multipath;
 
-namespace
+namespace {
+template <typename T>
+// ReSharper disable once CppInconsistentNaming
+T integer_cast(const std::wstring_view)
 {
-    template <typename T>
-    // ReSharper disable once CppInconsistentNaming
-    T integer_cast(const std::wstring_view)
+    throw std::invalid_argument("invalid integral type");
+}
+
+template <>
+long integer_cast<long>(const std::wstring_view str)
+{
+    long value = 0;
+    size_t offset = 0;
+
+    value = std::stol(std::wstring{str}, &offset, 10);
+
+    if (offset != str.length())
     {
-        throw std::invalid_argument("invalid integral type");
+        throw std::invalid_argument("integer_cast: invalid input");
     }
 
-    template <>
-    long integer_cast<long>(const std::wstring_view str)
+    return value;
+}
+
+template <>
+unsigned long integer_cast<unsigned long>(const std::wstring_view str)
+{
+    unsigned long value = 0;
+    size_t offset = 0;
+    value = std::stoul(std::wstring{str}, &offset, 10);
+
+    if (offset != str.length())
     {
-        long value = 0;
-        size_t offset = 0;
+        throw std::invalid_argument("integer_cast: invalid input");
+    }
 
-        value = std::stol(std::wstring{ str }, &offset, 10);
+    return value;
+}
 
-        if (offset != str.length())
+void PrintUsage()
+{
+    fwprintf(
+        stdout,
+        L"MultipathLatencyTool is a utility to compare the latencies of two network interfaces. "
+        L"It is a client/server application that simply sends data at a given rate and echoes it back to the client. "
+        L"It tracks the round-trip latency on each network interface and presents some basic statistics for the "
+        L"session.\n"
+        L"\nOnce started, Ctrl-C or Ctrl-Break will cleanly shutdown the application."
+        L"\n\n"
+        L"Server-side usage:\n"
+        L"\tMultipathLatencyTool -listen:<addr or *> [-port:####] [-prepostrecvs:####]\n"
+        L"\n"
+        L"Client-side usage:\n"
+        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-rate:<see below>] [-duration:####] "
+        L"[-prepostrecvs:####]\n"
+        L"\n\n"
+        L"---------------------------------------------------------\n"
+        L"                      Common Options                     \n"
+        L"---------------------------------------------------------\n"
+        L"-port:####\n"
+        L"\t- the port on which the server will listen and the client will connect\n"
+        L"\t- (default value: 8888)\n"
+        L"-prepostrecvs:####\n"
+        L"\t- the number of receive requests to be kept in-flight\n"
+        L"-help\n"
+        L"\t- prints this usage information\n"
+        L"\n\n"
+        L"---------------------------------------------------------\n"
+        L"                      Server Options                     \n"
+        L"---------------------------------------------------------\n"
+        L"-listen:<addr or *>\n"
+        L"\t- the IP address on which the server will listen for incoming datagrams, or '*' for all addresses\n"
+        L"\n\n"
+        L"---------------------------------------------------------\n"
+        L"                      Client Options                     \n"
+        L"---------------------------------------------------------\n"
+        L"-target:<addr or name>\n"
+        L"\t- the IP address, FQDN, or hostname to connect to\n"
+        L"-bitrate:<sd,hd,4k>\n"
+        L"\t- the rate at which to send data; based on common video streaming rates:\n"
+        L"\t\t- sd sends data at 3 megabits per second\n"
+        L"\t\t- hd sends data at 5 megabits per second (default)\n"
+        L"\t\t- 4k sends data at 25 megabits per second\n"
+        L"-framerate:####\n"
+        L"\t- the number of frames to process during each send operation\n"
+        L"-duration:####\n"
+        L"\t- the total number of seconds to run (default: 60 seconds)\n"
+        L"-output:####\n"
+        L"\t- the path of the file where to output measured data\n");
+}
+
+std::wstring_view ParseArgumentValue(const std::wstring_view str)
+{
+    const auto delim = str.find(L':');
+    if (delim == std::wstring_view::npos)
+    {
+        return {};
+    }
+
+    return str.substr(delim + 1);
+}
+
+std::optional<std::wstring_view> ParseArgument(const std::wstring_view name, std::vector<const wchar_t*>& args)
+{
+    auto foundParameter = std::ranges::find_if(args, [&](const std::wstring_view arg) { return arg.starts_with(name); });
+    if (foundParameter != args.end())
+    {
+        auto value = ParseArgumentValue(*foundParameter);
+        if (value.empty())
         {
-            throw std::invalid_argument("integer_cast: invalid input");
+            throw std::invalid_argument("Found parameter without value");
         }
 
+        args.erase(foundParameter);
         return value;
     }
+    return {};
+}
 
-    template <>
-    unsigned long integer_cast<unsigned long>(const std::wstring_view str)
+Configuration ParseArguments(std::vector<const wchar_t*>& args)
+{
+    Configuration config;
+
+    if (auto listenAddress = ParseArgument(L"-listen", args))
     {
-        unsigned long value = 0;
-        size_t offset = 0;
-        value = std::stoul(std::wstring{ str }, &offset, 10);
-
-        if (offset != str.length())
+        if (*listenAddress == L"*")
         {
-            throw std::invalid_argument("integer_cast: invalid input");
+            config.m_listenAddress = ctl::ctSockaddr(AF_INET, ctl::ctSockaddr::AddressType::Any);
+        }
+        else
+        {
+            auto resolvedAddresses = ctl::ctSockaddr::ResolveName(listenAddress->data());
+            if (resolvedAddresses.empty())
+            {
+                throw std::invalid_argument("-listen parameter did not resolve to a valid address");
+            }
+
+            // just pick the first resolved address from the list
+            config.m_listenAddress = resolvedAddresses.front();
+        }
+    }
+    
+    if (auto targetAddress = ParseArgument(L"-target", args))
+    {
+        if (config.m_listenAddress.family() != AF_UNSPEC)
+        {
+            throw std::invalid_argument("cannot specify both -listen and -target");
         }
 
-        return value;
-    }
-
-    void PrintUsage()
-    {
-        fwprintf(
-            stdout,
-            L"MultipathLatencyTool is a utility to compare the latencies of two network interfaces. "
-            L"It is a client/server application that simply sends data at a given rate and echoes it back to the client. "
-            L"It tracks the round-trip latency on each network interface and presents some basic statistics for the session.\n"
-            L"\nOnce started, Ctrl-C or Ctrl-Break will cleanly shutdown the application."
-            L"\n\n"
-            L"Server-side usage:\n"
-            L"\tMultipathLatencyTool -listen:<addr or *> [-port:####] [-prepostrecvs:####]\n"
-            L"\n"
-            L"Client-side usage:\n"
-            L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-rate:<see below>] [-duration:####] [-prepostrecvs:####]\n"
-            L"\n\n"
-            L"---------------------------------------------------------\n"
-            L"                      Common Options                     \n"
-            L"---------------------------------------------------------\n"
-            L"-port:####\n"
-            L"\t- the port on which the server will listen and the client will connect\n"
-            L"\t- (default value: 8888)\n"
-            L"-prepostrecvs:####\n"
-            L"\t- the number of receive requests to be kept in-flight\n"
-            L"-help\n"
-            L"\t- prints this usage information\n"
-            L"\n\n"
-            L"---------------------------------------------------------\n"
-            L"                      Server Options                     \n"
-            L"---------------------------------------------------------\n"
-            L"-listen:<addr or *>\n"
-            L"\t- the IP address on which the server will listen for incoming datagrams, or '*' for all addresses\n"
-            L"\n\n"
-            L"---------------------------------------------------------\n"
-            L"                      Client Options                     \n"
-            L"---------------------------------------------------------\n"
-            L"-target:<addr or name>\n"
-            L"\t- the IP address, FQDN, or hostname to connect to\n"
-            L"-bitrate:<sd,hd,4k>\n"
-            L"\t- the rate at which to send data; based on common video streaming rates:\n"
-            L"\t\t- sd sends data at 3 megabits per second\n"
-            L"\t\t- hd sends data at 5 megabits per second (default)\n"
-            L"\t\t- 4k sends data at 25 megabits per second\n"
-            L"-framerate:####\n"
-            L"\t- the number of frames to process during each send operation\n"
-            L"-duration:####\n"
-            L"\t- the total number of seconds to run (default: 60 seconds)\n"
-            L"-output:####\n"
-            L"\t- the path of the file where to output measured data\n");
-    }
-
-    // implementation of C++20's std::wstring_view::starts_with
-    [[nodiscard]] bool StartsWith(const std::wstring_view str, const std::wstring_view prefix) noexcept
-    {
-        if (str.size() < prefix.size())
+        auto resolvedAddresses = ctl::ctSockaddr::ResolveName(targetAddress->data());
+        if (resolvedAddresses.empty())
         {
-            return false;
+            throw std::invalid_argument("-target parameter did not resolve to a valid address");
         }
 
-        return std::wstring_view::traits_type::compare(str.data(), prefix.data(), prefix.size()) == 0;
+        // just pick the first resolved address from the list
+        // TODO: should try to determine which address(es) are actually reachable?
+        config.m_targetAddress = resolvedAddresses.front();
     }
 
-    std::wstring_view ParseArgument(const std::wstring_view str)
+    if (config.m_listenAddress.family() == AF_UNSPEC && config.m_targetAddress.family() == AF_UNSPEC)
     {
-        const auto delim = str.find(L':');
-        if (delim == std::wstring_view::npos)
-        {
-            return {};
-        }
-
-        return str.substr(delim + 1);
+        throw std::invalid_argument("-listen or -target must be specified");
     }
+    
+    if (auto port = ParseArgument(L"-port", args))
+    {
+        config.m_port = integer_cast<unsigned short>(*port);
+    }
+
+    if (auto bitrate = ParseArgument(L"-bitrate", args))
+    {
+        if (L"sd" == bitrate)
+        {
+            config.m_bitrate = Configuration::c_sendBitrateSd;
+        }
+        else if (L"hd" == bitrate)
+        {
+            config.m_bitrate = Configuration::c_sendBitrateHd;
+        }
+        else if (L"4k" == bitrate)
+        {
+            config.m_bitrate = Configuration::c_sendBitrate4K;
+        }
+        else if (L"test" == bitrate)
+        {
+            config.m_bitrate = Configuration::c_testSendBitrate;
+        }
+        else
+        {
+            throw std::invalid_argument("-bitrate value must be one of: sd, hd, 4k, test");
+        }
+    }
+
+    if (auto framerate = ParseArgument(L"-framerate", args))
+    {
+        config.m_framerate = integer_cast<unsigned long>(*framerate);
+    }
+
+    if (auto duration = ParseArgument(L"-duration", args))
+    {
+        config.m_duration = integer_cast<unsigned long>(*duration);
+        if (config.m_duration < 1)
+        {
+            throw std::invalid_argument("-duration invalid argument");
+        }
+    }
+
+    if (auto prepostRecvs = ParseArgument(L"-prepostrecvs" , args))
+    {
+        config.m_prePostRecvs = integer_cast<unsigned long>(*prepostRecvs);
+        if (config.m_prePostRecvs < 1)
+        {
+            throw std::invalid_argument("-prepostrecvs invalid argument");
+        }
+    }
+
+    if (auto outputPath = ParseArgument(L"-output", args))
+    {
+        config.m_outputFile = *outputPath;
+
+        std::filesystem::path filePath{config.m_outputFile};
+        if (filePath.has_parent_path() && !std::filesystem::exists(filePath.parent_path()))
+        {
+            throw std::invalid_argument("-output invalid argument");
+        }
+    }
+
+    // Undocumented options for debug purpose
+
+    // Set to 2 for debug logs
+    if (auto consoleVerbosity = ParseArgument(L"-consoleVerbosity", args))
+    {
+        SetConsoleVerbosity(integer_cast<unsigned long>(*consoleVerbosity));
+    }
+
+    // Set to 1 to only use the default interface and ignore dual sta. Useful for debugging without a dual sta compatible device.
+    if (auto noDualSta = ParseArgument(L"-nodualsta", args))
+    {
+        SetLocalDebugMode(integer_cast<unsigned long>(*noDualSta) != 0);
+    }
+
+    return config;
+}
+
 } // namespace
 
 int __cdecl wmain(int argc, const wchar_t** argv)
+try
 {
     init_apartment();
 
@@ -153,243 +289,17 @@ int __cdecl wmain(int argc, const wchar_t** argv)
 
     const wchar_t** argvBegin = argv + 1; // skip first argument (program name)
     const wchar_t** argvEnd = argv + argc;
-    std::vector<const wchar_t*> args{ argvBegin, argvEnd };
+    std::vector<const wchar_t*> args{argvBegin, argvEnd};
 
-    auto foundHelp = std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-help") || StartsWith(arg, L"-?"); });
+    auto foundHelp =
+        std::ranges::find_if(args, [](const std::wstring_view arg) { return arg == L"-help" || arg == L"-?"; });
     if (foundHelp != args.end())
     {
         PrintUsage();
         return 0;
     }
 
-    Configuration config;
-
-    try
-    {
-        auto foundListen = std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-listen"); });
-        if (foundListen != args.end())
-        {
-            auto value = ParseArgument(*foundListen);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-listen missing parameter");
-            }
-            else if (value == L"*")
-            {
-                config.m_listenAddress = ctl::ctSockaddr(AF_INET, ctl::ctSockaddr::AddressType::Any);
-            }
-            else
-            {
-                auto resolvedAddresses = ctl::ctSockaddr::ResolveName(value.data());
-                if (resolvedAddresses.empty())
-                {
-                    throw std::invalid_argument("-listen parameter did not resolve to a valid address");
-                }
-
-                // just pick the first resolved address from the list
-                config.m_listenAddress = resolvedAddresses.front();
-            }
-
-            args.erase(foundListen);
-        }
-
-        auto foundTarget = std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-target"); });
-        if (foundTarget != args.end())
-        {
-            if (config.m_listenAddress.family() != AF_UNSPEC)
-            {
-                throw std::invalid_argument("cannot specify both -listen and -target");
-            }
-
-            auto value = ParseArgument(*foundTarget);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-target missing parameter");
-            }
-
-            auto resolvedAddresses = ctl::ctSockaddr::ResolveName(value.data());
-            if (resolvedAddresses.empty())
-            {
-                throw std::invalid_argument("-target parameter did not resolve to a valid address");
-            }
-
-            // just pick the first resolved address from the list
-            // TODO: should try to determine which address(es) are actually reachable?
-            config.m_targetAddress = resolvedAddresses.front();
-
-            args.erase(foundTarget);
-        }
-
-        auto foundPort = std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-port"); });
-        if (foundPort != args.end())
-        {
-            auto value = ParseArgument(*foundPort);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-port missing parameter");
-            }
-
-            config.m_port = static_cast<unsigned short>(integer_cast<unsigned long>(value));
-
-            args.erase(foundPort);
-        }
-
-        auto foundBitrate = std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-bitrate"); });
-        if (foundBitrate != args.end())
-        {
-            auto value = ParseArgument(*foundBitrate);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-bitrate missing parameter");
-            }
-
-            if (L"sd" == value)
-            {
-                config.m_bitrate = Configuration::c_sendBitrateSd;
-            }
-            else if (L"hd" == value)
-            {
-                config.m_bitrate = Configuration::c_sendBitrateHd;
-            }
-            else if (L"4k" == value)
-            {
-                config.m_bitrate = Configuration::c_sendBitrate4K;
-            }
-            else if (L"test" == value)
-            {
-                config.m_bitrate = Configuration::c_testSendBitrate;
-            }
-            else
-            {
-                throw std::invalid_argument("-bitrate value must be one of: sd, hd, 4k");
-            }
-
-            args.erase(foundBitrate);
-        }
-
-        auto foundFramerate =
-            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-framerate"); });
-        if (foundFramerate != args.end())
-        {
-            auto value = ParseArgument(*foundFramerate);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-framerate missing parameter");
-            }
-
-            config.m_framerate = integer_cast<unsigned long>(value);
-
-            args.erase(foundFramerate);
-        }
-
-        auto foundDuration =
-            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-duration"); });
-        if (foundDuration != args.end())
-        {
-            auto value = ParseArgument(*foundDuration);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-duration missing parameter");
-            }
-
-            config.m_duration = integer_cast<unsigned long>(value);
-            if (config.m_duration < 1)
-            {
-                throw std::invalid_argument("-duration invalid argument");
-            }
-
-            args.erase(foundDuration);
-        }
-
-        auto foundPrePostRecvs =
-            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-prepostrecvs"); });
-        if (foundPrePostRecvs != args.end())
-        {
-            auto value = ParseArgument(*foundPrePostRecvs);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-prepostrecvs missing parameter");
-            }
-
-            config.m_prePostRecvs = integer_cast<unsigned long>(value);
-            if (config.m_prePostRecvs < 1)
-            {
-                throw std::invalid_argument("-prepostrecvs invalid argument");
-            }
-
-            args.erase(foundPrePostRecvs);
-        }
-
-        auto outputPath =
-            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-output"); });
-        if (outputPath != args.end())
-        {
-            auto value = ParseArgument(*outputPath);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-output missing parameter");
-            }
-
-            config.m_outputFile = value;
-            std::filesystem::path filePath{config.m_outputFile};
-            if (filePath.has_parent_path() && !std::filesystem::exists(filePath.parent_path()))
-            {
-                throw std::invalid_argument("-output invalid argument");
-            }
-
-            args.erase(outputPath);
-        }
-
-        // Undocumented options for debug purpose
-        auto foundConsoleVerbosity =
-            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-consoleverbosity"); });
-        if (foundConsoleVerbosity != args.end())
-        {
-            auto value = ParseArgument(*foundConsoleVerbosity);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-consoleverbosity missing parameter");
-            }
-
-            SetConsoleVerbosity(integer_cast<unsigned long>(value));
-
-            args.erase(foundConsoleVerbosity);
-        }
-
-        auto foundLocalDebug =
-            std::ranges::find_if(args, [](const wchar_t* arg) { return StartsWith(arg, L"-localdebug"); });
-        if (foundLocalDebug != args.end())
-        {
-            auto value = ParseArgument(*foundLocalDebug);
-            if (value.empty())
-            {
-                throw std::invalid_argument("-localdebug missing parameter");
-            }
-
-            SetLocalDebugMode(integer_cast<unsigned long>(value) != 0);
-
-            args.erase(foundLocalDebug);
-        }
-    }
-    catch (const wil::ResultException& ex)
-    {
-        std::cerr << "Caught exception: " << ex.what() << '\n';
-        std::exit(-1);
-    }
-    catch (const std::invalid_argument& ex)
-    {
-        std::cerr << "Invalid argument: " << ex.what() << '\n';
-        std::exit(-1);
-    }
-    catch (const std::exception& ex)
-    {
-        std::cerr << "Caught exception: " << ex.what() << '\n';
-        std::exit(-1);
-    }
-    catch (...)
-    {
-        FAIL_FAST_MSG("UNHANDLED EXCEPTION");
-    }
+    Configuration config = ParseArguments(args);
 
     std::cout << "--- Configuration ---\n";
     std::wcout << L"Port: " << config.m_port << L'\n';
@@ -401,104 +311,110 @@ int __cdecl wmain(int argc, const wchar_t** argv)
     else
     {
         std::wcout << L"Target Address: " << config.m_targetAddress.WriteCompleteAddress() << L'\n';
-        std::wcout << L"Stream Bitrate: " << config.m_bitrate << L"bits per second\n";
+        std::wcout << L"Stream Bitrate: " << config.m_bitrate << L" bits per second\n";
         std::wcout << L"Stream Framerate: " << config.m_framerate << L'\n';
         std::wcout << L"Stream Duration: " << config.m_duration << L" seconds\n";
     }
 
-    std::wcout << L"PrePostRecvs: " << config.m_prePostRecvs << L'\n';
+    std::wcout << L"Number of receive buffers: " << config.m_prePostRecvs << L'\n';
 
-    try
+    if (config.m_listenAddress.family() != AF_UNSPEC)
     {
-        if (config.m_listenAddress.family() != AF_UNSPEC)
+        if (config.m_listenAddress.port() == 0)
         {
-            if (config.m_listenAddress.port() == 0)
+            config.m_listenAddress.SetPort(config.m_port);
+        }
+
+        StreamServer server(config.m_listenAddress);
+
+        server.Start(config.m_prePostRecvs);
+
+        std::wcout << L"Listening for data...\n";
+
+        // Sleep until the program is interrupted with Ctrl-C
+        Sleep(INFINITE);
+    }
+    else
+    {
+        if (config.m_targetAddress.port() == 0)
+        {
+            config.m_targetAddress.SetPort(config.m_port);
+        }
+
+        if (!LocalDebugMode())
+        {
+            // must have this handle open until we are done to keep the second STA port active
+            wil::unique_wlan_handle wlanHandle;
+
+            DWORD clientVersion = 2; // Vista+ APIs
+            DWORD curVersion = 0;
+            error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
+            if (ERROR_SUCCESS != error)
             {
-                config.m_listenAddress.SetPort(config.m_port);
+                FAIL_FAST_WIN32_MSG(error, "WlanOpenHandle failed");
             }
 
-            StreamServer server(config.m_listenAddress);
-
-            server.Start(config.m_prePostRecvs);
-
-            std::wcout << L"Listening for data...\n";
-
-            // Sleep until the program is interrupted with Ctrl-C
-            Sleep(INFINITE);
+            config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
         }
         else
         {
-            if (config.m_targetAddress.port() == 0)
-            {
-                config.m_targetAddress.SetPort(config.m_port);
-            }
+            // For debugging, use only the default interface
+            config.m_bindInterfaces.push_back(0);
+            config.m_bindInterfaces.push_back(0);
+        }
 
-            if (!LocalDebugMode())
-            {
-                // must have this handle open until we are done to keep the second STA port active
-                wil::unique_wlan_handle wlanHandle;
+        if (config.m_bindInterfaces.size() != 2)
+        {
+            throw std::runtime_error("two connected interfaces are required to run the client");
+        }
 
-                DWORD clientVersion = 2; // Vista+ APIs
-                DWORD curVersion = 0;
-                error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
-                if (ERROR_SUCCESS != error)
-                {
-                    FAIL_FAST_WIN32_MSG(error, "WlanOpenHandle failed");
-                }
+        std::wcout << L"Bind Interfaces:\n";
+        std::wcout << L'\t' << config.m_bindInterfaces[0] << L'\n';
+        std::wcout << L'\t' << config.m_bindInterfaces[1] << L'\n';
 
-                config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
-            }
-            else
-            {
-                // For debugging, use only the default interface
-                config.m_bindInterfaces.push_back(0);
-                config.m_bindInterfaces.push_back(0);
-            }
+        std::wcout << L"Starting connection setup...\n";
+        wil::unique_event completeEvent(wil::EventOptions::ManualReset);
+        StreamClient client(
+            config.m_targetAddress, config.m_bindInterfaces[0], config.m_bindInterfaces[1], completeEvent.get());
+        std::wcout << L"Start transmitting data...\n";
+        client.Start(config.m_prePostRecvs, config.m_bitrate, config.m_framerate, config.m_duration);
 
-            if (config.m_bindInterfaces.size() != 2)
-            {
-                throw std::runtime_error("two connected interfaces are required to run the client");
-            }
+        // wait for twice as long as the duration
+        if (!completeEvent.wait(config.m_duration * 2 * 1000))
+        {
+            std::wcout << L"Timed out waiting for run to completion\n";
+            client.Stop();
+        }
 
-            std::wcout << L"Bind Interfaces:\n";
-            std::wcout << L'\t' << config.m_bindInterfaces[0] << L'\n';
-            std::wcout << L'\t' << config.m_bindInterfaces[1] << L'\n';
+        std::wcout << L"Transmission complete\n";
+        client.PrintStatistics();
 
-            std::wcout << L"Starting connection setup...\n";
-            wil::unique_event completeEvent(wil::EventOptions::ManualReset);
-            StreamClient client(config.m_targetAddress, config.m_bindInterfaces[0], config.m_bindInterfaces[1], completeEvent.get());
-            std::wcout << L"Start transmitting data...\n";
-            client.Start(config.m_prePostRecvs, config.m_bitrate, config.m_framerate, config.m_duration);
-
-            // wait for twice as long as the duration
-            if (!completeEvent.wait(config.m_duration * 2 * 1000))
-            {
-                std::wcout << L"Timed out waiting for run to completion\n";
-                client.Stop();
-            }
-
-            std::wcout << L"Transmission complete\n";
-            client.PrintStatistics();
-
-            if (!config.m_outputFile.empty())
-            {
-                std::wcout << L"Dumping data to " << config.m_outputFile << "\n";
-                std::ofstream file{config.m_outputFile};
-                client.DumpLatencyData(file);
-                file.close();
-            }
+        if (!config.m_outputFile.empty())
+        {
+            std::wcout << L"Dumping data to " << config.m_outputFile << "\n";
+            std::ofstream file{config.m_outputFile};
+            client.DumpLatencyData(file);
+            file.close();
         }
     }
-    catch (const wil::ResultException& ex)
-    {
-        std::cout << "Caught exception: " << ex.what() << '\n';
-    }
-    catch (const std::exception& ex)
-    {
-        std::cout << "Caught exception: " << ex.what() << '\n';
-    }
-    catch (...)
-    {
-        FAIL_FAST_MSG("FATAL: UNHANDLED EXCEPTION");
-    }
+}
+catch (const wil::ResultException& ex)
+{
+    std::cerr << "Caught exception: " << ex.what() << '\n';
+    std::exit(-1);
+}
+catch (const std::invalid_argument& ex)
+{
+    std::cerr << "Invalid argument: " << ex.what() << '\n';
+    std::exit(-1);
+}
+catch (const std::exception& ex)
+{
+    std::cerr << "Caught exception: " << ex.what() << '\n';
+    std::exit(-1);
+}
+catch (...)
+{
+    std::cerr << "FATAL: UNHANDLED EXCEPTION";
+    FAIL_FAST_MSG("FATAL: UNHANDLED EXCEPTION");
 }
