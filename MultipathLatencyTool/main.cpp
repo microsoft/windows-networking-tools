@@ -261,7 +261,7 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
     // Set to 1 to only use the default interface and ignore dual sta. Useful for debugging without a dual sta compatible device.
     if (auto noDualSta = ParseArgument(L"-nodualsta", args))
     {
-        SetLocalDebugMode(integer_cast<unsigned long>(*noDualSta) != 0);
+        config.m_ignoreDualSta = integer_cast<unsigned long>(*noDualSta) != 0;
     }
 
     return config;
@@ -341,7 +341,7 @@ try
             config.m_targetAddress.SetPort(config.m_port);
         }
 
-        if (!LocalDebugMode())
+        if (!config.m_ignoreDualSta)
         {
             // must have this handle open until we are done to keep the second STA port active
             wil::unique_wlan_handle wlanHandle;

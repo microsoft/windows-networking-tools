@@ -51,5 +51,7 @@ struct Configuration
 
     // the file to output the results to (as csv)
     std::filesystem::path m_outputFile{};
+
+    bool m_ignoreDualSta = false;
 };
 } // namespace multipath

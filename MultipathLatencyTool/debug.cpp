@@ -13,14 +13,4 @@ void SetConsoleVerbosity(unsigned long value) noexcept
 {
     g_consoleVerbosity = value;
 }
-
-bool LocalDebugMode() noexcept
-{
-    return g_localDebugMode;
-}
-
-void SetLocalDebugMode(bool value) noexcept
-{
-    g_localDebugMode = value;
-}
 } // namespace multipath

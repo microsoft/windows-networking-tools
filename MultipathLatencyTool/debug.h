@@ -6,9 +6,6 @@ namespace multipath {
 unsigned long ConsoleVerbosity() noexcept;
 void SetConsoleVerbosity(unsigned long value) noexcept;
 
-bool LocalDebugMode() noexcept;
-void SetLocalDebugMode(bool value) noexcept;
-
 } // namespace multipath
 
 #define PRINT_DEBUG_INFO(fmt, ...) \
