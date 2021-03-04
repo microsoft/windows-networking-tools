@@ -264,6 +264,11 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         config.m_ignoreDualSta = integer_cast<unsigned long>(*noDualSta) != 0;
     }
 
+    if (!args.empty())
+    {
+        throw std::invalid_argument("Unknown arguments");
+    }
+
     return config;
 }
 
@@ -313,7 +318,7 @@ void RunClientMode(Configuration& config)
 
     if (config.m_bindInterfaces.size() != 2)
     {
-        throw std::runtime_error("two connected interfaces are required to run the client");
+        throw std::runtime_error("Two connected interfaces are required to run the client");
     }
 
     std::wcout << L"Bind Interfaces:\n";
