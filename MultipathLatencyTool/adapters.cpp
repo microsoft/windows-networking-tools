@@ -42,14 +42,6 @@ std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
     return primaryInterfaces;
 }
 
-#ifndef wlan_intf_opcode_secondary_sta_synchronized_connections
-#define wlan_intf_opcode_secondary_sta_synchronized_connections WLAN_INTF_OPCODE(wlan_intf_opcode_ihv_start)
-#endif
-
-#ifndef wlan_intf_opcode_secondary_sta_interfaces
-#define wlan_intf_opcode_secondary_sta_interfaces WLAN_INTF_OPCODE(wlan_intf_opcode_ihv_start + 1)
-#endif
-
 void SetSecondaryInterfaceEnabled(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
 {
     BOOL enable = TRUE;
