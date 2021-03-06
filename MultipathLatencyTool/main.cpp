@@ -109,6 +109,13 @@ void PrintUsage()
         L"\t- the number of frames to process during each send operation\n"
         L"-duration:####\n"
         L"\t- the total number of seconds to run (default: 60 seconds)\n"
+        L"-secondary:<enforce,besteffort,ignore>\n"
+        L"\t- whether or not use a secondary wlan interface:\n"
+        L"\t\t- enforce uses a secondary interface or fails if it cannot\n"
+        L"\t\t    for test or debugging purpose"
+        L"\t\t- besteffort use the secondary interface if possible (default)\n"
+        L"\t\t    this is what most applications should do"
+        L"\t\t- ignore doesn't use a secondary interface. This can be used for comparison.\n"
         L"-output:####\n"
         L"\t- the path of the file where to output measured data\n");
 }
@@ -239,6 +246,26 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         }
     }
 
+    if (auto secondary = ParseArgument(L"-secondary", args))
+    {
+        if (L"enforce" == secondary)
+        {
+            config.m_secondaryInterfaceBehavior = Configuration::SecondaryInterfaceBehavior::Enforce;
+        }
+        else if (L"besteffort" == secondary)
+        {
+            config.m_secondaryInterfaceBehavior = Configuration::SecondaryInterfaceBehavior::BestEffort;
+        }
+        else if (L"ignore" == secondary)
+        {
+            config.m_secondaryInterfaceBehavior = Configuration::SecondaryInterfaceBehavior::Ignore;
+        }
+        else
+        {
+            throw std::invalid_argument("-secondary value must be one of: enforce, besteffort, ignore");
+        }
+    }
+
     if (auto outputPath = ParseArgument(L"-output", args))
     {
         config.m_outputFile = *outputPath;
@@ -256,12 +283,6 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
     if (auto consoleVerbosity = ParseArgument(L"-consoleVerbosity", args))
     {
         SetConsoleVerbosity(integer_cast<unsigned long>(*consoleVerbosity));
-    }
-
-    // Set to 1 to only use the default interface and ignore dual sta. Useful for debugging without a dual sta compatible device.
-    if (auto noDualSta = ParseArgument(L"-nodualsta", args))
-    {
-        config.m_ignoreDualSta = integer_cast<unsigned long>(*noDualSta) != 0;
     }
 
     if (!args.empty())
@@ -297,43 +318,41 @@ void RunClientMode(Configuration& config)
         config.m_targetAddress.SetPort(config.m_port);
     }
 
-    // must have this handle open until we are done to keep the second STA port active
+    // must have this handle open until we are done to keep the secondary STA port active
     wil::unique_wlan_handle wlanHandle;
+    wil::unique_event completionEvent(wil::EventOptions::ManualReset);
+    constexpr int primaryInterface = 0;
+    std::optional<int> secondaryInterface{};
 
-    if (!config.m_ignoreDualSta)
+    if (config.m_secondaryInterfaceBehavior != Configuration::SecondaryInterfaceBehavior::Ignore)
     {
         DWORD clientVersion = 2; // Vista+ APIs
         DWORD curVersion = 0;
         auto error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
         FAIL_FAST_IF_WIN32_ERROR_MSG(error, "WlanOpenHandle failed");
 
-        config.m_bindInterfaces = GetConnectedWlanInterfaces(wlanHandle.get());
-    }
-    else
-    {
-        // For debugging, use only the default interface
-        config.m_bindInterfaces.push_back(0);
-        config.m_bindInterfaces.push_back(0);
-    }
+        secondaryInterface = GetSecondaryInterfaceBestEffort(wlanHandle.get());
 
-    if (config.m_bindInterfaces.size() != 2)
-    {
-        throw std::runtime_error("Two connected interfaces are required to run the client");
-    }
+        if (config.m_secondaryInterfaceBehavior == Configuration::SecondaryInterfaceBehavior::Enforce &&
+            !secondaryInterface)
+        {
+            throw std::runtime_error("Two connected interfaces are required to run the client");
+        }
 
-    std::wcout << L"Bind Interfaces:\n";
-    std::wcout << L'\t' << config.m_bindInterfaces[0] << L'\n';
-    std::wcout << L'\t' << config.m_bindInterfaces[1] << L'\n';
+        if (secondaryInterface)
+        {
+            std::cout << "Using secondary interface, index: " << *secondaryInterface << std::endl;
+        }
+    }
 
     std::wcout << L"Starting connection setup...\n";
-    wil::unique_event completeEvent(wil::EventOptions::ManualReset);
-    StreamClient client(config.m_targetAddress, config.m_bindInterfaces[0], config.m_bindInterfaces[1], completeEvent.get());
+    StreamClient client(config.m_targetAddress, primaryInterface, secondaryInterface, completionEvent.get());
 
     std::wcout << L"Start transmitting data...\n";
     client.Start(config.m_prePostRecvs, config.m_bitrate, config.m_framerate, config.m_duration);
 
     // wait for twice as long as the duration
-    if (!completeEvent.wait(config.m_duration * 2 * 1000))
+    if (!completionEvent.wait(config.m_duration * 2 * 1000))
     {
         std::wcout << L"Timed out waiting for run to completion\n";
         client.Stop();

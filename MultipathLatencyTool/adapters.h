@@ -2,8 +2,8 @@
 
 #include <Windows.h>
 
-#include <vector>
+#include <optional>
 
 namespace multipath {
-std::vector<int> GetConnectedWlanInterfaces(HANDLE wlanHandle);
+std::optional<int> GetSecondaryInterfaceBestEffort(HANDLE wlanHandle);
 }

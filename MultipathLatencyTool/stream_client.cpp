@@ -30,8 +30,8 @@ namespace {
 
 } // namespace
 
-StreamClient::StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, int secondaryInterfaceIndex, HANDLE completeEvent) :
-    m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent)
+StreamClient::StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, std::optional<int> secondaryInterfaceIndex, HANDLE completeEvent) :
+    m_targetAddress(std::move(targetAddress)), m_useSecondaryInterface(static_cast<bool>(secondaryInterfaceIndex)), m_completeEvent(completeEvent)
 {
     constexpr DWORD defaultSocketReceiveBufferSize = 1048576; // 1MB receive buffer
 
@@ -48,18 +48,21 @@ StreamClient::StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIn
 
     m_primaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_primaryState.m_socket.get());
 
-    m_secondaryState.m_socket.reset(CreateDatagramSocket());
-    m_secondaryState.m_interface = Interface::Secondary;
-    m_secondaryState.m_interfaceIndex = secondaryInterfaceIndex;
-    SetSocketReceiveBufferSize(m_secondaryState.m_socket.get(), defaultSocketReceiveBufferSize);
-    SetSocketOutgoingInterface(m_secondaryState.m_socket.get(), m_targetAddress.family(), m_secondaryState.m_interfaceIndex);
+    if (m_useSecondaryInterface)
+    {
+        m_secondaryState.m_socket.reset(CreateDatagramSocket());
+        m_secondaryState.m_interface = Interface::Secondary;
+        m_secondaryState.m_interfaceIndex = *secondaryInterfaceIndex;
+        SetSocketReceiveBufferSize(m_secondaryState.m_socket.get(), defaultSocketReceiveBufferSize);
+        SetSocketOutgoingInterface(m_secondaryState.m_socket.get(), m_targetAddress.family(), m_secondaryState.m_interfaceIndex);
 
-    PRINT_DEBUG_INFO(
-        "\tStreamClient::StreamClient - created secondary socket %zu on bound to interface index %d\n",
-        m_secondaryState.m_socket.get(),
-        m_secondaryState.m_interfaceIndex);
+        PRINT_DEBUG_INFO(
+            "\tStreamClient::StreamClient - created secondary socket %zu on bound to interface index %d\n",
+            m_secondaryState.m_socket.get(),
+            m_secondaryState.m_interfaceIndex);
 
-    m_secondaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_secondaryState.m_socket.get());
+        m_secondaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_secondaryState.m_socket.get());
+    }
 
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
 }
@@ -70,7 +73,10 @@ void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBit
 
     // allocate the receive contexts
     m_primaryState.m_receiveStates.resize(receiveBufferCount);
-    m_secondaryState.m_receiveStates.resize(receiveBufferCount);
+    if (m_useSecondaryInterface)
+    {
+        m_secondaryState.m_receiveStates.resize(receiveBufferCount);
+    }
 
     // initialize the send buffer
     for (size_t i = 0u; i < m_sharedSendBuffer.size(); ++i)
@@ -93,7 +99,10 @@ void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBit
     // connect to target on both sockets
     PRINT_DEBUG_INFO("\tStreamClient::Start - initiating connect on both sockets\n");
     Connect(m_primaryState);
-    Connect(m_secondaryState);
+    if (m_useSecondaryInterface)
+    {
+        Connect(m_secondaryState);
+    }
 
     PRINT_DEBUG_INFO("\tStreamClient::Start - connected on both sockets\n");
 
@@ -103,9 +112,13 @@ void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBit
     {
         InitiateReceive(m_primaryState, receiveState);
     }
-    for (auto& receiveState : m_secondaryState.m_receiveStates)
+
+    if (m_useSecondaryInterface)
     {
-        InitiateReceive(m_secondaryState, receiveState);
+        for (auto& receiveState : m_secondaryState.m_receiveStates)
+        {
+            InitiateReceive(m_secondaryState, receiveState);
+        }
     }
 
     // start sends
@@ -165,17 +178,20 @@ void StreamClient::PrintStatistics()
                 primaryLostFrames += 1;
             }
 
-            if (stat.m_secondaryReceiveTimestamp >= 0)
+            if (m_useSecondaryInterface)
             {
-                const auto secondaryLatencyMs =
-                    ConvertHundredNanosToMillis(stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
-                secondaryLatencyTotal += secondaryLatencyMs;
-                secondaryLatencySamples += 1;
-                aggregatedLatency = min(aggregatedLatency, secondaryLatencyMs);
-            }
-            else
-            {
-                secondaryLostFrames += 1;
+                if (stat.m_secondaryReceiveTimestamp >= 0)
+                {
+                    const auto secondaryLatencyMs =
+                        ConvertHundredNanosToMillis(stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
+                    secondaryLatencyTotal += secondaryLatencyMs;
+                    secondaryLatencySamples += 1;
+                    aggregatedLatency = min(aggregatedLatency, secondaryLatencyMs);
+                }
+                else
+                {
+                    secondaryLostFrames += 1;
+                }
             }
 
             if (stat.m_secondaryReceiveTimestamp >= 0 || stat.m_primaryReceiveTimestamp >= 0)
@@ -317,12 +333,18 @@ void StreamClient::SendDatagrams() noexcept
     if (m_whichFirst == Interface::Primary)
     {
         SendDatagram(m_primaryState);
-        SendDatagram(m_secondaryState);
+        if (m_useSecondaryInterface)
+        {
+            SendDatagram(m_secondaryState);
+        }
         m_whichFirst = Interface::Secondary;
     }
     else
     {
-        SendDatagram(m_secondaryState);
+        if (m_useSecondaryInterface)
+        {
+            SendDatagram(m_secondaryState);
+        }
         SendDatagram(m_primaryState);
         m_whichFirst = Interface::Primary;
     }
@@ -407,7 +429,7 @@ void StreamClient::SendCompletion(SocketState& socketState, const SendState& sen
 {
     socketState.m_sentFrames += 1;
 
-    FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: received sequence number out of bounds of vector");
+    FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: sequence number out of bounds of vector");
     auto& stat = m_latencyStatistics[static_cast<unsigned int>(sendState.m_sequenceNumber)];
 
     stat.m_sequenceNumber = sendState.m_sequenceNumber;

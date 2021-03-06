@@ -7,8 +7,6 @@
 #include <wil/result.h>
 #include <wil/resource.h>
 
-#include <vector>
-
 #include <Windows.h>
 #include <wlanapi.h>
 #include <netioapi.h>
@@ -23,10 +21,7 @@ std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
 
     PWLAN_INTERFACE_INFO_LIST primaryInterfaceList = nullptr;
     const auto error = WlanEnumInterfaces(wlanHandle, nullptr, &primaryInterfaceList);
-    if (ERROR_SUCCESS != error)
-    {
-        THROW_WIN32_MSG(error, "WlanEnumInterfaces failed");
-    }
+    THROW_IF_WIN32_ERROR_MSG(error, "WlanEnumInterfaces failed");
 
     if (primaryInterfaceList->dwNumberOfItems < 1)
     {
@@ -42,24 +37,19 @@ std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
     return primaryInterfaces;
 }
 
-void SetSecondaryInterfaceEnabled(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
+void EnableSecondaryInterface(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
 {
     BOOL enable = TRUE;
     const auto error = WlanSetInterface(
         wlanHandle, &primaryInterfaceGuid, wlan_intf_opcode_secondary_sta_synchronized_connections, sizeof(BOOL), static_cast<PVOID>(&enable), nullptr);
-    if (ERROR_SUCCESS != error)
-    {
-        THROW_WIN32_MSG(error, "WlanSetInterface(wlan_intf_opcode_secondary_sta_synchronized_connections) failed");
-    }
+    THROW_IF_WIN32_ERROR_MSG(error, "WlanSetInterface(wlan_intf_opcode_secondary_sta_synchronized_connections) failed");
 
     PRINT_DEBUG_INFO("\tSetSecondaryInterfaceEnabled - successfully set opcode "
                      "`wlan_intf_opcode_secondary_sta_synchronized_connections`\n");
 }
 
-std::vector<GUID> GetSecondaryInterfaceGuids(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
+std::optional<GUID> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const GUID& primaryInterfaceGuid)
 {
-    std::vector<GUID> secondaryInterfaces{};
-
     PWLAN_INTERFACE_INFO_LIST secondaryInterfaceList = nullptr;
     DWORD dataSize = 0;
 
@@ -71,19 +61,19 @@ std::vector<GUID> GetSecondaryInterfaceGuids(HANDLE wlanHandle, const GUID& prim
         &dataSize,
         reinterpret_cast<PVOID*>(&secondaryInterfaceList),
         nullptr);
-    if (ERROR_SUCCESS != error)
-    {
-        THROW_WIN32_MSG(error, "WlanQueryInterface failed");
-    }
+    THROW_IF_WIN32_ERROR_MSG(error, "WlanQueryInterface failed");
 
     PRINT_DEBUG_INFO("\tGetSecondaryInterfaceGuids - received %lu secondary interface GUIDs\n", secondaryInterfaceList->dwNumberOfItems);
 
-    for (auto i = 0u; i < secondaryInterfaceList->dwNumberOfItems; ++i)
+    // There is at most one secondary interface for a primary interface
+    if (secondaryInterfaceList->dwNumberOfItems > 0)
     {
-        secondaryInterfaces.push_back(secondaryInterfaceList->InterfaceInfo[i].InterfaceGuid);
+        return secondaryInterfaceList->InterfaceInfo[0].InterfaceGuid;
     }
-
-    return secondaryInterfaces;
+    else
+    {
+        return std::nullopt;
+    }
 }
 
 struct WlanInterfaceGuids
@@ -91,27 +81,6 @@ struct WlanInterfaceGuids
     GUID m_primaryInterface;
     GUID m_secondaryInterface;
 };
-
-WlanInterfaceGuids GetWlanInterfaces(HANDLE wlanHandle)
-{
-    auto primaryInterfaces = GetPrimaryInterfaceGuids(wlanHandle);
-
-    // scan the returned list for interfaces that have secondary interfaces
-    // stop when we have found an adapter that supports secondary STA
-    for (const auto& primaryInterface : primaryInterfaces)
-    {
-        SetSecondaryInterfaceEnabled(wlanHandle, primaryInterface);
-
-        auto secondaryInterfaces = GetSecondaryInterfaceGuids(wlanHandle, primaryInterface);
-        if (!secondaryInterfaces.empty())
-        {
-            // pull the first interface from the list
-            return {primaryInterface, secondaryInterfaces.front()};
-        }
-    }
-
-    THROW_WIN32_MSG(ERROR_NOT_FOUND, "Unable to find WiFi adapter with Secondary STA support");
-}
 
 bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DWORD msTimeout = 30 * 1000)
 {
@@ -123,10 +92,10 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
             "\tWaitForConnectedWlanInterfaces [callback] - checking for connected primary and secondary interfaces\n");
 
         auto profiles = NetworkInformation::GetConnectionProfiles();
-        for (auto const& profile : profiles)
+        for (const auto& profile : profiles)
         {
-            auto interfaceGuid = profile.NetworkAdapter().NetworkAdapterId();
-            if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.m_primaryInterface)
+            const auto interfaceGuid = profile.NetworkAdapter().NetworkAdapterId();
+            if (*reinterpret_cast<const GUID*>(&interfaceGuid) == wlanInterfaces.m_primaryInterface)
             {
                 PRINT_DEBUG_INFO(
                     "\tWaitForConnectedWlanInterfaces [callback] - found primary interface connection profile\n");
@@ -136,7 +105,7 @@ bool WaitForConnectedWlanInterfaces(const WlanInterfaceGuids& wlanInterfaces, DW
                     primaryConnected = true;
                 }
             }
-            else if (*reinterpret_cast<GUID*>(&interfaceGuid) == wlanInterfaces.m_secondaryInterface)
+            else if (*reinterpret_cast<const GUID*>(&interfaceGuid) == wlanInterfaces.m_secondaryInterface)
             {
                 PRINT_DEBUG_INFO(
                     "\tWaitForConnectedWlanInterfaces [callback] - found secondary interface connection profile\n");
@@ -191,22 +160,42 @@ int ConvertInterfaceGuidToIndex(const GUID& interfaceGuid)
     return static_cast<int>(interfaceIndex);
 }
 
-std::vector<int> GetConnectedWlanInterfaces(HANDLE wlanHandle)
+std::optional<int> GetSecondaryInterfaceBestEffort(HANDLE wlanHandle)
 {
-    std::vector<int> result;
-
-    const auto wlanInterfaceGuids = GetWlanInterfaces(wlanHandle);
-    const auto connected = WaitForConnectedWlanInterfaces(wlanInterfaceGuids);
-
-    if (connected)
+    const auto profile = NetworkInformation::GetInternetConnectionProfile();
+    if (!profile.IsWlanConnectionProfile())
     {
-        // both the primary and secondary interfaces are indicated as connected
-        // convert the GUIDs to interface indexes that can be set on the sockets
-        result.push_back(ConvertInterfaceGuidToIndex(wlanInterfaceGuids.m_primaryInterface));
-        result.push_back(ConvertInterfaceGuidToIndex(wlanInterfaceGuids.m_secondaryInterface));
+        return std::nullopt;
     }
 
-    return result;
+    const auto internetInterfaceGuid = profile.NetworkAdapter().NetworkAdapterId();
+
+    auto primaryInterfaces = GetPrimaryInterfaceGuids(wlanHandle);
+    if (primaryInterfaces.empty())
+    {
+        FAIL_FAST_MSG("WLAN connection without a WLAN interface");
+    }
+
+    // This is a global setting, the interface GUID doesn't matter.
+    EnableSecondaryInterface(wlanHandle, primaryInterfaces[0]);
+
+    // Check the connected interface is a device interface
+    const auto matchingWlanInterface = std::ranges::find(primaryInterfaces, *reinterpret_cast<const GUID*>(&internetInterfaceGuid));
+    if (matchingWlanInterface == primaryInterfaces.end())
+    {
+        return std::nullopt;
+    }
+
+    // Query the secondary interface (if any)
+    if (auto secondaryInterface = GetSecondaryInterfaceGuid(wlanHandle, *matchingWlanInterface))
+    {
+        WaitForConnectedWlanInterfaces(WlanInterfaceGuids{*reinterpret_cast<const GUID*>(&internetInterfaceGuid), *secondaryInterface});
+        return ConvertInterfaceGuidToIndex(*secondaryInterface);
+    }
+    else
+    {
+        return std::nullopt;
+    }
 }
 
 } // namespace multipath

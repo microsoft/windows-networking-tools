@@ -5,6 +5,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "sockaddr.h"
@@ -16,7 +17,7 @@ namespace multipath {
 class StreamClient
 {
 public:
-    StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, int secondaryInterfaceIndex, HANDLE completeEvent);
+    StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, std::optional<int> secondaryInterfaceIndex, HANDLE completeEvent);
 
     void Start(unsigned long receiveBufferCount, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
     void Stop();
@@ -108,6 +109,7 @@ private:
     Interface m_whichFirst = Interface::Primary;
     SocketState m_primaryState{};
     SocketState m_secondaryState{};
+    bool m_useSecondaryInterface = false;
 
     // The number of datagrams to send on each timer callback
     long long m_frameRate = 0;

@@ -31,9 +31,6 @@ struct Configuration
     // the target address to connect to (client only)
     ctl::ctSockaddr m_targetAddress{};
 
-    // the list of interfaces to bind against (client only)
-    std::vector<int> m_bindInterfaces{};
-
     // the port to use for connections
     unsigned short m_port = c_defaultPort;
 
@@ -52,6 +49,13 @@ struct Configuration
     // the file to output the results to (as csv)
     std::filesystem::path m_outputFile{};
 
-    bool m_ignoreDualSta = false;
+    // behavior for the secondary WLAN interface
+    enum class SecondaryInterfaceBehavior
+    {
+        Enforce,
+        BestEffort,
+        Ignore
+    };
+    SecondaryInterfaceBehavior m_secondaryInterfaceBehavior = SecondaryInterfaceBehavior::BestEffort;
 };
 } // namespace multipath
