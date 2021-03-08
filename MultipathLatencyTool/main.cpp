@@ -375,6 +375,15 @@ void RunClientMode(Configuration& config)
 int __cdecl wmain(int argc, const wchar_t** argv)
 try
 {
+    // Print wil logs to the standard error output
+    wil::SetResultLoggingCallback([](wil::FailureInfo const& failure) noexcept {
+        constexpr std::size_t sizeOfLogMessageWithNul = 2048;
+
+        wchar_t logMessage[sizeOfLogMessageWithNul];
+        wil::GetFailureLogString(logMessage, sizeOfLogMessageWithNul, failure);
+        std::fputws(logMessage, stderr);
+    });
+
     init_apartment();
 
     WSADATA wsadata{};
