@@ -103,10 +103,6 @@ private:
 
     ctl::ctSockaddr m_targetAddress{};
 
-    // indicates which interface the datagram should be sent on first
-    // this alternates between Primary and Secondary to reduce the chance
-    // of the order in which datagrams are sent affecting the total latency
-    Interface m_whichFirst = Interface::Primary;
     SocketState m_primaryState{};
     SocketState m_secondaryState{};
     bool m_useSecondaryInterface = false;

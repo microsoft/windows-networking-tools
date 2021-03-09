@@ -325,28 +325,17 @@ void StreamClient::TimerCallback() noexcept
 
 void StreamClient::SendDatagrams() noexcept
 {
+    // TODO guhetier: Data race on m_stopCalled. We should wait for all the send callbacks when stopping
     if (m_stopCalled)
     {
         return;
     }
 
-    if (m_whichFirst == Interface::Primary)
+    SendDatagram(m_primaryState);
+
+    if (m_useSecondaryInterface)
     {
-        SendDatagram(m_primaryState);
-        if (m_useSecondaryInterface)
-        {
-            SendDatagram(m_secondaryState);
-        }
-        m_whichFirst = Interface::Secondary;
-    }
-    else
-    {
-        if (m_useSecondaryInterface)
-        {
-            SendDatagram(m_secondaryState);
-        }
-        SendDatagram(m_primaryState);
-        m_whichFirst = Interface::Primary;
+        SendDatagram(m_secondaryState);
     }
 
     m_sequenceNumber += 1;
