@@ -249,7 +249,7 @@ void StreamClient::Connect(SocketState& socketState)
 {
     // simulate a connect call so that our sockets become bound to their respective interface's IP addresses
     constexpr long long startSequenceNumber = -1;
-    DatagramSendRequest sendRequest{startSequenceNumber, m_sharedSendBuffer.data(), m_sharedSendBuffer.size()};
+    DatagramSendRequest sendRequest{startSequenceNumber, m_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
 
     PRINT_DEBUG_INFO(
@@ -350,10 +350,8 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
         return;
     }
 
-    DatagramSendRequest sendRequest{m_sequenceNumber, m_sharedSendBuffer.data(), m_sharedSendBuffer.size()};
-
+    DatagramSendRequest sendRequest{m_sequenceNumber, m_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
-
     const SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
 
     PRINT_DEBUG_INFO(

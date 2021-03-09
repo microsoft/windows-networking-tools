@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <span>
 #include <WinSock2.h>
 
 namespace multipath {
@@ -39,7 +40,7 @@ public:
     static constexpr size_t c_bufferArraySize = 4;
     using BufferArray = std::array<WSABUF, c_bufferArraySize>;
 
-    DatagramSendRequest(long long sequenceNumber, const char* sendBuffer, size_t sendBufferLength) :
+    DatagramSendRequest(long long sequenceNumber, std::span<const char> sendBuffer) :
         m_sequenceNumber(sequenceNumber)
     {
         static_assert(c_bufferArraySize == c_datagramPayloadOffset + 1);
@@ -54,8 +55,8 @@ public:
         m_wsabufs[c_datagramEchoTimestampOffset].buf = reinterpret_cast<char*>(&m_echoTimestamp.QuadPart);
         m_wsabufs[c_datagramEchoTimestampOffset].len = c_datagramTimestampLength;
 
-        m_wsabufs[c_datagramPayloadOffset].buf = const_cast<char*>(sendBuffer);
-        m_wsabufs[c_datagramPayloadOffset].len = static_cast<ULONG>(sendBufferLength - c_datagramHeaderLength);
+        m_wsabufs[c_datagramPayloadOffset].buf = const_cast<char*>(sendBuffer.data());
+        m_wsabufs[c_datagramPayloadOffset].len = static_cast<ULONG>(sendBuffer.size() - c_datagramHeaderLength);
     }
 
     BufferArray& GetBuffers() noexcept
