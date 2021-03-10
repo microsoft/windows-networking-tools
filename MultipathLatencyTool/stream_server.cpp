@@ -81,8 +81,9 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
         wsabuf.buf = receiveContext.m_buffer.data();
         wsabuf.len = bytesReceived;
 
+        DWORD bytesTransferred = 0;
         const auto error = WSASendTo(
-            m_socket.get(), &wsabuf, 1, nullptr, 0, receiveContext.m_remoteAddress.sockaddr(), receiveContext.m_remoteAddressLen, nullptr, nullptr);
+            m_socket.get(), &wsabuf, 1, &bytesTransferred, 0, receiveContext.m_remoteAddress.sockaddr(), receiveContext.m_remoteAddressLen, nullptr, nullptr);
         if (SOCKET_ERROR == error)
         {
             // best effort send
