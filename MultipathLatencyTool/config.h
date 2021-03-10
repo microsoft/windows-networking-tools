@@ -50,12 +50,6 @@ struct Configuration
     std::filesystem::path m_outputFile{};
 
     // behavior for the secondary WLAN interface
-    enum class SecondaryInterfaceBehavior
-    {
-        Enforce,
-        BestEffort,
-        Ignore
-    };
-    SecondaryInterfaceBehavior m_secondaryInterfaceBehavior = SecondaryInterfaceBehavior::BestEffort;
+    bool m_useSecondaryWlanInterface = true;
 };
 } // namespace multipath

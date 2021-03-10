@@ -1,7 +1,9 @@
 #include "stream_client.h"
-#include "socket_utils.h"
+
+#include "adapters.h"
 #include "datagram.h"
 #include "debug.h"
+#include "socket_utils.h"
 
 #include <wil/result.h>
 
@@ -10,6 +12,9 @@
 
 namespace multipath {
 namespace {
+
+    constexpr DWORD c_defaultSocketReceiveBufferSize = 1048576; // 1MB receive buffer
+
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
     constexpr long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
     {
@@ -30,15 +35,14 @@ namespace {
 
 } // namespace
 
-StreamClient::StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, std::optional<int> secondaryInterfaceIndex, HANDLE completeEvent) :
-    m_targetAddress(std::move(targetAddress)), m_useSecondaryInterface(static_cast<bool>(secondaryInterfaceIndex)), m_completeEvent(completeEvent)
+StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
+    m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent), m_receiveBufferCount(receiveBufferCount)
 {
-    constexpr DWORD defaultSocketReceiveBufferSize = 1048576; // 1MB receive buffer
-
     m_primaryState.m_socket.reset(CreateDatagramSocket());
     m_primaryState.m_interface = Interface::Primary;
-    m_primaryState.m_interfaceIndex = primaryInterfaceIndex;
-    SetSocketReceiveBufferSize(m_primaryState.m_socket.get(), defaultSocketReceiveBufferSize);
+    m_primaryState.m_interfaceIndex = 0;
+    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
+    SetSocketReceiveBufferSize(m_primaryState.m_socket.get(), c_defaultSocketReceiveBufferSize);
     SetSocketOutgoingInterface(m_primaryState.m_socket.get(), m_targetAddress.family(), m_primaryState.m_interfaceIndex);
 
     PRINT_DEBUG_INFO(
@@ -47,43 +51,122 @@ StreamClient::StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIn
         m_primaryState.m_interfaceIndex);
 
     m_primaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_primaryState.m_socket.get());
-
-    if (m_useSecondaryInterface)
-    {
-        m_secondaryState.m_socket.reset(CreateDatagramSocket());
-        m_secondaryState.m_interface = Interface::Secondary;
-        m_secondaryState.m_interfaceIndex = *secondaryInterfaceIndex;
-        SetSocketReceiveBufferSize(m_secondaryState.m_socket.get(), defaultSocketReceiveBufferSize);
-        SetSocketOutgoingInterface(m_secondaryState.m_socket.get(), m_targetAddress.family(), m_secondaryState.m_interfaceIndex);
-
-        PRINT_DEBUG_INFO(
-            "\tStreamClient::StreamClient - created secondary socket %zu on bound to interface index %d\n",
-            m_secondaryState.m_socket.get(),
-            m_secondaryState.m_interfaceIndex);
-
-        m_secondaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_secondaryState.m_socket.get());
-    }
-
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
-}
-
-void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
-{
-    PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", receiveBufferCount);
 
     // allocate the receive contexts
-    m_primaryState.m_receiveStates.resize(receiveBufferCount);
-    if (m_useSecondaryInterface)
-    {
-        m_secondaryState.m_receiveStates.resize(receiveBufferCount);
-    }
+    m_primaryState.m_receiveStates.resize(m_receiveBufferCount);
+
+    PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", receiveBufferCount);
 
     // initialize the send buffer
     for (size_t i = 0u; i < m_sharedSendBuffer.size(); ++i)
     {
         m_sharedSendBuffer[i] = static_cast<char>(i);
     }
+}
 
+void StreamClient::RequestSecondaryWlanConnection()
+{
+    if (!m_wlanHandle)
+    {
+        // The handle to the wlan api must stay open to keep the secondary connection active
+        m_wlanHandle = OpenWlanHandle();
+        RequestSecondaryInterface(m_wlanHandle.get());
+        PRINT_DEBUG_INFO("\tStreamClient::RequestSecondaryWlanConnection - Secondary wlan connection requested\n");
+    }
+}
+
+void StreamClient::SetupSecondaryInterface()
+{
+    if (!m_wlanHandle)
+    {
+        PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary wlan connection not requested\n");
+        return;
+    }
+
+    // Callback to update the secondary interface state in response to network status events
+    auto updateSecondaryInterfaceStatus = [this]() {
+        PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Processing network changed event\n");
+        // Check if the primary interface changed
+        winrt::guid connectedInterfaceGuid = []() {
+            try
+            {
+                return NetworkInformation::GetInternetConnectionProfile().NetworkAdapter().NetworkAdapterId();
+            }
+            catch (...)
+            {
+                return winrt::guid{};
+            }
+        }();
+
+        // TODO: take the lock only when needed. Find a better lock maybe
+        auto lock = m_secondaryState.m_lock.lock();
+        // If the default internet ip interface changed, the secondary wlan interface status changes too
+        if (connectedInterfaceGuid != m_primaryInterfaceGuid)
+        {
+            PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - The preferred primary interface changed\n");
+            m_primaryInterfaceGuid = connectedInterfaceGuid;
+
+            // If a secondary wlan interface was used for the previous primary, tear it down
+            if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
+            {
+                PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Removing the secondary interface\n");
+                m_secondaryState.m_adapterStatus = AdapterStatus::Disabled;
+                m_secondaryState.m_socket.reset();
+                lock.reset();
+
+                // Wait for the completion of all remaining overlapped IO
+                m_secondaryState.m_threadpoolIo.reset();
+
+                lock = m_secondaryState.m_lock.lock();
+                m_secondaryInterfaceGuid = {};
+                PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface removed\n");
+            }
+
+            // If a secondary wlan interface is available for the new primary interface, get ready to use it
+            if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), m_primaryInterfaceGuid))
+            {
+                m_secondaryInterfaceGuid = *secondaryGuid;
+                m_secondaryState.m_adapterStatus = AdapterStatus::Connecting;
+                PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Connecting a secondary interface for the new primary interface\n");
+            }
+        }
+
+        // Once the secondary interface has network connectivity, setup it up for sending data
+        if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(m_secondaryInterfaceGuid))
+        {
+            PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket\n");
+            m_secondaryState.m_socket.reset(CreateDatagramSocket());
+            m_secondaryState.m_interface = Interface::Secondary;
+            m_secondaryState.m_interfaceIndex = ConvertInterfaceGuidToIndex(m_secondaryInterfaceGuid);
+            SetSocketReceiveBufferSize(m_secondaryState.m_socket.get(), c_defaultSocketReceiveBufferSize);
+            SetSocketOutgoingInterface(m_secondaryState.m_socket.get(), m_targetAddress.family(), m_secondaryState.m_interfaceIndex);
+            m_secondaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_secondaryState.m_socket.get());
+
+            m_secondaryState.m_receiveStates.resize(m_receiveBufferCount);
+            Connect(m_secondaryState);
+            for (auto& receiveState : m_secondaryState.m_receiveStates)
+            {
+                InitiateReceive(m_secondaryState, receiveState);
+            }
+
+            // The secondary interface is ready to send data, the client can start using it
+            m_secondaryState.m_adapterStatus = AdapterStatus::Ready;
+            PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface ready for use\n");
+        }
+    };
+
+    // Initial setup
+    updateSecondaryInterfaceStatus();
+
+    // Subscribe for network status updates
+    m_networkInformationEventRevoker = NetworkInformation::NetworkStatusChanged(
+        winrt::auto_revoke, [updateSecondaryInterfaceStatus = std::move(updateSecondaryInterfaceStatus)](const auto&) {
+        updateSecondaryInterfaceStatus(); });
+}
+
+void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
+{
     m_frameRate = sendFrameRate;
     const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, c_sendBufferSize);
     m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
@@ -99,21 +182,18 @@ void StreamClient::Start(unsigned long receiveBufferCount, unsigned long sendBit
     // connect to target on both sockets
     PRINT_DEBUG_INFO("\tStreamClient::Start - initiating connect on both sockets\n");
     Connect(m_primaryState);
-    if (m_useSecondaryInterface)
-    {
-        Connect(m_secondaryState);
-    }
+    SetupSecondaryInterface();
 
-    PRINT_DEBUG_INFO("\tStreamClient::Start - connected on both sockets\n");
+    PRINT_DEBUG_INFO("\tStreamClient::Start - connected to the server\n");
 
-    PRINT_DEBUG_INFO("\tStreamClient::Start - start posting receives\n");
+    PRINT_DEBUG_INFO("\tStreamClient::Start - start posting receive buffers\n");
     // initiate receives before starting the send timer
     for (auto& receiveState : m_primaryState.m_receiveStates)
     {
         InitiateReceive(m_primaryState, receiveState);
     }
 
-    if (m_useSecondaryInterface)
+    if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
     {
         for (auto& receiveState : m_secondaryState.m_receiveStates)
         {
@@ -133,6 +213,9 @@ void StreamClient::Stop()
     PRINT_DEBUG_INFO("\tStreamClient::Stop - canceling timer callback\n");
     m_threadpoolTimer->Stop();
 
+    PRINT_DEBUG_INFO("\tStreamClient::Stop - canceling timer callback\n");
+    m_networkInformationEventRevoker.revoke();
+
     PRINT_DEBUG_INFO("\tStreamClient::Stop - closing sockets\n");
     {
         auto primaryLock = m_primaryState.m_lock.lock();
@@ -143,6 +226,11 @@ void StreamClient::Stop()
         auto secondaryLock = m_secondaryState.m_lock.lock();
         m_secondaryState.m_socket.reset();
     }
+
+    m_primaryState.m_threadpoolIo.reset();
+    m_secondaryState.m_threadpoolIo.reset();
+
+    SetEvent(m_completeEvent);
 }
 
 void StreamClient::PrintStatistics()
@@ -178,20 +266,17 @@ void StreamClient::PrintStatistics()
                 primaryLostFrames += 1;
             }
 
-            if (m_useSecondaryInterface)
+            if (stat.m_secondaryReceiveTimestamp >= 0)
             {
-                if (stat.m_secondaryReceiveTimestamp >= 0)
-                {
-                    const auto secondaryLatencyMs =
-                        ConvertHundredNanosToMillis(stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
-                    secondaryLatencyTotal += secondaryLatencyMs;
-                    secondaryLatencySamples += 1;
-                    aggregatedLatency = min(aggregatedLatency, secondaryLatencyMs);
-                }
-                else
-                {
-                    secondaryLostFrames += 1;
-                }
+                const auto secondaryLatencyMs =
+                    ConvertHundredNanosToMillis(stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
+                secondaryLatencyTotal += secondaryLatencyMs;
+                secondaryLatencySamples += 1;
+                aggregatedLatency = min(aggregatedLatency, secondaryLatencyMs);
+            }
+            else
+            {
+                secondaryLostFrames += 1;
             }
 
             if (stat.m_secondaryReceiveTimestamp >= 0 || stat.m_primaryReceiveTimestamp >= 0)
@@ -258,7 +343,8 @@ void StreamClient::DumpLatencyData(std::ofstream& file)
 
 void StreamClient::Connect(SocketState& socketState)
 {
-    // simulate a connect call so that our sockets become bound to their respective interface's IP addresses
+    // Send a first datagram so our sockets become bound to their respective interface's IP addresses.
+    // `WSAReceiveFrom` will fail before the first datagram is sent.
     constexpr long long startSequenceNumber = -1;
     DatagramSendRequest sendRequest{startSequenceNumber, m_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
@@ -328,9 +414,7 @@ void StreamClient::TimerCallback() noexcept
 
         FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "FATAL: Exceeded the expected number of packets sent");
 
-        m_threadpoolTimer->Stop();
-
-        SetEvent(m_completeEvent);
+        Stop();
     }
 }
 
@@ -344,7 +428,7 @@ void StreamClient::SendDatagrams() noexcept
 
     SendDatagram(m_primaryState);
 
-    if (m_useSecondaryInterface)
+    if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
     {
         SendDatagram(m_secondaryState);
     }
@@ -450,8 +534,6 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         return;
     }
 
-    receiveState.m_remoteAddressLen = receiveState.m_remoteAddress.length();
-
     DWORD flags = 0;
 
     WSABUF wsabuf;
@@ -496,8 +578,8 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         1,
         &bytesTransferred,
         &flags,
-        receiveState.m_remoteAddress.sockaddr(),
-        &receiveState.m_remoteAddressLen,
+        nullptr,
+        nullptr,
         ov,
         nullptr);
     if (SOCKET_ERROR == error)

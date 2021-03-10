@@ -110,7 +110,8 @@ public:
         m_exiting = true;
         Stop();
 
-        WaitForThreadpoolTimerCallbacks(m_ptpTimer, TRUE);
+        WaitForThreadpoolTimerCallbacks(m_ptpTimer, true);
+        CloseThreadpoolTimer(m_ptpTimer);
     }
     ThreadpoolTimer(const ThreadpoolTimer&) = delete;
     ThreadpoolTimer& operator=(const ThreadpoolTimer&) = delete;

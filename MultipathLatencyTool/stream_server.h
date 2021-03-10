@@ -26,11 +26,10 @@ public:
 
 private:
     static constexpr std::size_t c_receiveBufferSize = 1024; // 1KB receive buffer
-    using ReceiveBuffer = std::array<char, c_receiveBufferSize>;
 
     struct ReceiveContext
     {
-        ReceiveBuffer m_buffer{};
+        std::array<char, c_receiveBufferSize> m_buffer{};
         ctl::ctSockaddr m_remoteAddress{};
         int m_remoteAddressLen = 0;
         DWORD m_receiveFlags = 0;

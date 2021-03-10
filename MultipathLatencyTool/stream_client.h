@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Windows.h>
+#include <winrt/Windows.Networking.Connectivity.h>
+#include <wlanapi.h>
+
 #include <wil/resource.h>
 
 #include <array>
@@ -12,14 +15,19 @@
 #include "threadpool_io.h"
 #include "threadpool_timer.h"
 
+using namespace winrt;
+using namespace Windows::Networking::Connectivity;
+
 namespace multipath {
 
 class StreamClient
 {
 public:
-    StreamClient(ctl::ctSockaddr targetAddress, int primaryInterfaceIndex, std::optional<int> secondaryInterfaceIndex, HANDLE completeEvent);
+    StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent);
 
-    void Start(unsigned long receiveBufferCount, unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
+    void RequestSecondaryWlanConnection();
+
+    void Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
     void Stop();
 
     void PrintStatistics();
@@ -34,6 +42,10 @@ public:
     ~StreamClient() = default;
 
 private:
+    NetworkInformation::NetworkStatusChanged_revoker m_networkInformationEventRevoker{};
+    // The client must keep this handle open to keep the secondary STA port active
+    wil::unique_wlan_handle m_wlanHandle;
+
     enum class Interface
     {
         Primary,
@@ -50,22 +62,25 @@ private:
     };
 
     static constexpr size_t c_receiveBufferSize = 1024; // 1KB receive buffer
-    using ReceiveBuffer = std::array<char, c_receiveBufferSize>;
-
     struct ReceiveState
     {
-        ctl::ctSockaddr m_remoteAddress{};
-        int m_remoteAddressLen{};
-        ReceiveBuffer m_buffer{};
+        std::array<char, c_receiveBufferSize> m_buffer{};
         long long m_receiveTimestamp{};
+    };
+
+            
+    enum class AdapterStatus
+    {
+        Disabled,
+        Connecting,
+        Ready
     };
 
     struct SocketState
     {
         ~SocketState() noexcept
         {
-            // guarantee the socket is torn down and TP stopped
-            // before freeing member buffers
+            // guarantee the socket is torn down and TP stopped before freeing member buffers
             {
                 const auto lock = m_lock.lock();
                 m_socket.reset();
@@ -88,9 +103,12 @@ private:
         long long m_sentFrames = 0;
         long long m_receivedFrames = 0;
         long long m_corruptFrames = 0;
+
+        AdapterStatus m_adapterStatus{AdapterStatus::Disabled};
     };
 
     void Connect(SocketState& socketState);
+    void SetupSecondaryInterface();
 
     void TimerCallback() noexcept;
 
@@ -105,10 +123,14 @@ private:
 
     SocketState m_primaryState{};
     SocketState m_secondaryState{};
-    bool m_useSecondaryInterface = false;
+
+    // TODO: Move somewhere better...
+    winrt::guid m_primaryInterfaceGuid;
+    winrt::guid m_secondaryInterfaceGuid;
 
     // The number of datagrams to send on each timer callback
     long long m_frameRate = 0;
+    unsigned long m_receiveBufferCount = 1;
 
     FILETIME m_tickInterval{};
     long long m_finalSequenceNumber = 0;

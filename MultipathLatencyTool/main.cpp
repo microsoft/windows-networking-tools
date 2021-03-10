@@ -248,22 +248,7 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
 
     if (auto secondary = ParseArgument(L"-secondary", args))
     {
-        if (L"enforce" == secondary)
-        {
-            config.m_secondaryInterfaceBehavior = Configuration::SecondaryInterfaceBehavior::Enforce;
-        }
-        else if (L"besteffort" == secondary)
-        {
-            config.m_secondaryInterfaceBehavior = Configuration::SecondaryInterfaceBehavior::BestEffort;
-        }
-        else if (L"ignore" == secondary)
-        {
-            config.m_secondaryInterfaceBehavior = Configuration::SecondaryInterfaceBehavior::Ignore;
-        }
-        else
-        {
-            throw std::invalid_argument("-secondary value must be one of: enforce, besteffort, ignore");
-        }
+        config.m_useSecondaryWlanInterface = (integer_cast<unsigned long>(*secondary) != 0);
     }
 
     if (auto outputPath = ParseArgument(L"-output", args))
@@ -324,32 +309,16 @@ void RunClientMode(Configuration& config)
     constexpr int primaryInterface = 0;
     std::optional<int> secondaryInterface{};
 
-    if (config.m_secondaryInterfaceBehavior != Configuration::SecondaryInterfaceBehavior::Ignore)
+    std::wcout << L"Starting connection setup...\n";
+    StreamClient client(config.m_targetAddress, config.m_prePostRecvs, completionEvent.get());
+
+    if (config.m_useSecondaryWlanInterface)
     {
-        DWORD clientVersion = 2; // Vista+ APIs
-        DWORD curVersion = 0;
-        auto error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
-        FAIL_FAST_IF_WIN32_ERROR_MSG(error, "WlanOpenHandle failed");
-
-        secondaryInterface = GetSecondaryInterfaceBestEffort(wlanHandle.get());
-
-        if (config.m_secondaryInterfaceBehavior == Configuration::SecondaryInterfaceBehavior::Enforce &&
-            !secondaryInterface)
-        {
-            throw std::runtime_error("Two connected interfaces are required to run the client");
-        }
-
-        if (secondaryInterface)
-        {
-            std::cout << "Using secondary interface, index: " << *secondaryInterface << std::endl;
-        }
+        client.RequestSecondaryWlanConnection();
     }
 
-    std::wcout << L"Starting connection setup...\n";
-    StreamClient client(config.m_targetAddress, primaryInterface, secondaryInterface, completionEvent.get());
-
     std::wcout << L"Start transmitting data...\n";
-    client.Start(config.m_prePostRecvs, config.m_bitrate, config.m_framerate, config.m_duration);
+    client.Start(config.m_bitrate, config.m_framerate, config.m_duration);
 
     // wait for twice as long as the duration
     if (!completionEvent.wait(config.m_duration * 2 * 1000))
