@@ -60,6 +60,17 @@ void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int 
     m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
 }
 
+void StreamClient::SocketState::Cancel()
+{
+    // guarantee the socket is torn down and TP stopped before freeing member buffers
+    {
+        const auto lock = m_lock.lock();
+        m_adapterStatus = AdapterStatus::Disabled;
+        m_socket.reset();
+    }
+    m_threadpoolIo.reset();
+}
+
 StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
     m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent), m_receiveBufferCount(receiveBufferCount)
 {
@@ -102,7 +113,7 @@ void StreamClient::SetupSecondaryInterface()
         // Check if the primary interface changed
         auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
 
-        auto lock = m_secondaryState.m_lock.lock();
+
         // If the default internet ip interface changed, the secondary wlan interface status changes too
         if (connectedInterfaceGuid != primaryInterfaceGuid)
         {
@@ -112,15 +123,7 @@ void StreamClient::SetupSecondaryInterface()
             // If a secondary wlan interface was used for the previous primary, tear it down
             if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
             {
-                PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Removing the secondary interface\n");
-                m_secondaryState.m_adapterStatus = AdapterStatus::Disabled;
-                m_secondaryState.m_socket.reset();
-                lock.reset();
-
-                // Wait for the completion of all remaining overlapped IO
-                m_secondaryState.m_threadpoolIo.reset();
-
-                lock = m_secondaryState.m_lock.lock();
+                m_secondaryState.Cancel();
                 PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface removed\n");
             }
 
@@ -136,9 +139,11 @@ void StreamClient::SetupSecondaryInterface()
         // Once the secondary interface has network connectivity, setup it up for sending data
         if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
+            auto lock = m_secondaryState.m_lock.lock();
             PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket\n");
             m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
             Connect(m_secondaryState);
+
             for (auto& receiveState : m_secondaryState.m_receiveStates)
             {
                 InitiateReceive(m_secondaryState, receiveState);
@@ -209,22 +214,12 @@ void StreamClient::Stop()
     PRINT_DEBUG_INFO("\tStreamClient::Stop - canceling timer callback\n");
     m_threadpoolTimer->Stop();
 
-    PRINT_DEBUG_INFO("\tStreamClient::Stop - canceling timer callback\n");
+    PRINT_DEBUG_INFO("\tStreamClient::Stop - canceling network information event subscription\n");
     m_networkInformationEventRevoker.revoke();
 
     PRINT_DEBUG_INFO("\tStreamClient::Stop - closing sockets\n");
-    {
-        auto primaryLock = m_primaryState.m_lock.lock();
-        m_primaryState.m_socket.reset();
-    }
-
-    {
-        auto secondaryLock = m_secondaryState.m_lock.lock();
-        m_secondaryState.m_socket.reset();
-    }
-
-    m_primaryState.m_threadpoolIo.reset();
-    m_secondaryState.m_threadpoolIo.reset();
+    m_primaryState.Cancel();
+    m_secondaryState.Cancel();
 
     SetEvent(m_completeEvent);
 }

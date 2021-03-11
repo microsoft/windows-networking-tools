@@ -7,6 +7,7 @@
 #include <wil/resource.h>
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -82,6 +83,7 @@ private:
         ~SocketState() noexcept;
 
         void Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex = 0);
+        void Cancel();
 
         wil::critical_section m_lock{500};
         wil::unique_socket m_socket;
@@ -97,7 +99,7 @@ private:
         long long m_receivedFrames = 0;
         long long m_corruptFrames = 0;
 
-        AdapterStatus m_adapterStatus{AdapterStatus::Disabled};
+        std::atomic<AdapterStatus> m_adapterStatus{AdapterStatus::Disabled};
     };
 
     void Connect(SocketState& socketState);
