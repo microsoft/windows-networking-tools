@@ -78,24 +78,17 @@ private:
 
     struct SocketState
     {
-        ~SocketState() noexcept
-        {
-            // guarantee the socket is torn down and TP stopped before freeing member buffers
-            {
-                const auto lock = m_lock.lock();
-                m_socket.reset();
-            }
-            m_threadpoolIo.reset();
-        }
+        SocketState(Interface interface);
+        ~SocketState() noexcept;
+
+        void Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex = 0);
+
         wil::critical_section m_lock{500};
         wil::unique_socket m_socket;
         std::unique_ptr<ctl::ctThreadIocp> m_threadpoolIo;
 
-        // the interface index the socket will send outgoing data
-        int m_interfaceIndex;
-
         // whether the this socket is the primary or secondary
-        Interface m_interface;
+        const Interface m_interface;
 
         // the contexts used for each posted receive
         std::vector<ReceiveState> m_receiveStates;
@@ -121,8 +114,8 @@ private:
 
     ctl::ctSockaddr m_targetAddress{};
 
-    SocketState m_primaryState{};
-    SocketState m_secondaryState{};
+    SocketState m_primaryState{Interface::Primary};
+    SocketState m_secondaryState{Interface::Secondary};
 
     // TODO: Move somewhere better...
     winrt::guid m_primaryInterfaceGuid;

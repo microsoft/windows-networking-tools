@@ -35,28 +35,40 @@ namespace {
 
 } // namespace
 
+
+StreamClient::SocketState::SocketState(Interface interface) : m_interface{interface}
+{
+}
+
+StreamClient::SocketState ::~SocketState() noexcept
+{
+    // guarantee the socket is torn down and TP stopped before freeing member buffers
+    {
+        const auto lock = m_lock.lock();
+        m_socket.reset();
+    }
+    m_threadpoolIo.reset();
+}
+
+void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex)
+{
+    m_socket.reset(CreateDatagramSocket());
+    SetSocketReceiveBufferSize(m_socket.get(), c_defaultSocketReceiveBufferSize);
+    SetSocketOutgoingInterface(m_socket.get(), targetAddress.family(), interfaceIndex);
+    m_receiveStates.resize(numReceivedBuffers);
+
+    m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
+}
+
 StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
     m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent), m_receiveBufferCount(receiveBufferCount)
 {
-    m_primaryState.m_socket.reset(CreateDatagramSocket());
-    m_primaryState.m_interface = Interface::Primary;
-    m_primaryState.m_interfaceIndex = 0;
-    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
-    SetSocketReceiveBufferSize(m_primaryState.m_socket.get(), c_defaultSocketReceiveBufferSize);
-    SetSocketOutgoingInterface(m_primaryState.m_socket.get(), m_targetAddress.family(), m_primaryState.m_interfaceIndex);
+    m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
+    PRINT_DEBUG_INFO("\tStreamClient::StreamClient - created primary socket %zu\n", m_primaryState.m_socket.get());
 
-    PRINT_DEBUG_INFO(
-        "\tStreamClient::StreamClient - created primary socket %zu bound to interface index %d\n",
-        m_primaryState.m_socket.get(),
-        m_primaryState.m_interfaceIndex);
-
-    m_primaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_primaryState.m_socket.get());
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
 
-    // allocate the receive contexts
-    m_primaryState.m_receiveStates.resize(m_receiveBufferCount);
-
-    PRINT_DEBUG_INFO("\tStreamClient::Start - number of pre-posted receives is %lu\n", receiveBufferCount);
+    PRINT_DEBUG_INFO("\tStreamClient::StreamClient - number of pre-posted receives is %lu\n", m_receiveBufferCount);
 
     // initialize the send buffer
     for (size_t i = 0u; i < m_sharedSendBuffer.size(); ++i)
@@ -99,7 +111,6 @@ void StreamClient::SetupSecondaryInterface()
             }
         }();
 
-        // TODO: take the lock only when needed. Find a better lock maybe
         auto lock = m_secondaryState.m_lock.lock();
         // If the default internet ip interface changed, the secondary wlan interface status changes too
         if (connectedInterfaceGuid != m_primaryInterfaceGuid)
@@ -136,14 +147,7 @@ void StreamClient::SetupSecondaryInterface()
         if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(m_secondaryInterfaceGuid))
         {
             PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket\n");
-            m_secondaryState.m_socket.reset(CreateDatagramSocket());
-            m_secondaryState.m_interface = Interface::Secondary;
-            m_secondaryState.m_interfaceIndex = ConvertInterfaceGuidToIndex(m_secondaryInterfaceGuid);
-            SetSocketReceiveBufferSize(m_secondaryState.m_socket.get(), c_defaultSocketReceiveBufferSize);
-            SetSocketOutgoingInterface(m_secondaryState.m_socket.get(), m_targetAddress.family(), m_secondaryState.m_interfaceIndex);
-            m_secondaryState.m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_secondaryState.m_socket.get());
-
-            m_secondaryState.m_receiveStates.resize(m_receiveBufferCount);
+            m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(m_secondaryInterfaceGuid));
             Connect(m_secondaryState);
             for (auto& receiveState : m_secondaryState.m_receiveStates)
             {
@@ -182,6 +186,8 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     // connect to target on both sockets
     PRINT_DEBUG_INFO("\tStreamClient::Start - initiating connect on both sockets\n");
     Connect(m_primaryState);
+    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
+
     SetupSecondaryInterface();
 
     PRINT_DEBUG_INFO("\tStreamClient::Start - connected to the server\n");

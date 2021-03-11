@@ -16,13 +16,13 @@ wil::unique_wlan_handle OpenWlanHandle()
     constexpr DWORD clientVersion = 2; // Vista+ APIs
     DWORD curVersion = 0;
     wil::unique_wlan_handle wlanHandle;
-    auto error = ::WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
+    auto error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
     FAIL_FAST_IF_WIN32_ERROR_MSG(error, "WlanOpenHandle failed");
 
     return wlanHandle;
 }
 
-std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
+std::vector<GUID> GetPrimaryWlanInterfaceGuids(HANDLE wlanHandle)
 {
     std::vector<GUID> primaryInterfaces{};
 
@@ -46,7 +46,7 @@ std::vector<GUID> GetPrimaryInterfaceGuids(HANDLE wlanHandle)
 
 void RequestSecondaryInterface(HANDLE wlanHandle)
 {
-    auto wlanInterfaceGuids = GetPrimaryInterfaceGuids(wlanHandle);
+    auto wlanInterfaceGuids = GetPrimaryWlanInterfaceGuids(wlanHandle);
 
     BOOL enable = TRUE;
     const auto error = WlanSetInterface(
@@ -57,9 +57,19 @@ void RequestSecondaryInterface(HANDLE wlanHandle)
                      "`wlan_intf_opcode_secondary_sta_synchronized_connections`\n");
 }
 
+winrt::guid GetPrimaryInterfaceGuid() noexcept
+try
+{
+    return NetworkInformation::GetInternetConnectionProfile().NetworkAdapter().NetworkAdapterId();
+}
+catch (...)
+{
+    return winrt::guid{};
+}
+
 std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const winrt::guid& primaryInterfaceGuid)
 {
-    const auto wlanInterfaces = GetPrimaryInterfaceGuids(wlanHandle);
+    const auto wlanInterfaces = GetPrimaryWlanInterfaceGuids(wlanHandle);
     auto matchingWlanInterface = std::ranges::find_if(
         wlanInterfaces, [&](const auto& guid) { return guid == *reinterpret_cast<const GUID*>(&primaryInterfaceGuid); });
 
@@ -94,8 +104,6 @@ std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const wi
         return std::nullopt;
     }
 }
-
-
 
 bool IsAdapterConnected(const winrt::guid& adapterId)
 {
