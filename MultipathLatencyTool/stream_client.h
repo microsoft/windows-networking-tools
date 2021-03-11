@@ -117,10 +117,6 @@ private:
     SocketState m_primaryState{Interface::Primary};
     SocketState m_secondaryState{Interface::Secondary};
 
-    // TODO: Move somewhere better...
-    winrt::guid m_primaryInterfaceGuid;
-    winrt::guid m_secondaryInterfaceGuid;
-
     // The number of datagrams to send on each timer callback
     long long m_frameRate = 0;
     unsigned long m_receiveBufferCount = 1;

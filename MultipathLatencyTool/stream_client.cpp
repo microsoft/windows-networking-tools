@@ -97,26 +97,17 @@ void StreamClient::SetupSecondaryInterface()
     }
 
     // Callback to update the secondary interface state in response to network status events
-    auto updateSecondaryInterfaceStatus = [this]() {
+    auto updateSecondaryInterfaceStatus = [this, primaryInterfaceGuid = winrt::guid{}, secondaryInterfaceGuid = winrt::guid{}]() mutable {
         PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Processing network changed event\n");
         // Check if the primary interface changed
-        winrt::guid connectedInterfaceGuid = []() {
-            try
-            {
-                return NetworkInformation::GetInternetConnectionProfile().NetworkAdapter().NetworkAdapterId();
-            }
-            catch (...)
-            {
-                return winrt::guid{};
-            }
-        }();
+        auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
 
         auto lock = m_secondaryState.m_lock.lock();
         // If the default internet ip interface changed, the secondary wlan interface status changes too
-        if (connectedInterfaceGuid != m_primaryInterfaceGuid)
+        if (connectedInterfaceGuid != primaryInterfaceGuid)
         {
             PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - The preferred primary interface changed\n");
-            m_primaryInterfaceGuid = connectedInterfaceGuid;
+            primaryInterfaceGuid = connectedInterfaceGuid;
 
             // If a secondary wlan interface was used for the previous primary, tear it down
             if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
@@ -130,24 +121,23 @@ void StreamClient::SetupSecondaryInterface()
                 m_secondaryState.m_threadpoolIo.reset();
 
                 lock = m_secondaryState.m_lock.lock();
-                m_secondaryInterfaceGuid = {};
                 PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface removed\n");
             }
 
             // If a secondary wlan interface is available for the new primary interface, get ready to use it
-            if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), m_primaryInterfaceGuid))
+            if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), primaryInterfaceGuid))
             {
-                m_secondaryInterfaceGuid = *secondaryGuid;
+                secondaryInterfaceGuid = *secondaryGuid;
                 m_secondaryState.m_adapterStatus = AdapterStatus::Connecting;
                 PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Connecting a secondary interface for the new primary interface\n");
             }
         }
 
         // Once the secondary interface has network connectivity, setup it up for sending data
-        if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(m_secondaryInterfaceGuid))
+        if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
             PRINT_DEBUG_INFO("\tStreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket\n");
-            m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(m_secondaryInterfaceGuid));
+            m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
             Connect(m_secondaryState);
             for (auto& receiveState : m_secondaryState.m_receiveStates)
             {
@@ -165,7 +155,7 @@ void StreamClient::SetupSecondaryInterface()
 
     // Subscribe for network status updates
     m_networkInformationEventRevoker = NetworkInformation::NetworkStatusChanged(
-        winrt::auto_revoke, [updateSecondaryInterfaceStatus = std::move(updateSecondaryInterfaceStatus)](const auto&) {
+        winrt::auto_revoke, [updateSecondaryInterfaceStatus = std::move(updateSecondaryInterfaceStatus)](const auto&) mutable {
         updateSecondaryInterfaceStatus(); });
 }
 
