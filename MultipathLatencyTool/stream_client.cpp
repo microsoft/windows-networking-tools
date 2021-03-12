@@ -171,7 +171,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 
     // allocate statistics buffer
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
-    m_latencyStatistics.resize(static_cast<size_t>(m_finalSequenceNumber));
+    m_latencyData.resize(static_cast<size_t>(m_finalSequenceNumber));
 
     // connect to target on both sockets
     Log<LogLevel::Debug>("StreamClient::Start - Connecting primary socket");
@@ -212,90 +212,7 @@ void StreamClient::Stop()
 
 void StreamClient::PrintStatistics()
 {
-    // simple average of latencies for received datagrams
-    long long primaryLatencyTotal = 0;
-    long long secondaryLatencyTotal = 0;
-    long long aggregatedLatencyTotal = 0;
-
-    long long primaryLatencySamples = 0;
-    long long secondaryLatencySamples = 0;
-    long long aggregatedLatencySamples = 0;
-
-    long long primaryLostFrames = 0;
-    long long secondaryLostFrames = 0;
-    long long aggregatedLostFrames = 0;
-
-    for (const auto& stat : m_latencyStatistics)
-    {
-        long long aggregatedLatency = MAXLONGLONG;
-        if (stat.m_sequenceNumber > 0)
-        {
-            if (stat.m_primaryReceiveTimestamp >= 0)
-            {
-                const auto primaryLatencyMs =
-                    ConvertHundredNanosToMillis(stat.m_primaryReceiveTimestamp - stat.m_primarySendTimestamp);
-                primaryLatencyTotal += primaryLatencyMs;
-                primaryLatencySamples += 1;
-                aggregatedLatency = primaryLatencyMs;
-            }
-            else
-            {
-                primaryLostFrames += 1;
-            }
-
-            if (stat.m_secondaryReceiveTimestamp >= 0)
-            {
-                const auto secondaryLatencyMs =
-                    ConvertHundredNanosToMillis(stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
-                secondaryLatencyTotal += secondaryLatencyMs;
-                secondaryLatencySamples += 1;
-                aggregatedLatency = min(aggregatedLatency, secondaryLatencyMs);
-            }
-            else
-            {
-                secondaryLostFrames += 1;
-            }
-
-            if (stat.m_secondaryReceiveTimestamp >= 0 || stat.m_primaryReceiveTimestamp >= 0)
-            {
-                aggregatedLatencyTotal += aggregatedLatency;
-                aggregatedLatencySamples += 1;
-            }
-            else
-            {
-                aggregatedLostFrames += 1;
-            }
-        }
-    }
-
-    const auto primaryAverageLatency = (primaryLatencySamples > 0 ? primaryLatencyTotal / primaryLatencySamples : 0);
-    const auto secondaryAverageLatency = (secondaryLatencySamples > 0 ? secondaryLatencyTotal / secondaryLatencySamples : 0);
-    const auto aggregatedAverageLatency = (aggregatedLatencySamples > 0 ? aggregatedLatencyTotal / aggregatedLatencySamples : 0);
-    const auto aggregatedSendFrames = max(m_primaryState.m_sentFrames, m_secondaryState.m_sentFrames);
-
-    std::cout << '\n';
-    std::cout << "Sent frames on primary interface: " << m_primaryState.m_sentFrames << '\n';
-    std::cout << "Sent frames on secondary interface: " << m_secondaryState.m_sentFrames << '\n';
-
-    std::cout << '\n';
-    std::cout << "Received frames on primary interface: " << m_primaryState.m_receivedFrames << " ("
-              << (m_primaryState.m_sentFrames > 0 ? m_primaryState.m_receivedFrames * 100 / m_primaryState.m_sentFrames : 0) << "%)\n";
-    std::cout << "Received frames on secondary interface: " << m_secondaryState.m_receivedFrames << " ("
-              << (m_secondaryState.m_sentFrames > 0 ? m_secondaryState.m_receivedFrames * 100 / m_secondaryState.m_sentFrames : 0) << "%)\n";
-
-    std::cout << '\n';
-    std::cout << "Average latency on primary interface: " << primaryAverageLatency << '\n';
-    std::cout << "Average latency on secondary interface: " << secondaryAverageLatency << '\n';
-    std::cout << "Average latency on combined interface: " << aggregatedAverageLatency << " ("
-              << (primaryAverageLatency > 0 ? (aggregatedAverageLatency - primaryAverageLatency) * 100 / primaryAverageLatency : 0) << "% improvement over primary) \n";
-
-    std::cout << '\n';
-    std::cout << "Lost frames on primary interface: " << primaryLostFrames << " ("
-              << (m_primaryState.m_sentFrames > 0 ? (primaryLostFrames * 100 / m_primaryState.m_sentFrames) : 0) << "%)\n";
-    std::cout << "Lost frames on secondary interface: " << secondaryLostFrames << " ("
-              << (m_secondaryState.m_sentFrames > 0 ? (secondaryLostFrames * 100 / m_secondaryState.m_sentFrames) : 0) << "%)\n";
-    std::cout << "Lost frames on both interface simultaneously: " << aggregatedLostFrames << " ("
-              << (aggregatedSendFrames > 0 ? (aggregatedLostFrames * 100 / aggregatedSendFrames) : 0) << "%)\n";
+    PrintLatencyStatistics(m_latencyData);
 
     std::cout << '\n';
     std::cout << "Corrupt frames on primary interface: " << m_primaryState.m_corruptFrames << '\n';
@@ -304,18 +221,7 @@ void StreamClient::PrintStatistics()
 
 void StreamClient::DumpLatencyData(std::ofstream& file)
 {
-    // Add column header
-    file << "Sequence number, Primary Send timestamp (100ns), Primary Echo timestamp (100ns), Primary Receive "
-            "timestamp (100ns), "
-         << "Secondary Send timestamp (100ns), Secondary Echo timestamp (100ns), Secondary Receive timestamp (100ns)\n";
-    // Add raw timestamp data
-    for (const auto& stat : m_latencyStatistics)
-    {
-        file << stat.m_sequenceNumber << ", ";
-        file << stat.m_primarySendTimestamp << ", " << stat.m_primaryEchoTimestamp << ", " << stat.m_primaryReceiveTimestamp << ", ";
-        file << stat.m_secondarySendTimestamp << ", " << stat.m_secondaryEchoTimestamp << ", " << stat.m_secondaryReceiveTimestamp;
-        file << "\n";
-    }
+    multipath::DumpLatencyData(m_latencyData, file);
 }
 
 void StreamClient::Connect(SocketState& socketState)
@@ -480,12 +386,9 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
 void StreamClient::SendCompletion(SocketState& socketState, const SendState& sendState) noexcept
 {
-    socketState.m_sentFrames += 1;
-
     FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: sequence number out of bounds of vector");
-    auto& stat = m_latencyStatistics[static_cast<unsigned int>(sendState.m_sequenceNumber)];
+    auto& stat = m_latencyData[static_cast<unsigned int>(sendState.m_sequenceNumber)];
 
-    stat.m_sequenceNumber = sendState.m_sequenceNumber;
     if (socketState.m_interface == Interface::Primary)
     {
         stat.m_primarySendTimestamp = sendState.m_sendTimestamp;
@@ -585,9 +488,7 @@ try
         return;
     }
 
-    socketState.m_receivedFrames += 1;
-
-    auto& stat = m_latencyStatistics[static_cast<size_t>(header.m_sequenceNumber)];
+    auto& stat = m_latencyData[static_cast<size_t>(header.m_sequenceNumber)];
     if (socketState.m_interface == Interface::Primary)
     {
         stat.m_primarySendTimestamp = header.m_sendTimestamp;

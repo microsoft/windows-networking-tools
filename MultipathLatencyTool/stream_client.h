@@ -8,10 +8,12 @@
 
 #include <array>
 #include <atomic>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <vector>
 
+#include "latencyStatistics.h"
 #include "sockaddr.h"
 #include "threadpool_io.h"
 #include "threadpool_timer.h"
@@ -95,8 +97,6 @@ private:
         // the contexts used for each posted receive
         std::vector<ReceiveState> m_receiveStates;
 
-        long long m_sentFrames = 0;
-        long long m_receivedFrames = 0;
         long long m_corruptFrames = 0;
 
         std::atomic<AdapterStatus> m_adapterStatus{AdapterStatus::Disabled};
@@ -132,21 +132,7 @@ private:
     long long m_sequenceNumber = 0;
     SendBuffer m_sharedSendBuffer{};
 
-    struct LatencyStatistic
-    {
-        long long m_sequenceNumber = -1;
-
-        long long m_primarySendTimestamp = -1;
-        long long m_secondarySendTimestamp = -1;
-
-        long long m_primaryEchoTimestamp = -1;
-        long long m_secondaryEchoTimestamp = -1;
-
-        long long m_primaryReceiveTimestamp = -1;
-        long long m_secondaryReceiveTimestamp = -1;
-    };
-
-    std::vector<LatencyStatistic> m_latencyStatistics;
+    std::vector<LatencyData> m_latencyData;
 
     HANDLE m_completeEvent = nullptr;
 };

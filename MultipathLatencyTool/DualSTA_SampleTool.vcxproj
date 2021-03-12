@@ -117,6 +117,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="adapters.cpp" />
+    <ClCompile Include="latencyStatistics.cpp" />
     <ClCompile Include="logs.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="stream_client.cpp" />
@@ -133,6 +134,7 @@
     <ClInclude Include="adapters.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="datagram.h" />
+    <ClInclude Include="latencyStatistics.h" />
     <ClInclude Include="logs.h" />
     <ClInclude Include="sockaddr.h" />
     <ClInclude Include="socket_utils.h" />
