@@ -1,6 +1,6 @@
 #include "stream_server.h"
 #include "socket_utils.h"
-#include "debug.h"
+#include "logs.h"
 #include "datagram.h"
 
 namespace multipath {
@@ -74,7 +74,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
 
         // Update the echo timestamp
         QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&header.m_echoTimestamp));
-        PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
+        Log<LogLevel::All>("\tStreamServer::ReceiveCompletion - echoing sequence number %lld", header.m_sequenceNumber);
 
         // echo the data received. A synchronous send is enough.
         WSABUF wsabuf;
@@ -93,7 +93,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
     else
     {
         const auto lastError = WSAGetLastError();
-        PRINT_DEBUG_INFO("\tStreamServer::ReceiveCompletion - WSARecvFrom failed %u\n", lastError);
+        Log<LogLevel::Error>("\tStreamServer::ReceiveCompletion - WSARecvFrom failed %u", lastError);
     }
 
     // post another receive

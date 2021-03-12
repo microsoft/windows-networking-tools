@@ -1,5 +1,5 @@
 #include "adapters.h"
-#include "debug.h"
+#include "logs.h"
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <netioapi.h>
@@ -52,9 +52,6 @@ void RequestSecondaryInterface(HANDLE wlanHandle)
     const auto error = WlanSetInterface(
         wlanHandle, &wlanInterfaceGuids.front(), wlan_intf_opcode_secondary_sta_synchronized_connections, sizeof(BOOL), static_cast<PVOID>(&enable), nullptr);
     THROW_IF_WIN32_ERROR_MSG(error, "WlanSetInterface(wlan_intf_opcode_secondary_sta_synchronized_connections) failed");
-
-    PRINT_DEBUG_INFO("\tSetSecondaryInterfaceEnabled - successfully set opcode "
-                     "`wlan_intf_opcode_secondary_sta_synchronized_connections`\n");
 }
 
 winrt::guid GetPrimaryInterfaceGuid() noexcept
@@ -92,7 +89,7 @@ std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const wi
         nullptr);
     THROW_IF_WIN32_ERROR_MSG(error, "WlanQueryInterface failed");
 
-    PRINT_DEBUG_INFO("\tGetSecondaryInterfaceGuids - received %lu secondary interface GUIDs\n", secondaryInterfaceList->dwNumberOfItems);
+    Log<LogLevel::Debug>("GetSecondaryInterfaceGuids - received %lu secondary interface GUIDs", secondaryInterfaceList->dwNumberOfItems);
 
     // There is at most one secondary interface for a primary interface
     if (secondaryInterfaceList->dwNumberOfItems > 0)
@@ -114,12 +111,12 @@ bool IsAdapterConnected(const winrt::guid& adapterId)
         if (adapterId == profileAdapterId)
         {
             const auto connectivityLevel = profile.GetNetworkConnectivityLevel();
-            PRINT_DEBUG_INFO("\tAdapter connectivity level: %d\n", connectivityLevel);
+            Log<LogLevel::Info>("Adapter connectivity level: %d", connectivityLevel);
 
             return connectivityLevel == NetworkConnectivityLevel::InternetAccess;
         }
     }
-    PRINT_DEBUG_INFO("\tAdapter not found\n");
+    Log<LogLevel::Error>("Adapter not found");
     return false;
 }
 

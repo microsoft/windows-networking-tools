@@ -1,7 +1,7 @@
 // ReSharper disable StringLiteralTypo
 #include "adapters.h"
 #include "config.h"
-#include "debug.h"
+#include "logs.h"
 #include "sockaddr.h"
 #include "stream_client.h"
 #include "stream_server.h"
@@ -264,10 +264,9 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
 
     // Undocumented options for debug purpose
 
-    // Set to 2 for debug logs
-    if (auto consoleVerbosity = ParseArgument(L"-consoleVerbosity", args))
+    if (auto logLevel = ParseArgument(L"-loglevel", args))
     {
-        SetConsoleVerbosity(integer_cast<unsigned long>(*consoleVerbosity));
+        SetLogLevel(static_cast<LogLevel>(integer_cast<unsigned long>(*logLevel)));
     }
 
     if (!args.empty())
@@ -285,12 +284,12 @@ void RunServerMode(Configuration& config)
         config.m_listenAddress.SetPort(config.m_port);
     }
 
-    std::wcout << L"Starting the echo server...\n";
+    Log<LogLevel::Output>("Starting the echo server...");
 
     StreamServer server(config.m_listenAddress);
     server.Start(config.m_prePostRecvs);
 
-    std::wcout << L"Listening for data...\n";
+    Log<LogLevel::Output>("Ready to echo data");
 
     // Sleep until the program is interrupted with Ctrl-C
     Sleep(INFINITE);
@@ -306,33 +305,30 @@ void RunClientMode(Configuration& config)
     // must have this handle open until we are done to keep the secondary STA port active
     wil::unique_wlan_handle wlanHandle;
     wil::unique_event completionEvent(wil::EventOptions::ManualReset);
-    constexpr int primaryInterface = 0;
-    std::optional<int> secondaryInterface{};
 
-    std::wcout << L"Starting connection setup...\n";
+    Log<LogLevel::Output>("Starting connection setup...");
     StreamClient client(config.m_targetAddress, config.m_prePostRecvs, completionEvent.get());
-
     if (config.m_useSecondaryWlanInterface)
     {
         client.RequestSecondaryWlanConnection();
     }
 
-    std::wcout << L"Start transmitting data...\n";
+    Log<LogLevel::Output>("Start transmitting data...");
     client.Start(config.m_bitrate, config.m_framerate, config.m_duration);
 
     // wait for twice as long as the duration
     if (!completionEvent.wait(config.m_duration * 2 * 1000))
     {
-        std::wcout << L"Timed out waiting for run to completion\n";
+        Log<LogLevel::Error>("Timed out waiting for run to complete");
         client.Stop();
     }
 
-    std::wcout << L"Transmission complete\n";
+    Log<LogLevel::Output>("Transmission complete");
     client.PrintStatistics();
 
     if (!config.m_outputFile.empty())
     {
-        std::wcout << L"Dumping data to " << config.m_outputFile << "\n";
+        Log<LogLevel::Output>("Dumping data to %s...", config.m_outputFile.c_str());
         std::ofstream file{config.m_outputFile};
         client.DumpLatencyData(file);
         file.close();
@@ -382,31 +378,29 @@ try
 
     Configuration config = ParseArguments(args);
 
-    std::cout << "--- Configuration ---\n";
-    std::wcout << L"Port: " << config.m_port << L'\n';
-
-    if (config.m_listenAddress.family() != AF_UNSPEC)
-    {
-        std::wcout << L"Listen Address: " << config.m_listenAddress.WriteCompleteAddress() << L'\n';
-    }
-    else
-    {
-        std::wcout << L"Target Address: " << config.m_targetAddress.WriteCompleteAddress() << L'\n';
-        std::wcout << L"Stream Bitrate: " << config.m_bitrate << L" bits per second\n";
-        std::wcout << L"Stream Framerate: " << config.m_framerate << L'\n';
-        std::wcout << L"Stream Duration: " << config.m_duration << L" seconds\n";
-    }
-
-    std::wcout << L"Number of receive buffers: " << config.m_prePostRecvs << L'\n';
-
     if (config.m_listenAddress.family() != AF_UNSPEC)
     {
         // Start the server if "-listen" is specified
+        std::cout << "--- Server Mode ---\n";
+        std::wcout << L"Port: " << config.m_port << L'\n';
+        std::wcout << L"Listen Address: " << config.m_listenAddress.WriteCompleteAddress() << L'\n';
+        std::wcout << L"Number of receive buffers: " << config.m_prePostRecvs << L'\n';
+        std::cout << "-------------------\n\n";
+
         RunServerMode(config);
     }
     else
     {
         // Start a client if "-target" is specified
+        std::cout << "--- Client Mode ---\n";
+        std::wcout << L"Port: " << config.m_port << L'\n';
+        std::wcout << L"Target Address: " << config.m_targetAddress.WriteCompleteAddress() << L'\n';
+        std::wcout << L"Stream Bitrate: " << config.m_bitrate << L" bits per second\n";
+        std::wcout << L"Stream Framerate: " << config.m_framerate << L'\n';
+        std::wcout << L"Stream Duration: " << config.m_duration << L" seconds\n";
+        std::wcout << L"Number of receive buffers: " << config.m_prePostRecvs << L'\n';
+        std::cout << "-------------------\n\n";
+
         RunClientMode(config);
     }
 }
