@@ -92,7 +92,7 @@ void StreamClient::RequestSecondaryWlanConnection()
         m_wlanHandle = OpenWlanHandle();
         RequestSecondaryInterface(m_wlanHandle.get());
 
-        Log<LogLevel::Output>("Secondary wlan interfaces enabled");
+        Log<LogLevel::Output>("Secondary wlan interfaces enabled\n");
     }
 }
 
@@ -100,27 +100,27 @@ void StreamClient::SetupSecondaryInterface()
 {
     if (!m_wlanHandle)
     {
-        Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary wlan connection not requested");
+        Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary wlan connection not requested\n");
         return;
     }
 
     // Callback to update the secondary interface state in response to network status events
     auto updateSecondaryInterfaceStatus = [this, primaryInterfaceGuid = winrt::guid{}, secondaryInterfaceGuid = winrt::guid{}]() mutable {
-        Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Network changed event received");
+        Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Network changed event received\n");
         // Check if the primary interface changed
         auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
 
         // If the default internet ip interface changed, the secondary wlan interface status changes too
         if (connectedInterfaceGuid != primaryInterfaceGuid)
         {
-            Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - The preferred primary interface changed");
+            Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - The preferred primary interface changed\n");
             primaryInterfaceGuid = connectedInterfaceGuid;
 
             // If a secondary wlan interface was used for the previous primary, tear it down
             if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
             {
                 m_secondaryState.Cancel();
-                Log<LogLevel::Info>("Secondary interface removed");
+                Log<LogLevel::Info>("Secondary interface removed\n");
             }
 
             // If a secondary wlan interface is available for the new primary interface, get ready to use it
@@ -128,7 +128,7 @@ void StreamClient::SetupSecondaryInterface()
             {
                 secondaryInterfaceGuid = *secondaryGuid;
                 m_secondaryState.m_adapterStatus = AdapterStatus::Connecting;
-                Log<LogLevel::Info>("Secondary interface added. Waiting for connectivity.");
+                Log<LogLevel::Info>("Secondary interface added. Waiting for connectivity.\n");
             }
         }
 
@@ -136,7 +136,7 @@ void StreamClient::SetupSecondaryInterface()
         if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
             auto lock = m_secondaryState.m_lock.lock();
-            Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.");
+            Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
             m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
             Connect(m_secondaryState);
 
@@ -147,7 +147,7 @@ void StreamClient::SetupSecondaryInterface()
 
             // The secondary interface is ready to send data, the client can start using it
             m_secondaryState.m_adapterStatus = AdapterStatus::Ready;
-            Log<LogLevel::Info>("Secondary interface ready for use.");
+            Log<LogLevel::Info>("Secondary interface ready for use.\n");
         }
     };
 
@@ -167,20 +167,20 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
     m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, c_sendBufferSize);
 
-    Log<LogLevel::Output>("Sending %d datagrams, by groups of %d every %lld hundred nanoseconds", m_finalSequenceNumber + 1, m_frameRate, tickInterval);
+    Log<LogLevel::Output>("Sending %d datagrams, by groups of %d every %lld hundred nanoseconds\n", m_finalSequenceNumber + 1, m_frameRate, tickInterval);
 
     // allocate statistics buffer
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
     m_latencyData.resize(static_cast<size_t>(m_finalSequenceNumber));
 
     // connect to target on both sockets
-    Log<LogLevel::Debug>("StreamClient::Start - Connecting primary socket");
+    Log<LogLevel::Debug>("StreamClient::Start - Connecting primary socket\n");
     Connect(m_primaryState);
     m_primaryState.m_adapterStatus = AdapterStatus::Ready;
 
     SetupSecondaryInterface();
 
-    Log<LogLevel::Debug>("StreamClient::Start - Connected to the server");
+    Log<LogLevel::Debug>("StreamClient::Start - Connected to the server\n");
 
     // initiate receives before starting the send timer
     for (auto& receiveState : m_primaryState.m_receiveStates)
@@ -189,7 +189,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     }
 
     // start sends
-    Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback");
+    Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback\n");
     m_threadpoolTimer->Schedule(m_tickInterval);
 }
 
@@ -197,13 +197,13 @@ void StreamClient::Stop()
 {
     m_stopCalled = true;
 
-    Log<LogLevel::Debug>("StreamClient::Stop - canceling timer callback");
+    Log<LogLevel::Debug>("StreamClient::Stop - canceling timer callback\n");
     m_threadpoolTimer->Stop();
 
-    Log<LogLevel::Debug>("StreamClient::Stop - canceling network information event subscription");
+    Log<LogLevel::Debug>("StreamClient::Stop - canceling network information event subscription\n");
     m_networkInformationEventRevoker.revoke();
 
-    Log<LogLevel::Debug>("StreamClient::Stop - closing sockets");
+    Log<LogLevel::Debug>("StreamClient::Stop - closing sockets\n");
     m_primaryState.Cancel();
     m_secondaryState.Cancel();
 
@@ -232,7 +232,7 @@ void StreamClient::Connect(SocketState& socketState)
     DatagramSendRequest sendRequest{startSequenceNumber, m_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
 
-    Log<LogLevel::Debug>("Sending start message on %s socket %zu to %ws",
+    Log<LogLevel::Debug>("Sending start message on %s socket %zu to %ws\n",
         socketState.m_interface == Interface::Primary ? "primary" : "secondary",
         socketState.m_socket.get(),
         m_targetAddress.WriteCompleteAddress().c_str());
@@ -263,7 +263,7 @@ void StreamClient::Connect(SocketState& socketState)
     recvWsabuf.buf = receiveBuffer.data();
     recvWsabuf.len = static_cast<ULONG>(receiveBuffer.size());
 
-    Log<LogLevel::Debug>("StreamClient::Connect - listening for the answer from %ws", m_targetAddress.WriteCompleteAddress().c_str());
+    Log<LogLevel::Debug>("StreamClient::Connect - listening for the answer from %ws\n", m_targetAddress.WriteCompleteAddress().c_str());
 
     DWORD flags = 0;
     error = WSARecvFrom(
@@ -288,7 +288,7 @@ void StreamClient::TimerCallback() noexcept
     }
     else
     {
-        Log<LogLevel::Debug>("StreamClient::TimerCallback - final sequence number sent, canceling timer callback");
+        Log<LogLevel::Debug>("StreamClient::TimerCallback - final sequence number sent, canceling timer callback\n");
         FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "FATAL: Exceeded the expected number of packets sent");
         Stop();
     }
@@ -317,7 +317,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
     auto lock = socketState.m_lock.lock();
     if (!socketState.m_socket.is_valid())
     {
-        Log<LogLevel::Error>("StreamClient::SendDatagram - invalid socket, ignoring send request");
+        Log<LogLevel::Error>("StreamClient::SendDatagram - invalid socket, ignoring send request\n");
         return;
     }
 
@@ -338,7 +338,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
             if (m_stopCalled || !socketState.m_socket.is_valid())
             {
-                Log<LogLevel::Debug>("StreamClient::SendDatagram - Shutting down or socket is no longer valid, "
+                Log<LogLevel::Debug>("StreamClient::SendDatagram - Shutting down or socket is no longer valid, \n"
                                      "ignoring send completion");
                 return;
             }
@@ -352,7 +352,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
             else
             {
                 const auto lastError = WSAGetLastError();
-                Log<LogLevel::Error>("StreamClient::SendDatagram - WSASendTo failed : %u", lastError);
+                Log<LogLevel::Error>("StreamClient::SendDatagram - WSASendTo failed : %u\n", lastError);
             }
         }
         catch (...)
@@ -483,7 +483,7 @@ try
 
     if (header.m_sequenceNumber < 0 || header.m_sequenceNumber >= m_finalSequenceNumber)
     {
-        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame");
+        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame\n");
         socketState.m_corruptFrames += 1;
         return;
     }

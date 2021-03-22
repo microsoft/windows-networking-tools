@@ -89,7 +89,7 @@ std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const wi
         nullptr);
     THROW_IF_WIN32_ERROR_MSG(error, "WlanQueryInterface failed");
 
-    Log<LogLevel::Debug>("GetSecondaryInterfaceGuids - received %lu secondary interface GUIDs", secondaryInterfaceList->dwNumberOfItems);
+    Log<LogLevel::Debug>("GetSecondaryInterfaceGuids - received %lu secondary interface GUIDs\n", secondaryInterfaceList->dwNumberOfItems);
 
     // There is at most one secondary interface for a primary interface
     if (secondaryInterfaceList->dwNumberOfItems > 0)
@@ -111,12 +111,12 @@ bool IsAdapterConnected(const winrt::guid& adapterId)
         if (adapterId == profileAdapterId)
         {
             const auto connectivityLevel = profile.GetNetworkConnectivityLevel();
-            Log<LogLevel::Info>("Adapter connectivity level: %d", connectivityLevel);
+            Log<LogLevel::Info>("Adapter connectivity level: %d\n", connectivityLevel);
 
             return connectivityLevel == NetworkConnectivityLevel::InternetAccess;
         }
     }
-    Log<LogLevel::Error>("Adapter not found");
+    Log<LogLevel::Error>("Adapter not found\n");
     return false;
 }
 

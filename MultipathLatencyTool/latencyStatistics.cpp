@@ -135,10 +135,10 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Average latency on secondary interface: " << secondaryAverageLatency << '\n';
     std::cout << "Average minimum latency on both interface: " << aggregatedAverageLatency << " ("
               << percent(primaryAverageLatency - aggregatedAverageLatency, primaryAverageLatency)
-              << "% difference with primary) \n";
+              << "% improvement over primary) \n";
     std::cout << "Average effective latency on combined interface: " << effectiveAverageLatency << " ("
               << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
-              << "% difference with primary) \n";
+              << "% improvement over primary) \n";
 
     long long primaryLostFrames = primarySentFrames - primaryReceivedFrames;
     long long secondaryLostFrames = secondarySentFrames - secondaryReceivedFrames;

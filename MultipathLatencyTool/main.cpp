@@ -281,12 +281,12 @@ void RunServerMode(Configuration& config)
         config.m_listenAddress.SetPort(config.m_port);
     }
 
-    Log<LogLevel::Output>("Starting the echo server...");
+    Log<LogLevel::Output>("Starting the echo server...\n");
 
     StreamServer server(config.m_listenAddress);
     server.Start(config.m_prePostRecvs);
 
-    Log<LogLevel::Output>("Ready to echo data");
+    Log<LogLevel::Output>("Ready to echo data\n");
 
     // Sleep until the program is interrupted with Ctrl-C
     Sleep(INFINITE);
@@ -303,29 +303,29 @@ void RunClientMode(Configuration& config)
     wil::unique_wlan_handle wlanHandle;
     wil::unique_event completionEvent(wil::EventOptions::ManualReset);
 
-    Log<LogLevel::Output>("Starting connection setup...");
+    Log<LogLevel::Output>("Starting connection setup...\n");
     StreamClient client(config.m_targetAddress, config.m_prePostRecvs, completionEvent.get());
     if (config.m_useSecondaryWlanInterface)
     {
         client.RequestSecondaryWlanConnection();
     }
 
-    Log<LogLevel::Output>("Start transmitting data...");
+    Log<LogLevel::Output>("Start transmitting data...\n");
     client.Start(config.m_bitrate, config.m_framerate, config.m_duration);
 
     // wait for twice as long as the duration
     if (!completionEvent.wait(config.m_duration * 2 * 1000))
     {
-        Log<LogLevel::Error>("Timed out waiting for run to complete");
+        Log<LogLevel::Error>("Timed out waiting for run to complete\n");
         client.Stop();
     }
 
-    Log<LogLevel::Output>("Transmission complete");
+    Log<LogLevel::Output>("Transmission complete\n");
     client.PrintStatistics();
 
     if (!config.m_outputFile.empty())
     {
-        Log<LogLevel::Output>("Dumping data to %s...", config.m_outputFile.c_str());
+        Log<LogLevel::Output>("Dumping data to %s...\n", config.m_outputFile.c_str());
         std::ofstream file{config.m_outputFile};
         client.DumpLatencyData(file);
         file.close();
