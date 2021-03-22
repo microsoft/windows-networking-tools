@@ -75,7 +75,7 @@ void PrintUsage()
         L"\tMultipathLatencyTool -listen:<addr or *> [-port:####] [-prepostrecvs:####]\n"
         L"\n"
         L"Client-side usage:\n"
-        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-rate:<see below>] [-duration:####] "
+        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-bitrate:<see below>] [-framerate:<see below>] [-duration:####] [-secondary:#] [-output:<path>]"
         L"[-prepostrecvs:####]\n"
         L"\n\n"
         L"---------------------------------------------------------\n"
@@ -109,15 +109,12 @@ void PrintUsage()
         L"\t- the number of frames to process during each send operation\n"
         L"-duration:####\n"
         L"\t- the total number of seconds to run (default: 60 seconds)\n"
-        L"-secondary:<enforce,besteffort,ignore>\n"
+        L"-secondary:<0,1>\n"
         L"\t- whether or not use a secondary wlan interface:\n"
-        L"\t\t- enforce uses a secondary interface or fails if it cannot\n"
-        L"\t\t    for test or debugging purpose"
-        L"\t\t- besteffort use the secondary interface if possible (default)\n"
-        L"\t\t    this is what most applications should do"
-        L"\t\t- ignore doesn't use a secondary interface. This can be used for comparison.\n"
-        L"-output:####\n"
-        L"\t- the path of the file where to output measured data\n");
+        L"\t\t- set to 1 to make a best effort of using a secondary interface (default)\n"
+        L"\t\t- set to 0 to not use a secondary interface. This can be used for comparison.\n"
+        L"-output:<path>\n"
+        L"\t- the path of a file where measured data will be stored\n");
 }
 
 std::wstring_view ParseArgumentValue(const std::wstring_view str)

@@ -22,7 +22,6 @@ void Log(const char* format, T... args)
         try
         {
             ::printf_s(format, args...);
-            ::printf_s("\n");
         }
         catch (...)
         {

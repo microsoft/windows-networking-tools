@@ -74,7 +74,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
 
         // Update the echo timestamp
         QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&header.m_echoTimestamp));
-        Log<LogLevel::All>("\tStreamServer::ReceiveCompletion - echoing sequence number %lld", header.m_sequenceNumber);
+        Log<LogLevel::All>("StreamServer::ReceiveCompletion - echoing sequence number %lld", header.m_sequenceNumber);
 
         // echo the data received. A synchronous send is enough.
         WSABUF wsabuf;
@@ -93,7 +93,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
     else
     {
         const auto lastError = WSAGetLastError();
-        Log<LogLevel::Error>("\tStreamServer::ReceiveCompletion - WSARecvFrom failed %u", lastError);
+        Log<LogLevel::Error>("StreamServer::ReceiveCompletion - WSARecvFrom failed %u", lastError);
     }
 
     // post another receive
