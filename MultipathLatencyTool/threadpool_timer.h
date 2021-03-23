@@ -152,7 +152,7 @@ private:
         }
     }
 
-    bool m_exiting = false;
+    std::atomic_bool m_exiting = false;
     PTP_TIMER m_ptpTimer = nullptr;
     ThreadpoolTimerCallback m_callback{};
 };

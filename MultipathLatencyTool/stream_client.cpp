@@ -78,7 +78,7 @@ StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveB
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
 
     // initialize the send buffer
-    for (size_t i = 0u; i < m_sharedSendBuffer.size(); ++i)
+    for (size_t i = 0; i < m_sharedSendBuffer.size(); ++i)
     {
         m_sharedSendBuffer[i] = static_cast<char>(i);
     }
@@ -110,7 +110,7 @@ void StreamClient::SetupSecondaryInterface()
         // Check if the primary interface changed
         auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
 
-        // If the default internet ip interface changed, the secondary wlan interface status changes too
+        // If the default internet ip interface changes, the secondary wlan interface status changes too
         if (connectedInterfaceGuid != primaryInterfaceGuid)
         {
             Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - The preferred primary interface changed\n");

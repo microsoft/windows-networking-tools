@@ -18,7 +18,6 @@ struct DatagramHeader
 };
 
 static_assert(sizeof(DatagramHeader) == c_datagramHeaderLength);
-static_assert(c_datagramHeaderLength == c_datagramSequenceNumberLength + 2 * c_datagramTimestampLength);
 
 class DatagramSendRequest
 {

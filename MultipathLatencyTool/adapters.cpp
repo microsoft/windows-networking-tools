@@ -35,7 +35,6 @@ std::vector<GUID> GetPrimaryWlanInterfaceGuids(HANDLE wlanHandle)
         THROW_WIN32_MSG(ERROR_NOT_FOUND, "Did not find a WiFi interface");
     }
 
-    // pick the first interface (TODO: could be better about handling multiple adapters?)
     for (auto i = 0u; i < primaryInterfaceList->dwNumberOfItems; ++i)
     {
         primaryInterfaces.push_back(primaryInterfaceList->InterfaceInfo[i].InterfaceGuid);

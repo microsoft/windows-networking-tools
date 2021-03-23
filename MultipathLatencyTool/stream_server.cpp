@@ -8,7 +8,7 @@ StreamServer::StreamServer(ctl::ctSockaddr listenAddress) :
     m_listenAddress{std::move(listenAddress)}, m_socket{CreateDatagramSocket()}
 {
     constexpr int defaultSocketReceiveBufferSize = 1048576; // 1MB socket receive buffer
-    SetSocketReceiveBufferSize(m_socket.get(), defaultSocketReceiveBufferSize); // TODO: add config parameter
+    SetSocketReceiveBufferSize(m_socket.get(), defaultSocketReceiveBufferSize);
 
     const auto error = bind(m_socket.get(), m_listenAddress.sockaddr(), m_listenAddress.length());
     if (SOCKET_ERROR == error)
