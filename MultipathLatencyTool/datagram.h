@@ -39,8 +39,7 @@ public:
     static constexpr size_t c_bufferArraySize = 4;
     using BufferArray = std::array<WSABUF, c_bufferArraySize>;
 
-    DatagramSendRequest(long long sequenceNumber, std::span<const char> sendBuffer) :
-        m_sequenceNumber(sequenceNumber)
+    DatagramSendRequest(long long sequenceNumber, std::span<const char> sendBuffer) : m_sequenceNumber(sequenceNumber)
     {
         static_assert(c_bufferArraySize == c_datagramPayloadOffset + 1);
 

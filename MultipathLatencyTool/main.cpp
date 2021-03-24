@@ -75,7 +75,8 @@ void PrintUsage()
         L"\tMultipathLatencyTool -listen:<addr or *> [-port:####] [-prepostrecvs:####]\n"
         L"\n"
         L"Client-side usage:\n"
-        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-bitrate:<see below>] [-framerate:<see below>] [-duration:####] [-secondary:#] [-output:<path>]"
+        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-bitrate:<see below>] [-framerate:<see below>] "
+        L"[-duration:####] [-secondary:#] [-output:<path>]"
         L"[-prepostrecvs:####]\n"
         L"\n\n"
         L"---------------------------------------------------------\n"
@@ -167,7 +168,7 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
             config.m_listenAddress = resolvedAddresses.front();
         }
     }
-    
+
     if (auto targetAddress = ParseArgument(L"-target", args))
     {
         if (config.m_listenAddress.family() != AF_UNSPEC)
@@ -190,7 +191,7 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
     {
         throw std::invalid_argument("-listen or -target must be specified");
     }
-    
+
     if (auto port = ParseArgument(L"-port", args))
     {
         config.m_port = integer_cast<unsigned short>(*port);
@@ -234,7 +235,7 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         }
     }
 
-    if (auto prepostRecvs = ParseArgument(L"-prepostrecvs" , args))
+    if (auto prepostRecvs = ParseArgument(L"-prepostrecvs", args))
     {
         config.m_prePostRecvs = integer_cast<unsigned long>(*prepostRecvs);
         if (config.m_prePostRecvs < 1)

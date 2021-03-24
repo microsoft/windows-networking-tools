@@ -71,7 +71,6 @@ private:
         long long m_receiveTimestamp{};
     };
 
-            
     enum class AdapterStatus
     {
         Disabled,

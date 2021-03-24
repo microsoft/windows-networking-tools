@@ -147,8 +147,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Average latency on primary interface: " << primaryAverageLatency << '\n';
     std::cout << "Average latency on secondary interface: " << secondaryAverageLatency << '\n';
     std::cout << "Average minimum latency on both interface: " << minimumAverageLatency << " ("
-              << percent(primaryAverageLatency - minimumAverageLatency, primaryAverageLatency)
-              << "% improvement over primary) \n";
+              << percent(primaryAverageLatency - minimumAverageLatency, primaryAverageLatency) << "% improvement over primary) \n";
     std::cout << "Average effective latency on combined interface: " << effectiveAverageLatency << " ("
               << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
               << "% improvement over primary) \n";
@@ -166,11 +165,9 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Median latency on primary interface: " << primaryMedianLatency << '\n';
     std::cout << "Median latency on secondary interface: " << secondaryMedianLatency << '\n';
     std::cout << "Median minimum latency on both interface: " << minimumMedianLatency << " ("
-              << percent(primaryMedianLatency - minimumMedianLatency, primaryMedianLatency)
-              << "% improvement over primary) \n";
+              << percent(primaryMedianLatency - minimumMedianLatency, primaryMedianLatency) << "% improvement over primary) \n";
     std::cout << "Median effective latency on combined interface: " << effectiveMedianLatency << " ("
-              << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency)
-              << "% improvement over primary) \n";
+              << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency) << "% improvement over primary) \n";
 }
 
 void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file)
@@ -190,4 +187,4 @@ void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file)
     }
 }
 
-}
+} // namespace multipath

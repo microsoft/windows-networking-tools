@@ -40,7 +40,8 @@ inline void SetSocketOutgoingInterface(SOCKET socket, short family, int outgoing
     {
         // interface index should be in host byte order for IPPROTO_IPV6
         const auto length = sizeof(outgoingIfIndex);
-        const auto error = setsockopt(socket, IPPROTO_IPV6, IPV6_UNICAST_IF, reinterpret_cast<const char*>(&outgoingIfIndex), length);
+        const auto error =
+            setsockopt(socket, IPPROTO_IPV6, IPV6_UNICAST_IF, reinterpret_cast<const char*>(&outgoingIfIndex), length);
         if (ERROR_SUCCESS != error)
         {
             THROW_WIN32_MSG(WSAGetLastError(), "setsockopt(IPPROTO_IPV6, IPV6_UNICAST_IF) failed");

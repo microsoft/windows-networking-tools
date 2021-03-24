@@ -20,5 +20,4 @@ struct LatencyData
 void PrintLatencyStatistics(std::span<const LatencyData> data);
 void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file);
 
-
 } // namespace multipath

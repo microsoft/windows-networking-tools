@@ -39,8 +39,8 @@ void StreamServer::InitiateReceive(ReceiveContext& receiveContext)
     wsabuf.buf = receiveContext.m_buffer.data();
     wsabuf.len = static_cast<ULONG>(receiveContext.m_buffer.size());
 
-    OVERLAPPED* ov =
-        m_threadpoolIo->new_request([this, &receiveContext](OVERLAPPED* ov) noexcept { CompleteReceive(receiveContext, ov); });
+    OVERLAPPED* ov = m_threadpoolIo->new_request(
+        [this, &receiveContext](OVERLAPPED* ov) noexcept { CompleteReceive(receiveContext, ov); });
 
     const auto error = WSARecvFrom(
         m_socket.get(),

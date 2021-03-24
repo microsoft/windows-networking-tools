@@ -14,7 +14,7 @@ enum class LogLevel
 LogLevel GetLogLevel() noexcept;
 void SetLogLevel(LogLevel level) noexcept;
 
-template <LogLevel L, typename ...T>
+template <LogLevel L, typename... T>
 void Log(const char* format, T... args)
 {
     if (L <= GetLogLevel())

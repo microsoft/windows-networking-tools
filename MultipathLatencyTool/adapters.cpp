@@ -49,7 +49,12 @@ void RequestSecondaryInterface(HANDLE wlanHandle)
 
     BOOL enable = TRUE;
     const auto error = WlanSetInterface(
-        wlanHandle, &wlanInterfaceGuids.front(), wlan_intf_opcode_secondary_sta_synchronized_connections, sizeof(BOOL), static_cast<PVOID>(&enable), nullptr);
+        wlanHandle,
+        &wlanInterfaceGuids.front(),
+        wlan_intf_opcode_secondary_sta_synchronized_connections,
+        sizeof(BOOL),
+        static_cast<PVOID>(&enable),
+        nullptr);
     THROW_IF_WIN32_ERROR_MSG(error, "WlanSetInterface(wlan_intf_opcode_secondary_sta_synchronized_connections) failed");
 }
 
@@ -74,7 +79,7 @@ std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const wi
     {
         return std::nullopt;
     }
-    
+
     wil::unique_wlan_ptr<WLAN_INTERFACE_INFO_LIST> secondaryInterfaceList{};
     DWORD dataSize = 0;
 

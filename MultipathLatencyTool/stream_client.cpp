@@ -21,7 +21,7 @@ namespace {
         // bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
         // We look for the tick interval in 100 nanosecond
         const long long hundredNanoSecInSecond = 10'000'000LL; // hundred ns / s
-        const long long byteRate = bitRate / 8; // byte/s
+        const long long byteRate = bitRate / 8;                // byte/s
         return (datagramSize * frameRate * hundredNanoSecInSecond) / byteRate;
     }
 
@@ -34,7 +34,6 @@ namespace {
     }
 
 } // namespace
-
 
 StreamClient::SocketState::SocketState(Interface interface) : m_interface{interface}
 {
@@ -142,7 +141,8 @@ void StreamClient::SetupSecondaryInterface()
         if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
             auto lock = m_secondaryState.m_lock.lock();
-            Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
+            Log<LogLevel::Debug>(
+                "StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
             m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
 
             for (auto& receiveState : m_secondaryState.m_receiveStates)
@@ -162,7 +162,8 @@ void StreamClient::SetupSecondaryInterface()
     // Subscribe for network status updates
     m_networkInformationEventRevoker = NetworkInformation::NetworkStatusChanged(
         winrt::auto_revoke, [updateSecondaryInterfaceStatus = std::move(updateSecondaryInterfaceStatus)](const auto&) mutable {
-        updateSecondaryInterfaceStatus(); });
+            updateSecondaryInterfaceStatus();
+        });
 }
 
 void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
@@ -172,7 +173,8 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
     m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, c_sendBufferSize);
 
-    Log<LogLevel::Output>("Sending %d datagrams, by groups of %d every %lld hundred nanoseconds\n", m_finalSequenceNumber + 1, m_frameRate, tickInterval);
+    Log<LogLevel::Output>(
+        "Sending %d datagrams, by groups of %d every %lld hundred nanoseconds\n", m_finalSequenceNumber + 1, m_frameRate, tickInterval);
 
     // allocate statistics buffer
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
@@ -383,18 +385,9 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
     DWORD bytesTransferred = 0;
     OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
 
-    Log<LogLevel::All>(
-        "StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n",
-        socketState.m_socket.get());
+    Log<LogLevel::All>("StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n", socketState.m_socket.get());
 
-    auto error = WSARecv(
-        socketState.m_socket.get(),
-        &wsabuf,
-        1,
-        &bytesTransferred,
-        &flags,
-        ov,
-        nullptr);
+    auto error = WSARecv(socketState.m_socket.get(), &wsabuf, 1, &bytesTransferred, &flags, ov, nullptr);
     if (SOCKET_ERROR == error)
     {
         error = WSAGetLastError();
