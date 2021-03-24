@@ -116,10 +116,10 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
         data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0 || stat.m_secondarySendTimestamp >= 0; });
 
     // Get the average latency
-    const auto primaryAverageLatency = ConvertHundredNanosToMillis(average(primaryLatencies));
-    const auto secondaryAverageLatency = ConvertHundredNanosToMillis(average(secondaryLatencies));
-    const auto minimumAverageLatency = ConvertHundredNanosToMillis(average(minimumLatencies));
-    const auto effectiveAverageLatency = ConvertHundredNanosToMillis(average(effectiveLatencies));
+    const auto primaryAverageLatency = average(primaryLatencies);
+    const auto secondaryAverageLatency = average(secondaryLatencies);
+    const auto minimumAverageLatency = average(minimumLatencies);
+    const auto effectiveAverageLatency = average(effectiveLatencies);
 
     std::cout << '\n';
     std::cout << "Sent frames on primary interface: " << primarySentFrames << '\n';
@@ -144,12 +144,13 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
               << percent(aggregatedLostFrames, aggregatedSentFrames) << "%)\n";
 
     std::cout << '\n';
-    std::cout << "Average latency on primary interface: " << primaryAverageLatency << '\n';
-    std::cout << "Average latency on secondary interface: " << secondaryAverageLatency << '\n';
-    std::cout << "Average minimum latency on both interface: " << minimumAverageLatency << " ("
-              << percent(primaryAverageLatency - minimumAverageLatency, primaryAverageLatency) << "% improvement over primary) \n";
-    std::cout << "Average effective latency on combined interface: " << effectiveAverageLatency << " ("
-              << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
+    std::cout << "Average latency on primary interface: " << ConvertHundredNanosToMillis(primaryAverageLatency) << '\n';
+    std::cout << "Average latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryAverageLatency) << '\n';
+    std::cout << "Average minimum latency on both interface: " << ConvertHundredNanosToMillis(minimumAverageLatency)
+              << " (" << percent(primaryAverageLatency - minimumAverageLatency, primaryAverageLatency)
+              << "% improvement over primary) \n";
+    std::cout << "Average effective latency on combined interface: " << ConvertHundredNanosToMillis(effectiveAverageLatency)
+              << " (" << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
               << "% improvement over primary) \n";
 
     std::ranges::sort(primaryLatencies);
@@ -162,12 +163,13 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto effectiveMedianLatency = median(effectiveLatencies);
 
     std::cout << '\n';
-    std::cout << "Median latency on primary interface: " << primaryMedianLatency << '\n';
-    std::cout << "Median latency on secondary interface: " << secondaryMedianLatency << '\n';
-    std::cout << "Median minimum latency on both interface: " << minimumMedianLatency << " ("
+    std::cout << "Median latency on primary interface: " << ConvertHundredNanosToMillis(primaryMedianLatency) << '\n';
+    std::cout << "Median latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryMedianLatency) << '\n';
+    std::cout << "Median minimum latency on both interface: " << ConvertHundredNanosToMillis(minimumMedianLatency) << " ("
               << percent(primaryMedianLatency - minimumMedianLatency, primaryMedianLatency) << "% improvement over primary) \n";
-    std::cout << "Median effective latency on combined interface: " << effectiveMedianLatency << " ("
-              << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency) << "% improvement over primary) \n";
+    std::cout << "Median effective latency on combined interface: " << ConvertHundredNanosToMillis(effectiveMedianLatency)
+              << " (" << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency)
+              << "% improvement over primary) \n";
 }
 
 void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file)
