@@ -57,6 +57,12 @@ void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int 
     SetSocketOutgoingInterface(m_socket.get(), targetAddress.family(), interfaceIndex);
     m_receiveStates.resize(numReceivedBuffers);
 
+    auto error = WSAConnect(m_socket.get(), targetAddress.sockaddr(), targetAddress.length(), nullptr, nullptr, nullptr, nullptr);
+    if (SOCKET_ERROR == error)
+    {
+        FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSAConnect failed");
+    }
+
     m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
 }
 
@@ -138,7 +144,6 @@ void StreamClient::SetupSecondaryInterface()
             auto lock = m_secondaryState.m_lock.lock();
             Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
             m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
-            Connect(m_secondaryState);
 
             for (auto& receiveState : m_secondaryState.m_receiveStates)
             {
@@ -173,14 +178,8 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
     m_latencyData.resize(static_cast<size_t>(m_finalSequenceNumber));
 
-    // connect to target on both sockets
-    Log<LogLevel::Debug>("StreamClient::Start - Connecting primary socket\n");
-    Connect(m_primaryState);
-    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
-
     SetupSecondaryInterface();
-
-    Log<LogLevel::Debug>("StreamClient::Start - Connected to the server\n");
+    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
 
     // initiate receives before starting the send timer
     for (auto& receiveState : m_primaryState.m_receiveStates)
@@ -188,7 +187,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
         InitiateReceive(m_primaryState, receiveState);
     }
 
-    // start sends
+    // start sending data
     Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback\n");
     m_threadpoolTimer->Schedule(m_tickInterval);
 }
@@ -222,56 +221,6 @@ void StreamClient::PrintStatistics()
 void StreamClient::DumpLatencyData(std::ofstream& file)
 {
     multipath::DumpLatencyData(m_latencyData, file);
-}
-
-void StreamClient::Connect(SocketState& socketState)
-{
-    // Send a first datagram so our sockets become bound to their respective interface's IP addresses.
-    // `WSAReceiveFrom` will fail before the first datagram is sent.
-    constexpr long long startSequenceNumber = -1;
-    DatagramSendRequest sendRequest{startSequenceNumber, m_sharedSendBuffer};
-    auto& buffers = sendRequest.GetBuffers();
-
-    Log<LogLevel::Debug>("Sending start message on %s socket %zu to %ws\n",
-        socketState.m_interface == Interface::Primary ? "primary" : "secondary",
-        socketState.m_socket.get(),
-        m_targetAddress.WriteCompleteAddress().c_str());
-
-    DWORD bytesTransferred = 0;
-    auto error = WSASendTo(
-        socketState.m_socket.get(),
-        buffers.data(),
-        static_cast<DWORD>(buffers.size()),
-        &bytesTransferred,
-        0,
-        m_targetAddress.sockaddr(),
-        m_targetAddress.length(),
-        nullptr,
-        nullptr);
-
-    if (SOCKET_ERROR == error)
-    {
-        FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSASendTo failed");
-    }
-
-    // since the server will echo this message back, wait for the answer.
-    // this use a blocking call, it could block the program if the packet is lost
-    int targetAddressLength = m_targetAddress.length();
-    auto& receiveBuffer = socketState.m_receiveStates[0].m_buffer; // just use the first receive buffer
-
-    WSABUF recvWsabuf{};
-    recvWsabuf.buf = receiveBuffer.data();
-    recvWsabuf.len = static_cast<ULONG>(receiveBuffer.size());
-
-    Log<LogLevel::Debug>("StreamClient::Connect - listening for the answer from %ws\n", m_targetAddress.WriteCompleteAddress().c_str());
-
-    DWORD flags = 0;
-    error = WSARecvFrom(
-        socketState.m_socket.get(), &recvWsabuf, 1, &bytesTransferred, &flags, m_targetAddress.sockaddr(), &targetAddressLength, nullptr, nullptr);
-    if (SOCKET_ERROR == error)
-    {
-        FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed");
-    }
 }
 
 void StreamClient::TimerCallback() noexcept
@@ -326,7 +275,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
     const SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
 
     Log<LogLevel::All>(
-        "StreamClient::SendDatagram - sending sequence number %lld on %s socket %zu",
+        "StreamClient::SendDatagram - sending sequence number %lld on %s socket %zu\n",
         m_sequenceNumber,
         socketState.m_interface == Interface::Primary ? "primary" : "secondary",
         socketState.m_socket.get());
@@ -338,8 +287,8 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
             if (m_stopCalled || !socketState.m_socket.is_valid())
             {
-                Log<LogLevel::Debug>("StreamClient::SendDatagram - Shutting down or socket is no longer valid, \n"
-                                     "ignoring send completion");
+                Log<LogLevel::Debug>("StreamClient::SendDatagram - Shutting down or socket is no longer valid, "
+                                     "ignoring send completion\n");
                 return;
             }
 
@@ -352,7 +301,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
             else
             {
                 const auto lastError = WSAGetLastError();
-                Log<LogLevel::Error>("StreamClient::SendDatagram - WSASendTo failed : %u\n", lastError);
+                Log<LogLevel::Error>("StreamClient::SendDatagram - WSASend failed : %u\n", lastError);
             }
         }
         catch (...)
@@ -363,23 +312,14 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 
     OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
 
-    auto error = WSASendTo(
-        socketState.m_socket.get(),
-        buffers.data(),
-        static_cast<DWORD>(buffers.size()),
-        nullptr,
-        0,
-        m_targetAddress.sockaddr(),
-        m_targetAddress.length(),
-        ov,
-        nullptr);
+    auto error = WSASend(socketState.m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), nullptr, 0, ov, nullptr);
     if (SOCKET_ERROR == error)
     {
         error = WSAGetLastError();
         if (WSA_IO_PENDING != error)
         {
             socketState.m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(error, "WSASendTo failed");
+            FAIL_FAST_WIN32_MSG(error, "WSASend failed");
         }
     }
 }
@@ -423,7 +363,7 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         {
             Log<LogLevel::Debug>(
                 "StreamClient::InitiateReceive [callback] - Shutting down or socket is no longer valid, "
-                "ignoring receive completion");
+                "ignoring receive completion\n");
             return;
         }
 
@@ -432,7 +372,7 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         if (!WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransferred, false, &flags))
         {
             const auto lastError = WSAGetLastError();
-            FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecvFrom failed : %u", lastError);
+            FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecv failed : %u", lastError);
         }
 
         ReceiveCompletion(socketState, receiveState, bytesTransferred);
@@ -444,17 +384,15 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
     OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
 
     Log<LogLevel::All>(
-        "StreamClient::InitiateReceive - initiating WSARecvFrom on socket %zu",
+        "StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n",
         socketState.m_socket.get());
 
-    auto error = WSARecvFrom(
+    auto error = WSARecv(
         socketState.m_socket.get(),
         &wsabuf,
         1,
         &bytesTransferred,
         &flags,
-        nullptr,
-        nullptr,
         ov,
         nullptr);
     if (SOCKET_ERROR == error)
@@ -463,7 +401,7 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         if (WSA_IO_PENDING != error)
         {
             socketState.m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(error, "WSARecvFrom failed");
+            FAIL_FAST_WIN32_MSG(error, "WSARecv failed");
         }
     }
 }
@@ -476,7 +414,7 @@ try
     const auto& header = ParseDatagramHeader(receiveState.m_buffer.data());
 
     Log<LogLevel::All>(
-        "StreamClient::ReceiveCompletion - received sequence number %lld on %s socket %zu",
+        "StreamClient::ReceiveCompletion - received sequence number %lld on %s socket %zu\n",
         header.m_sequenceNumber,
         socketState.m_interface == Interface::Primary ? "primary" : "secondary",
         socketState.m_socket.get());

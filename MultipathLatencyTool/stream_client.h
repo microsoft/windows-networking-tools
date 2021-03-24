@@ -102,7 +102,6 @@ private:
         std::atomic<AdapterStatus> m_adapterStatus{AdapterStatus::Disabled};
     };
 
-    void Connect(SocketState& socketState);
     void SetupSecondaryInterface();
 
     void TimerCallback() noexcept;
