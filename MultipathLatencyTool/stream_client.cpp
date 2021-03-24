@@ -414,7 +414,7 @@ try
 
     if (header.m_sequenceNumber < 0 || header.m_sequenceNumber >= m_finalSequenceNumber)
     {
-        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame\n");
+        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame, sequence number: %lld\n", header.m_sequenceNumber);
         socketState.m_corruptFrames += 1;
         return;
     }
