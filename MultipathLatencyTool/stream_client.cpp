@@ -25,7 +25,7 @@ namespace {
         return (datagramSize * frameRate * hundredNanoSecInSecond) / byteRate;
     }
 
-    long long CalculateFinalSequenceNumber(long long duration, long long bitRate, unsigned long long datagramSize) noexcept
+    long long CalculateNumberOfDatagramToSend(long long duration, long long bitRate, unsigned long long datagramSize) noexcept
     {
         // duration ->s, bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
         // We look for total number of datagram to send
@@ -41,12 +41,8 @@ StreamClient::SocketState::SocketState(Interface interface) : m_interface{interf
 
 StreamClient::SocketState ::~SocketState() noexcept
 {
-    // guarantee the socket is torn down and TP stopped before freeing member buffers
-    {
-        const auto lock = m_lock.lock();
-        m_socket.reset();
-    }
-    m_threadpoolIo.reset();
+    // guarantee the socket is torn down and all callbacks are completed before freeing member buffers
+    Cancel();
 }
 
 void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex)
@@ -67,7 +63,7 @@ void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int 
 
 void StreamClient::SocketState::Cancel()
 {
-    // guarantee the socket is torn down and TP stopped before freeing member buffers
+    // Ensure the socket is torn down and wait for all callbacks
     {
         const auto lock = m_lock.lock();
         m_adapterStatus = AdapterStatus::Disabled;
@@ -79,7 +75,6 @@ void StreamClient::SocketState::Cancel()
 StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
     m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent), m_receiveBufferCount(receiveBufferCount)
 {
-    m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
 
     // initialize the send buffer
@@ -168,20 +163,30 @@ void StreamClient::SetupSecondaryInterface()
 
 void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
 {
+    // Ensure we are stopped
+    if (m_running)
+    {
+        Stop();
+    }
+
     m_frameRate = sendFrameRate;
     const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, c_sendBufferSize);
     m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
-    m_finalSequenceNumber = CalculateFinalSequenceNumber(duration, sendBitRate, c_sendBufferSize);
+    const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, c_sendBufferSize);
+    m_finalSequenceNumber += nbDatagramToSend;
 
     Log<LogLevel::Output>(
-        "Sending %d datagrams, by groups of %d every %lld hundred nanoseconds\n", m_finalSequenceNumber + 1, m_frameRate, tickInterval);
+        "Sending %d datagrams, by groups of %d every %lld hundred nanoseconds\n", nbDatagramToSend, m_frameRate, tickInterval);
 
     // allocate statistics buffer
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
     m_latencyData.resize(static_cast<size_t>(m_finalSequenceNumber));
 
-    SetupSecondaryInterface();
+    // Setup the interfaces
+    m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
     m_primaryState.m_adapterStatus = AdapterStatus::Ready;
+
+    SetupSecondaryInterface();
 
     // initiate receives before starting the send timer
     for (auto& receiveState : m_primaryState.m_receiveStates)
@@ -190,24 +195,31 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     }
 
     // start sending data
+    m_running = true;
     Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback\n");
     m_threadpoolTimer->Schedule(m_tickInterval);
 }
 
 void StreamClient::Stop()
 {
-    m_stopCalled = true;
-
-    Log<LogLevel::Debug>("StreamClient::Stop - canceling timer callback\n");
+    Log<LogLevel::Debug>("StreamClient::Stop - stop sending datagrams\n");
+    // Stop sending datagrams.
+    // One more send operation could execute after this point if the callback is running concurrently to this call
+    // Do not wait on the callback: we could be called by it
+    m_running = false;
     m_threadpoolTimer->Stop();
 
     Log<LogLevel::Debug>("StreamClient::Stop - canceling network information event subscription\n");
     m_networkInformationEventRevoker.revoke();
 
+    // Wait a little for in-flight packets (we don't want to count them as lost)
+    Sleep(1000); // 1 sec
+
     Log<LogLevel::Debug>("StreamClient::Stop - closing sockets\n");
     m_primaryState.Cancel();
     m_secondaryState.Cancel();
 
+    Log<LogLevel::Debug>("StreamClient::Stop - the client has stopped\n");
     SetEvent(m_completeEvent);
 }
 
@@ -227,6 +239,11 @@ void StreamClient::DumpLatencyData(std::ofstream& file)
 
 void StreamClient::TimerCallback() noexcept
 {
+    if (!m_running)
+    {
+        return;
+    }
+
     for (auto i = 0; i < m_frameRate && m_sequenceNumber < m_finalSequenceNumber; ++i)
     {
         SendDatagrams();
@@ -247,12 +264,6 @@ void StreamClient::TimerCallback() noexcept
 
 void StreamClient::SendDatagrams() noexcept
 {
-    // TODO guhetier: Data race on m_stopCalled. We should wait for all the send callbacks when stopping
-    if (m_stopCalled)
-    {
-        return;
-    }
-
     SendDatagram(m_primaryState);
 
     if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
@@ -287,10 +298,9 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
         {
             auto lock = socketState.m_lock.lock();
 
-            if (m_stopCalled || !socketState.m_socket.is_valid())
+            if (!socketState.m_socket.is_valid())
             {
-                Log<LogLevel::Debug>("StreamClient::SendDatagram - Shutting down or socket is no longer valid, "
-                                     "ignoring send completion\n");
+                Log<LogLevel::Debug>("StreamClient::SendDatagram - The socket is no longer valid, ignoring send completion\n");
                 return;
             }
 
@@ -345,7 +355,7 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
 {
     auto lock = socketState.m_lock.lock();
 
-    if (m_stopCalled || !socketState.m_socket.is_valid())
+    if (!socketState.m_socket.is_valid())
     {
         return;
     }
@@ -361,11 +371,9 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
 
         auto lock = socketState.m_lock.lock();
 
-        if (m_stopCalled || !socketState.m_socket.is_valid())
+        if (!socketState.m_socket.is_valid())
         {
-            Log<LogLevel::Debug>(
-                "StreamClient::InitiateReceive [callback] - Shutting down or socket is no longer valid, "
-                "ignoring receive completion\n");
+            Log<LogLevel::Debug>("StreamClient::InitiateReceive [callback] - The socket is no longer valid, ignoring receive completion\n");
             return;
         }
 
@@ -378,7 +386,6 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         }
 
         ReceiveCompletion(socketState, receiveState, bytesTransferred);
-
         InitiateReceive(socketState, receiveState);
     };
 

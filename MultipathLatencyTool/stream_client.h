@@ -122,9 +122,10 @@ private:
     unsigned long m_receiveBufferCount = 1;
 
     FILETIME m_tickInterval{};
-    long long m_finalSequenceNumber = 0;
+    // Initialize to -1 as the first datagram has sequence number 0
+    long long m_finalSequenceNumber = -1;
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer{};
-    bool m_stopCalled = false;
+    std::atomic<bool> m_running = false;
 
     // both the primary and secondary socket will use the same send buffer so that the message payloads are identical
     long long m_sequenceNumber = 0;
