@@ -86,6 +86,8 @@ private:
         void Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex = 0);
         void Cancel();
 
+        bool DoServerHandshake();
+
         wil::critical_section m_lock{500};
         wil::unique_socket m_socket;
         std::unique_ptr<ctl::ctThreadIocp> m_threadpoolIo;
@@ -95,10 +97,19 @@ private:
 
         // the contexts used for each posted receive
         std::vector<ReceiveState> m_receiveStates;
-
         long long m_corruptFrames = 0;
-
         std::atomic<AdapterStatus> m_adapterStatus{AdapterStatus::Disabled};
+
+        // All interfaces are sending the same data, stored in a shared buffer
+        static constexpr const SendBuffer s_sharedSendBuffer = []() {
+            // initialize the send buffer
+            SendBuffer sharedSendBuffer{};
+            for (size_t i = 0; i < sharedSendBuffer.size(); ++i)
+            {
+                sharedSendBuffer[i] = static_cast<char>(i);
+            }
+            return sharedSendBuffer;
+        }();
     };
 
     void SetupSecondaryInterface();
@@ -127,9 +138,7 @@ private:
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer{};
     std::atomic<bool> m_running = false;
 
-    // both the primary and secondary socket will use the same send buffer so that the message payloads are identical
     long long m_sequenceNumber = 0;
-    SendBuffer m_sharedSendBuffer{};
 
     std::vector<LatencyData> m_latencyData;
 

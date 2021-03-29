@@ -47,6 +47,8 @@ StreamClient::SocketState ::~SocketState() noexcept
 
 void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex)
 {
+    auto lock = m_lock.lock();
+
     m_socket.reset(CreateDatagramSocket());
     SetSocketReceiveBufferSize(m_socket.get(), c_defaultSocketReceiveBufferSize);
     SetSocketOutgoingInterface(m_socket.get(), targetAddress.family(), interfaceIndex);
@@ -55,10 +57,29 @@ void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int 
     auto error = WSAConnect(m_socket.get(), targetAddress.sockaddr(), targetAddress.length(), nullptr, nullptr, nullptr, nullptr);
     if (SOCKET_ERROR == error)
     {
-        FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSAConnect failed");
+        THROW_WIN32_MSG(WSAGetLastError(), "WSAConnect failed");
     }
 
     m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
+
+    lock.reset();
+
+    // Check connectivity
+    const auto handshakeRetryCount = 2;
+    bool connected = false;
+    for (auto i = 0; i < handshakeRetryCount; ++i)
+    {
+        if (DoServerHandshake())
+        {
+            connected = true;
+            break;
+        }
+    }
+
+    if (!connected)
+    {
+        THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not get an answer from the echo server");
+    }
 }
 
 void StreamClient::SocketState::Cancel()
@@ -72,16 +93,87 @@ void StreamClient::SocketState::Cancel()
     m_threadpoolIo.reset();
 }
 
+bool StreamClient::SocketState::DoServerHandshake()
+{
+    auto lock = m_lock.lock();
+    if (!m_socket.is_valid())
+    {
+        THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
+    }
+
+    
+    // The server will echo the message, be ready for the answer
+    DWORD flags = 0;
+    WSABUF wsabuf;
+    wsabuf.buf = m_receiveStates[0].m_buffer.data();
+    wsabuf.len = static_cast<ULONG>(m_receiveStates[0].m_buffer.size());
+
+    wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
+    auto callback = [connectedEvent, this](OVERLAPPED* ov) noexcept {
+        auto lock = m_lock.lock();
+        if (!m_socket.is_valid())
+        {
+            Log<LogLevel::Debug>("StreamClient::InitiateReceive [callback] - The socket is no longer valid, ignoring "
+                                 "receive completion\n");
+            return;
+        }
+
+
+
+        DWORD bytesTransferred = 0;
+        DWORD flags = 0;
+        if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &flags))
+        {
+            const auto lastError = WSAGetLastError();
+            FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSARecv failed : %u", lastError);
+        }
+
+        if (!SetEvent(connectedEvent.get()))
+        {
+            FAIL_FAST_WIN32_MSG(GetLastError(), "SetEvent failed");
+        }
+    };
+
+    DWORD bytesTransferred = 0;
+    OVERLAPPED* ov = m_threadpoolIo->new_request(callback);
+
+    Log<LogLevel::All>("StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n", m_socket.get());
+
+    auto error = WSARecv(m_socket.get(), &wsabuf, 1, &bytesTransferred, &flags, ov, nullptr);
+    if (SOCKET_ERROR == error)
+    {
+        error = WSAGetLastError();
+        if (WSA_IO_PENDING != error)
+        {
+            m_threadpoolIo->cancel_request(ov);
+            FAIL_FAST_WIN32_MSG(error, "WSARecv failed");
+        }
+    }
+
+    const auto sequenceNumber = -1;
+    DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
+    auto& buffers = sendRequest.GetBuffers();
+
+    // Synchronous send
+    DWORD transmitedBytes;
+    error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
+    if (SOCKET_ERROR == error)
+    {
+        error = WSAGetLastError();
+        FAIL_FAST_WIN32_MSG(error, "WSASend failed");
+    }
+
+    // Release the lock to allow for the completion callback
+    lock.reset();
+
+    // Wait 5sec for the answer, return false on timeout
+    return connectedEvent.wait(20000);
+}
+
 StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
     m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent), m_receiveBufferCount(receiveBufferCount)
 {
     m_threadpoolTimer = std::make_unique<ThreadpoolTimer>([this]() noexcept { TimerCallback(); });
-
-    // initialize the send buffer
-    for (size_t i = 0; i < m_sharedSendBuffer.size(); ++i)
-    {
-        m_sharedSendBuffer[i] = static_cast<char>(i);
-    }
 }
 
 void StreamClient::RequestSecondaryWlanConnection()
@@ -135,7 +227,6 @@ void StreamClient::SetupSecondaryInterface()
         // Once the secondary interface has network connectivity, setup it up for sending data
         if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
-            auto lock = m_secondaryState.m_lock.lock();
             Log<LogLevel::Debug>(
                 "StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
             m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
@@ -184,7 +275,6 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 
     // Setup the interfaces
     m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
-    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
 
     SetupSecondaryInterface();
 
@@ -193,6 +283,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     {
         InitiateReceive(m_primaryState, receiveState);
     }
+    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
 
     // start sending data
     m_running = true;
@@ -283,7 +374,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
         return;
     }
 
-    DatagramSendRequest sendRequest{m_sequenceNumber, m_sharedSendBuffer};
+    DatagramSendRequest sendRequest{m_sequenceNumber, socketState.s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
     const SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
 
