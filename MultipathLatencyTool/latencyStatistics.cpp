@@ -99,6 +99,10 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     auto average = [](auto& data) { return data.size() > 0 ? accumulate(data, 0LL) / data.size() : 0LL; };
     auto percent = [](auto a, auto b) { return b > 0 ? a * 100 / b : 0; };
     auto median = [](const auto& data) { return data.size() > 0 ? data[data.size() / 2] : 0; };
+    auto interquartileRange = [](const auto& data) {
+        const auto s = data.size();
+        return s > 0 ? data[3 * s / 4] - data[s / 4] : 0;
+    };
 
     auto standardDeviation = [](auto& data, long long average) {
         if (data.size() == 0)
@@ -118,6 +122,11 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     auto primaryLatencies = to_vector(data | transform(selectPrimary) | filter(received) | transform(latency), data.size());
     auto secondaryLatencies = to_vector(data | transform(selectSecondary) | filter(received) | transform(latency), data.size());
     auto effectiveLatencies = to_vector(data | transform(selectEffective) | filter(received) | transform(latency), data.size());
+
+    // Sort the data for median computation
+    std::ranges::sort(primaryLatencies);
+    std::ranges::sort(secondaryLatencies);
+    std::ranges::sort(effectiveLatencies);
 
     const long long primarySentFrames =
         std::ranges::count_if(data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0; });
@@ -195,11 +204,8 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Jitter (standard deviation) on combined interfaces: " << ConvertHundredNanosToMillis(effectiveStandardDeviation) << " ms\n";
 
     // Median latency
-    std::ranges::sort(primaryLatencies);
     const auto primaryMedianLatency = median(primaryLatencies);
-    std::ranges::sort(secondaryLatencies);
     const auto secondaryMedianLatency = median(secondaryLatencies);
-    std::ranges::sort(effectiveLatencies);
     const auto effectiveMedianLatency = median(effectiveLatencies);
 
     std::cout << '\n';
@@ -208,6 +214,16 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Median effective latency on combined interfaces: " << ConvertHundredNanosToMillis(effectiveMedianLatency)
               << " ms (" << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency)
               << "% improvement over primary) \n";
+
+    // Interquartile range
+    const auto primaryIrqLatency = interquartileRange(primaryLatencies);
+    const auto secondaryIrqLatency = interquartileRange(secondaryLatencies);
+    const auto effectiveIrqLatency = interquartileRange(effectiveLatencies);
+
+    std::cout << '\n';
+    std::cout << "Interquartile range on primary interface: " << ConvertHundredNanosToMillis(primaryIrqLatency) << " ms\n";
+    std::cout << "Interquartile range on secondary interface: " << ConvertHundredNanosToMillis(secondaryIrqLatency) << " ms\n";
+    std::cout << "Interquartile range latency on combined interfaces: " << ConvertHundredNanosToMillis(effectiveIrqLatency) << " ms\n";
 
     // Minimum and maximum latency
     const auto primaryMinimumLatency = std::ranges::min(primaryLatencies);
