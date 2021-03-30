@@ -31,7 +31,7 @@ public:
     void RequestSecondaryWlanConnection();
 
     void Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
-    void Stop();
+    void Stop() noexcept;
 
     void PrintStatistics();
     void DumpLatencyData(std::ofstream& file);
@@ -84,9 +84,10 @@ private:
         ~SocketState() noexcept;
 
         void Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex = 0);
-        void Cancel();
+        void Cancel() noexcept;
 
-        bool DoServerHandshake();
+        bool PingEchoServer();
+        void CheckConnectivity();
 
         wil::critical_section m_lock{500};
         wil::unique_socket m_socket;
@@ -120,7 +121,7 @@ private:
     void SendDatagram(SocketState& socketState) noexcept;
     void SendCompletion(SocketState& socketState, const SendState& sendState) noexcept;
 
-    void InitiateReceive(SocketState& socketState, ReceiveState& receiveState);
+    void InitiateReceive(SocketState& socketState, ReceiveState& receiveState) noexcept;
     void ReceiveCompletion(SocketState& socketState, ReceiveState& receiveState, DWORD messageSize) noexcept;
 
     ctl::ctSockaddr m_targetAddress{};

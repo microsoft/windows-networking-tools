@@ -118,12 +118,12 @@ public:
     ThreadpoolTimer(ThreadpoolTimer&&) = delete;
     ThreadpoolTimer& operator=(ThreadpoolTimer&&) = delete;
 
-    void Schedule(FILETIME dueTime) const
+    void Schedule(FILETIME dueTime) const noexcept
     {
         SetThreadpoolTimer(m_ptpTimer, &dueTime, 0, 0);
     }
 
-    void Stop() const
+    void Stop() const noexcept
     {
         if (m_ptpTimer)
         {
