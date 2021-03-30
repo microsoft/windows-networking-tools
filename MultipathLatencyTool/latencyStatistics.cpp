@@ -7,6 +7,7 @@
 #include <numeric>
 #include <ranges>
 #include <vector>
+#include <cmath>
 
 namespace multipath {
 
@@ -99,7 +100,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     auto percent = [](auto a, auto b) { return b > 0 ? a * 100 / b : 0; };
     auto median = [](const auto& data) { return data.size() > 0 ? data[data.size() / 2] : 0; };
 
-    auto variance = [](auto& data, long long average) {
+    auto standardDeviation = [](auto& data, long long average) {
         if (data.size() == 0)
         {
             return 0LL;
@@ -110,7 +111,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
         {
             r += d * d;
         }
-        return r / static_cast<long long>(data.size()) - average * average;
+        return static_cast<long long>(std::sqrt(r / static_cast<long long>(data.size()) - average * average));
     };
 
     // Compute latencies on primary, secondary or both simultaneously
@@ -184,14 +185,14 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
               << " ms (" << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
               << "% improvement over primary) \n";
 
-    // Jitter / Variance
-    const auto primaryVariance = variance(primaryLatencies, primaryAverageLatency);
-    const auto secondaryVariance = variance(secondaryLatencies, secondaryAverageLatency);
-    const auto effectiveVariance = variance(effectiveLatencies, effectiveAverageLatency);
+    // Jitter / Standard deviation
+    const auto primaryStandardDeviation = standardDeviation(primaryLatencies, primaryAverageLatency);
+    const auto secondaryStandardDeviation = standardDeviation(secondaryLatencies, secondaryAverageLatency);
+    const auto effectiveStandardDeviation = standardDeviation(effectiveLatencies, effectiveAverageLatency);
     std::cout << '\n';
-    std::cout << "Jitter (variance) on primary interface: " << ConvertHundredNanosToMillis(ConvertHundredNanosToMillis(primaryVariance)) << " ms^2\n";
-    std::cout << "Jitter (variance) on secondary interface: " << ConvertHundredNanosToMillis(ConvertHundredNanosToMillis(secondaryVariance)) << " ms^2\n";
-    std::cout << "Jitter (variance) on combined interfaces: " << ConvertHundredNanosToMillis(ConvertHundredNanosToMillis(effectiveVariance)) << " ms^2\n";
+    std::cout << "Jitter (standard deviation) on primary interface: " << ConvertHundredNanosToMillis(primaryStandardDeviation) << " ms\n";
+    std::cout << "Jitter (standard deviation) on secondary interface: " << ConvertHundredNanosToMillis(secondaryStandardDeviation) << " ms\n";
+    std::cout << "Jitter (standard deviation) on combined interfaces: " << ConvertHundredNanosToMillis(effectiveStandardDeviation) << " ms\n";
 
     // Median latency
     std::ranges::sort(primaryLatencies);
