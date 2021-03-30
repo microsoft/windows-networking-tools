@@ -86,7 +86,8 @@ private:
         void Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex = 0);
         void Cancel() noexcept;
 
-        bool PingEchoServer();
+        void PrepareToReceivePing(wil::shared_event pingReceived);
+        void PingEchoServer();
         void CheckConnectivity();
 
         wil::critical_section m_lock{500};

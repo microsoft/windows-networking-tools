@@ -78,7 +78,7 @@ void StreamClient::SocketState::Cancel() noexcept
     m_threadpoolIo.reset();
 }
 
-bool StreamClient::SocketState::PingEchoServer()
+void StreamClient::SocketState::PrepareToReceivePing(wil::shared_event pingReceived)
 {
     auto lock = m_lock.lock();
     if (!m_socket.is_valid())
@@ -86,18 +86,16 @@ bool StreamClient::SocketState::PingEchoServer()
         THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
     }
 
-    // The server will echo the message, be ready for the answer
     DWORD flags = 0;
     WSABUF wsabuf;
     wsabuf.buf = m_receiveStates[0].m_buffer.data();
     wsabuf.len = static_cast<ULONG>(m_receiveStates[0].m_buffer.size());
 
-    wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
-    auto callback = [connectedEvent, this](OVERLAPPED* ov) noexcept {
+    auto callback = [pingReceived, this](OVERLAPPED* ov) noexcept {
         auto lock = m_lock.lock();
         if (!m_socket.is_valid())
         {
-            Log<LogLevel::Debug>("StreamClient::DoServerHandshake [callback] - The socket is no longer valid\n");
+            Log<LogLevel::Debug>("StreamClient::PingEchoServer [callback] - The socket is no longer valid\n");
             return;
         }
 
@@ -108,7 +106,8 @@ bool StreamClient::SocketState::PingEchoServer()
             FAIL_FAST_LAST_ERROR_MSG("WSARecv failed");
         }
 
-        connectedEvent.SetEvent();
+        Log<LogLevel::Debug>("StreamClient::PingEchoServer [callback] - Received ping answer\n");
+        pingReceived.SetEvent();
     };
 
     DWORD bytesTransferred = 0;
@@ -126,41 +125,46 @@ bool StreamClient::SocketState::PingEchoServer()
             THROW_WIN32_MSG(error, "WSARecv failed");
         }
     }
+}
+
+void StreamClient::SocketState::PingEchoServer()
+{
+    auto lock = m_lock.lock();
+    if (!m_socket.is_valid())
+    {
+        THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
+    }
 
     const auto sequenceNumber = -1;
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
 
     // Synchronous send
-    DWORD transmitedBytes;
-    error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
+    DWORD transmitedBytes = 0;
+    auto error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
     THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSASend failed");
-
-    // Release the lock to allow for the completion callback
-    lock.reset();
-
-    // Wait 10sec for the answer, return false on timeout
-    return connectedEvent.wait(10000);
 }
 
 void StreamClient::SocketState::CheckConnectivity()
 {
+    wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
+
+    PrepareToReceivePing(connectedEvent);
+
     // Check connectivity
-    const auto handshakeRetryCount = 2;
-    bool connected = false;
-    for (auto i = 0; i < handshakeRetryCount; ++i)
+    const auto maxPingAttempts = 2;
+    for (auto i = 0; i < maxPingAttempts; ++i)
     {
-        if (PingEchoServer())
+        PingEchoServer();
+
+        // Wait 10sec for the answer, return false on timeout
+        if (connectedEvent.wait(10000))
         {
-            connected = true;
-            break;
+            return;
         }
     }
 
-    if (!connected)
-    {
-        THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not get an answer from the echo server");
-    }
+    THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not get an answer from the echo server");
 }
 
 // ------------------------------------------------------------------------------------------------
