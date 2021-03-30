@@ -91,10 +91,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     auto secondaryLatencies = to_vector(data | transform(selectSecondary) | filter(received) | transform(latency), data.size());
     auto effectiveLatencies = to_vector(data | transform(selectEffective) | filter(received) | transform(latency), data.size());
 
-    long long primaryReceivedFrames = primaryLatencies.size();
-    long long secondaryReceivedFrames = secondaryLatencies.size();
-    long long aggregatedReceivedFrames = effectiveLatencies.size();
-
+    // Sent frames
     long long primarySentFrames =
         std::ranges::count_if(data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0; });
     long long secondarySentFrames =
@@ -102,14 +99,14 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     long long aggregatedSentFrames = std::ranges::count_if(
         data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0 || stat.m_secondarySendTimestamp >= 0; });
 
-    // Get the average latency
-    const auto primaryAverageLatency = average(primaryLatencies);
-    const auto secondaryAverageLatency = average(secondaryLatencies);
-    const auto effectiveAverageLatency = average(effectiveLatencies);
-
     std::cout << '\n';
     std::cout << "Sent frames on primary interface: " << primarySentFrames << '\n';
     std::cout << "Sent frames on secondary interface: " << secondarySentFrames << '\n';
+
+    // Received frames
+    long long primaryReceivedFrames = primaryLatencies.size();
+    long long secondaryReceivedFrames = secondaryLatencies.size();
+    long long aggregatedReceivedFrames = effectiveLatencies.size();
 
     std::cout << '\n';
     std::cout << "Received frames on primary interface: " << primaryReceivedFrames << " ("
@@ -129,6 +126,11 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Lost frames on both interface simultaneously: " << aggregatedLostFrames << " ("
               << percent(aggregatedLostFrames, aggregatedSentFrames) << "%)\n";
 
+    // Average latency
+    const auto primaryAverageLatency = average(primaryLatencies);
+    const auto secondaryAverageLatency = average(secondaryLatencies);
+    const auto effectiveAverageLatency = average(effectiveLatencies);
+
     std::cout << '\n';
     std::cout << "Average latency on primary interface: " << ConvertHundredNanosToMillis(primaryAverageLatency) << '\n';
     std::cout << "Average latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryAverageLatency) << '\n';
@@ -136,6 +138,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
               << " (" << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
               << "% improvement over primary) \n";
 
+    // Median latency
     std::ranges::sort(primaryLatencies);
     const auto primaryMedianLatency = median(primaryLatencies);
     std::ranges::sort(secondaryLatencies);
@@ -149,6 +152,17 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "Median effective latency on combined interfaces: " << ConvertHundredNanosToMillis(effectiveMedianLatency)
               << " (" << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency)
               << "% improvement over primary) \n";
+
+    // Minimum and maximum latency
+    const auto primaryMinimumLatency = std::ranges::min(primaryLatencies);
+    const auto primaryMaximumLatency = std::ranges::max(primaryLatencies);
+    const auto secondaryMinimumLatency = std::ranges::min(secondaryLatencies);
+    const auto secondaryMaximumLatency = std::ranges::max(secondaryLatencies);
+    std::cout << '\n';
+    std::cout << "Minimum / Maximum latency on primary interface: " << ConvertHundredNanosToMillis(primaryMinimumLatency)
+              << "/" << ConvertHundredNanosToMillis(primaryMaximumLatency) << '\n';
+    std::cout << "Minimum / Maximum latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryMinimumLatency)
+              << "/" << ConvertHundredNanosToMillis(secondaryMaximumLatency) << '\n';
 }
 
 void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file)
