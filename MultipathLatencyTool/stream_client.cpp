@@ -294,6 +294,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 
     // Setup the interfaces
     m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
+    m_primaryState.CheckConnectivity();
 
     SetupSecondaryInterface();
 
