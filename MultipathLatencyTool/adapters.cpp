@@ -117,10 +117,10 @@ bool IsAdapterConnected(const winrt::guid& adapterId)
             const auto connectivityLevel = profile.GetNetworkConnectivityLevel();
             Log<LogLevel::Info>("Adapter connectivity level: %d\n", connectivityLevel);
 
-            return connectivityLevel == NetworkConnectivityLevel::InternetAccess;
+            return connectivityLevel != NetworkConnectivityLevel::None;
         }
     }
-    Log<LogLevel::Error>("Adapter not found\n");
+    Log<LogLevel::Info>("Adapter not found\n");
     return false;
 }
 

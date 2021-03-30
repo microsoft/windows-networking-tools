@@ -101,7 +101,6 @@ bool StreamClient::SocketState::DoServerHandshake()
         THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
     }
 
-    
     // The server will echo the message, be ready for the answer
     DWORD flags = 0;
     WSABUF wsabuf;
