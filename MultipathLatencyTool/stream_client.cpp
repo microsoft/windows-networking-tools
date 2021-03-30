@@ -166,8 +166,8 @@ bool StreamClient::SocketState::DoServerHandshake()
     // Release the lock to allow for the completion callback
     lock.reset();
 
-    // Wait 5sec for the answer, return false on timeout
-    return connectedEvent.wait(20000);
+    // Wait 10sec for the answer, return false on timeout
+    return connectedEvent.wait(10000);
 }
 
 StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
@@ -227,18 +227,37 @@ void StreamClient::SetupSecondaryInterface()
         // Once the secondary interface has network connectivity, setup it up for sending data
         if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
-            Log<LogLevel::Debug>(
-                "StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
-            m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
-
-            for (auto& receiveState : m_secondaryState.m_receiveStates)
+            try
             {
-                InitiateReceive(m_secondaryState, receiveState);
-            }
+                Log<LogLevel::Debug>(
+                    "StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
+                m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
 
-            // The secondary interface is ready to send data, the client can start using it
-            m_secondaryState.m_adapterStatus = AdapterStatus::Ready;
-            Log<LogLevel::Info>("Secondary interface ready for use.\n");
+                for (auto& receiveState : m_secondaryState.m_receiveStates)
+                {
+                    InitiateReceive(m_secondaryState, receiveState);
+                }
+
+                // The secondary interface is ready to send data, the client can start using it
+                m_secondaryState.m_adapterStatus = AdapterStatus::Ready;
+                Log<LogLevel::Info>("Secondary interface ready for use.\n");
+            }
+            catch (wil::ResultException& ex)
+            {
+                if (ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NOT_CONNECTED))
+                {
+                    Log<LogLevel::Debug>("Secondary interface could not reach the server. Disabling it.");
+                    m_secondaryState.Cancel();
+                }
+                else
+                {
+                    FAIL_FAST_CAUGHT_EXCEPTION();
+                }
+            }
+            catch(...)
+            {
+                FAIL_FAST_CAUGHT_EXCEPTION();
+            }
         }
     };
 
