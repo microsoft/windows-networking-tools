@@ -81,18 +81,6 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     };
 
     auto latency = [](const auto& timestamps) { return timestamps.second - timestamps.first; };
-    auto minimumLatency = [](const LatencyData& stat) {
-        auto minLatency = std::numeric_limits<long long>::max();
-        if (stat.m_primaryReceiveTimestamp >= 0)
-        {
-            minLatency = std::min(minLatency, stat.m_primaryReceiveTimestamp - stat.m_primarySendTimestamp);
-        }
-        if (stat.m_secondaryReceiveTimestamp >= 0)
-        {
-            minLatency = std::min(minLatency, stat.m_secondaryReceiveTimestamp - stat.m_secondarySendTimestamp);
-        }
-        return minLatency;
-    };
 
     auto average = [](auto& data) { return data.size() > 0 ? accumulate(data, 0LL) / data.size() : 0LL; };
     auto percent = [](auto a, auto b) { return b > 0 ? a * 100 / b : 0; };
@@ -101,12 +89,11 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     // Compute latencies on primary, secondary or both simultaneously
     auto primaryLatencies = to_vector(data | transform(selectPrimary) | filter(received) | transform(latency), data.size());
     auto secondaryLatencies = to_vector(data | transform(selectSecondary) | filter(received) | transform(latency), data.size());
-    auto minimumLatencies = to_vector(data | filter(receivedOnOneInterface) | transform(minimumLatency), data.size());
     auto effectiveLatencies = to_vector(data | transform(selectEffective) | filter(received) | transform(latency), data.size());
 
     long long primaryReceivedFrames = primaryLatencies.size();
     long long secondaryReceivedFrames = secondaryLatencies.size();
-    long long aggregatedReceivedFrames = minimumLatencies.size();
+    long long aggregatedReceivedFrames = effectiveLatencies.size();
 
     long long primarySentFrames =
         std::ranges::count_if(data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0; });
@@ -118,7 +105,6 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     // Get the average latency
     const auto primaryAverageLatency = average(primaryLatencies);
     const auto secondaryAverageLatency = average(secondaryLatencies);
-    const auto minimumAverageLatency = average(minimumLatencies);
     const auto effectiveAverageLatency = average(effectiveLatencies);
 
     std::cout << '\n';
@@ -146,9 +132,6 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << '\n';
     std::cout << "Average latency on primary interface: " << ConvertHundredNanosToMillis(primaryAverageLatency) << '\n';
     std::cout << "Average latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryAverageLatency) << '\n';
-    std::cout << "Average minimum latency on both interface: " << ConvertHundredNanosToMillis(minimumAverageLatency)
-              << " (" << percent(primaryAverageLatency - minimumAverageLatency, primaryAverageLatency)
-              << "% improvement over primary) \n";
     std::cout << "Average effective latency on combined interface: " << ConvertHundredNanosToMillis(effectiveAverageLatency)
               << " (" << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
               << "% improvement over primary) \n";
@@ -157,17 +140,13 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto primaryMedianLatency = median(primaryLatencies);
     std::ranges::sort(secondaryLatencies);
     const auto secondaryMedianLatency = median(secondaryLatencies);
-    std::ranges::sort(minimumLatencies);
-    const auto minimumMedianLatency = median(minimumLatencies);
     std::ranges::sort(effectiveLatencies);
     const auto effectiveMedianLatency = median(effectiveLatencies);
 
     std::cout << '\n';
     std::cout << "Median latency on primary interface: " << ConvertHundredNanosToMillis(primaryMedianLatency) << '\n';
     std::cout << "Median latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryMedianLatency) << '\n';
-    std::cout << "Median minimum latency on both interface: " << ConvertHundredNanosToMillis(minimumMedianLatency) << " ("
-              << percent(primaryMedianLatency - minimumMedianLatency, primaryMedianLatency) << "% improvement over primary) \n";
-    std::cout << "Median effective latency on combined interface: " << ConvertHundredNanosToMillis(effectiveMedianLatency)
+    std::cout << "Median effective latency on combined interfaces: " << ConvertHundredNanosToMillis(effectiveMedianLatency)
               << " (" << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency)
               << "% improvement over primary) \n";
 }
