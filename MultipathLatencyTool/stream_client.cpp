@@ -313,9 +313,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 void StreamClient::Stop()
 {
     Log<LogLevel::Debug>("StreamClient::Stop - stop sending datagrams\n");
-    // Stop sending datagrams.
-    // One more send operation could execute after this point if the callback is running concurrently to this call
-    // Do not wait on the callback: we could be called by it
+    // Stop sending datagrams. `m_running` allows to stop correctly even if a concurrent callback re-schedule the timer after it is stopped.
     m_running = false;
     m_threadpoolTimer->Stop();
 
@@ -449,7 +447,7 @@ void StreamClient::SendDatagram(SocketState& socketState) noexcept
 void StreamClient::SendCompletion(SocketState& socketState, const SendState& sendState) noexcept
 {
     FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: sequence number out of bounds of vector");
-    auto& stat = m_latencyData[static_cast<unsigned int>(sendState.m_sequenceNumber)];
+    auto& stat = m_latencyData[static_cast<size_t>(sendState.m_sequenceNumber)];
 
     if (socketState.m_interface == Interface::Primary)
     {
@@ -467,6 +465,7 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
 
     if (!socketState.m_socket.is_valid())
     {
+        Log<LogLevel::Debug>("StreamClient::InitiateReceive - The socket is no longer valid\n");
         return;
     }
 
@@ -499,11 +498,10 @@ void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& recei
         InitiateReceive(socketState, receiveState);
     };
 
-    DWORD bytesTransferred = 0;
-    OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
-
     Log<LogLevel::All>("StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n", socketState.m_socket.get());
 
+    DWORD bytesTransferred = 0;
+    OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
     auto error = WSARecv(socketState.m_socket.get(), &wsabuf, 1, &bytesTransferred, &flags, ov, nullptr);
     if (SOCKET_ERROR == error)
     {
@@ -550,9 +548,6 @@ try
         stat.m_secondaryReceiveTimestamp = receiveState.m_receiveTimestamp;
     }
 }
-catch (...)
-{
-    FAIL_FAST_CAUGHT_EXCEPTION_MSG("FATAL: Unhandled exception in receive completion callback");
-}
+CATCH_FAIL_FAST_MSG("FATAL: Unhandled exception in receive completion callback");
 
 } // namespace multipath
