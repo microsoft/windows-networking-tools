@@ -77,9 +77,7 @@ private:
     long long m_finalSequenceNumber = -1;
     long long m_sequenceNumber = 0;
 
-    std::vector<LatencyData> m_latencyData;
-    long long m_primaryCorruptFrames = 0;
-    long long m_secondaryCorruptFrames = 0;
+    LatencyData m_latencyData;
 
     HANDLE m_completeEvent = nullptr;
 };

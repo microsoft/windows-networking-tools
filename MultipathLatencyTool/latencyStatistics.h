@@ -1,11 +1,11 @@
 ﻿#pragma once
 
-#include <span>
 #include <fstream>
+#include <vector>
 
 namespace multipath {
 
-struct LatencyData
+struct LatencyMeasure
 {
     // All timestamps are in microseconds
     long long m_primarySendTimestamp = -1;
@@ -18,7 +18,16 @@ struct LatencyData
     long long m_secondaryReceiveTimestamp = -1;
 };
 
-void PrintLatencyStatistics(std::span<const LatencyData> data);
-void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file);
+struct LatencyData
+{
+    std::vector<LatencyMeasure> m_latencies;
+
+    size_t m_datagramSize = 0;
+    long long m_primaryCorruptFrames = 0;
+    long long m_secondaryCorruptFrames = 0;
+};
+
+void PrintLatencyStatistics(LatencyData& data);
+void DumpLatencyData(const LatencyData& data, std::ofstream& file);
 
 } // namespace multipath

@@ -159,7 +159,8 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 
     // allocate statistics buffer
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
-    m_latencyData.resize(static_cast<size_t>(m_finalSequenceNumber));
+    m_latencyData.m_latencies.resize(static_cast<size_t>(m_finalSequenceNumber));
+    m_latencyData.m_datagramSize = MeasuredSocket::c_bufferSize;
 
     // Setup the interfaces
     m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
@@ -201,10 +202,6 @@ void StreamClient::Stop() noexcept
 void StreamClient::PrintStatistics()
 {
     PrintLatencyStatistics(m_latencyData);
-
-    std::cout << '\n';
-    std::cout << "Corrupt frames on primary interface: " << m_primaryState.m_corruptFrames << '\n';
-    std::cout << "Corrupt frames on secondary interface: " << m_secondaryState.m_corruptFrames << '\n';
 }
 
 void StreamClient::DumpLatencyData(std::ofstream& file)
@@ -253,7 +250,7 @@ void StreamClient::SendDatagrams() noexcept
 void StreamClient::SendCompletion(const Interface interface, const MeasuredSocket::SendResult& sendState) noexcept
 {
     FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: sequence number out of bounds of vector");
-    auto& stat = m_latencyData[static_cast<size_t>(sendState.m_sequenceNumber)];
+    auto& stat = m_latencyData.m_latencies[static_cast<size_t>(sendState.m_sequenceNumber)];
 
     if (interface == Interface::Primary)
     {
@@ -272,16 +269,16 @@ void StreamClient::ReceiveCompletion(const Interface interface, const MeasuredSo
         Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame, sequence number: %lld\n", result.m_sequenceNumber);
         if (interface == Interface::Primary)
         {
-            m_primaryCorruptFrames += 1;
+            m_latencyData.m_primaryCorruptFrames += 1;
         }
         else
         {
-            m_secondaryCorruptFrames += 1;
+            m_latencyData.m_secondaryCorruptFrames += 1;
         }
         return;
     }
 
-    auto& stat = m_latencyData[static_cast<size_t>(result.m_sequenceNumber)];
+    auto& stat = m_latencyData.m_latencies[static_cast<size_t>(result.m_sequenceNumber)];
     if (interface == Interface::Primary)
     {
         stat.m_primarySendTimestamp = result.m_sendTimestamp;

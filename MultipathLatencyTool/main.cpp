@@ -326,7 +326,7 @@ void RunClientMode(Configuration& config)
 
     if (!config.m_outputFile.empty())
     {
-        Log<LogLevel::Output>("Dumping data to %s...\n", config.m_outputFile.c_str());
+        Log<LogLevel::Output>("Dumping data to %s...\n", config.m_outputFile.filename().c_str());
         std::ofstream file{config.m_outputFile};
         client.DumpLatencyData(file);
         file.close();

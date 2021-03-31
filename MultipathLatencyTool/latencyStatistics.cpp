@@ -16,10 +16,9 @@ constexpr long long ConvertMicrosToMillis(long long micros) noexcept
     return static_cast<long long>(micros / 1000LL);
 }
 
-template <std::ranges::range R, class T, class F>
-[[nodiscard]] constexpr T accumulate(R&& range, T val, F reduceOp)
+constexpr long long ConvertMicrosToSeconds(long long micros)
 {
-    return std::accumulate(std::begin(range), std::end(range), val, reduceOp);
+    return static_cast<long long>(micros / 1'000'000LL);
 }
 
 template <std::ranges::range R, class T>
@@ -27,7 +26,6 @@ template <std::ranges::range R, class T>
 {
     return std::accumulate(std::begin(range), std::end(range), val);
 }
-
 
 template <std::ranges::range R>
 auto to_vector(R&& r, size_t sizeHint = 0)
@@ -49,18 +47,18 @@ auto to_vector(R&& r, size_t sizeHint = 0)
     return v;
 }
 
-void PrintLatencyStatistics(std::span<const LatencyData> data)
+void PrintLatencyStatistics(LatencyData& data)
 {
     using namespace std::views;
 
     // Lambdas for selecting, filtering and transforming data
-    auto selectPrimary = [](const LatencyData& stat) {
+    auto selectPrimary = [](const LatencyMeasure& stat) {
         return std::make_pair(stat.m_primarySendTimestamp, stat.m_primaryReceiveTimestamp);
     };
-    auto selectSecondary = [](const LatencyData& stat) {
+    auto selectSecondary = [](const LatencyMeasure& stat) {
         return std::make_pair(stat.m_secondarySendTimestamp, stat.m_secondaryReceiveTimestamp);
     };
-    auto selectEffective = [](const LatencyData& stat) {
+    auto selectEffective = [](const LatencyMeasure& stat) {
         auto effectiveSend = -1LL;
         if (stat.m_primarySendTimestamp >= 0 && stat.m_secondarySendTimestamp >= 0)
         {
@@ -84,7 +82,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     };
 
     auto received = [](const auto& timestamps) { return timestamps.second >= 0; };
-    auto receivedOnOneInterface = [](const LatencyData& stat) {
+    auto receivedOnOneInterface = [](const LatencyMeasure& stat) {
         return stat.m_primaryReceiveTimestamp >= 0 || stat.m_secondaryReceiveTimestamp >= 0;
     };
     auto receivedFirstOnSecondary = [](const auto& stat) {
@@ -96,11 +94,11 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
 
     auto sum = [](auto& data) { return accumulate(data, 0LL); };
     auto average = [](auto& data) { return data.size() > 0 ? accumulate(data, 0LL) / data.size() : 0LL; };
-    auto percent = [](auto a, auto b) { return b > 0 ? a * 100 / b : 0; };
-    auto median = [](const auto& data) { return data.size() > 0 ? data[data.size() / 2] : 0; };
+    auto percent = [](auto a, auto b) { return b > 0LL ? a * 100LL / b : 0LL; };
+    auto median = [](const auto& data) { return data.size() > 0 ? data[data.size() / 2LL] : 0LL; };
     auto interquartileRange = [](const auto& data) {
         const auto s = data.size();
-        return s > 0 ? data[3 * s / 4] - data[s / 4] : 0;
+        return s > 0 ? data[3 * s / 4] - data[s / 4] : 0LL;
     };
 
     auto standardDeviation = [](auto& data, long long average) {
@@ -117,10 +115,15 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
         return static_cast<long long>(std::sqrt(r / static_cast<long long>(data.size()) - average * average));
     };
 
+    const auto& latencies = data.m_latencies;
+
     // Compute latencies on primary, secondary or both simultaneously
-    auto primaryLatencies = to_vector(data | transform(selectPrimary) | filter(received) | transform(latency), data.size());
-    auto secondaryLatencies = to_vector(data | transform(selectSecondary) | filter(received) | transform(latency), data.size());
-    auto effectiveLatencies = to_vector(data | transform(selectEffective) | filter(received) | transform(latency), data.size());
+    auto primaryLatencies =
+        to_vector(latencies | transform(selectPrimary) | filter(received) | transform(latency), latencies.size());
+    auto secondaryLatencies =
+        to_vector(latencies | transform(selectSecondary) | filter(received) | transform(latency), latencies.size());
+    auto effectiveLatencies =
+        to_vector(latencies | transform(selectEffective) | filter(received) | transform(latency), latencies.size());
 
     // Sort the data for median computation
     std::ranges::sort(primaryLatencies);
@@ -128,12 +131,12 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::ranges::sort(effectiveLatencies);
 
     const long long primarySentFrames =
-        std::ranges::count_if(data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0; });
+        std::ranges::count_if(latencies, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0; });
     const long long secondarySentFrames =
-        std::ranges::count_if(data, [](const auto& stat) { return stat.m_secondarySendTimestamp >= 0; });
+        std::ranges::count_if(latencies, [](const auto& stat) { return stat.m_secondarySendTimestamp >= 0; });
     const long long aggregatedSentFrames = std::ranges::count_if(
-        data, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0 || stat.m_secondarySendTimestamp >= 0; });
-    const long long receivedOnSecondaryFirst = std::ranges::count_if(data, receivedFirstOnSecondary);
+        latencies, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0 || stat.m_secondarySendTimestamp >= 0; });
+    const long long receivedOnSecondaryFirst = std::ranges::count_if(latencies, receivedFirstOnSecondary);
 
     const long long primaryReceivedFrames = primaryLatencies.size();
     const long long secondaryReceivedFrames = secondaryLatencies.size();
@@ -146,6 +149,12 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const long long sumPrimaryLatencies = sum(primaryLatencies);
     const long long sumEffectiveLatencies = sum(effectiveLatencies);
 
+    const auto secondaryTimeSave = std::max(sumPrimaryLatencies - sumEffectiveLatencies, 0LL);
+    auto effectiveTimestamps = latencies | transform(selectEffective) | filter(received);
+    const auto runDuration = effectiveTimestamps.back().first - effectiveTimestamps.front().first;
+    const auto bitTransfered = aggregatedSentFrames * data.m_datagramSize * 8 / 1024;
+    const auto bitRate = bitTransfered / ConvertMicrosToSeconds(runDuration);
+
     std::cout << '\n';
     std::cout << "-----------------------------------------------------------------------\n";
     std::cout << "                            STATISTICS                                 \n";
@@ -155,9 +164,13 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << '\n';
     std::cout << "--- OVERVIEW ---\n";
     std::cout << '\n';
+    std::cout << bitTransfered << " kb (" << aggregatedSentFrames
+              << " datagrams) were sent in " << ConvertMicrosToSeconds(runDuration) << " seconds. The effective bitrate was "
+              << bitRate << " kB/s.\n";
+    std::cout << '\n';
     std::cout << "The secondary interface prevented " << primaryLostFrames - aggregatedLostFrames << " lost frames\n";
-    std::cout << "The secondary interface saved " << ConvertMicrosToMillis(sumPrimaryLatencies - sumEffectiveLatencies)
-              << " ms (" << percent(sumPrimaryLatencies - sumEffectiveLatencies, sumPrimaryLatencies) << "%)\n";
+    std::cout << "The secondary interface saved " << ConvertMicrosToMillis(secondaryTimeSave)
+              << " ms (" << percent(secondaryTimeSave, sumPrimaryLatencies) << "%)\n";
     std::cout << receivedOnSecondaryFirst << " frames were received first on the secondary interface ("
               << percent(receivedOnSecondaryFirst, aggregatedReceivedFrames) << "%)\n";
 
@@ -182,9 +195,9 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
               << percent(aggregatedLostFrames, aggregatedSentFrames) << "%)\n";
 
     // Average latency
-    const auto primaryAverageLatency = average(primaryLatencies);
-    const auto secondaryAverageLatency = average(secondaryLatencies);
-    const auto effectiveAverageLatency = average(effectiveLatencies);
+    const long long primaryAverageLatency = average(primaryLatencies);
+    const long long secondaryAverageLatency = average(secondaryLatencies);
+    const long long effectiveAverageLatency = average(effectiveLatencies);
 
     std::cout << '\n';
     std::cout << "Average latency on primary interface: " << ConvertMicrosToMillis(primaryAverageLatency) << " ms\n";
@@ -236,18 +249,22 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
               << " ms / " << ConvertMicrosToMillis(primaryMaximumLatency) << " ms\n";
     std::cout << "Minimum / Maximum latency on secondary interface: " << ConvertMicrosToMillis(secondaryMinimumLatency)
               << " ms / " << ConvertMicrosToMillis(secondaryMaximumLatency) << " ms\n";
+
+    std::cout << '\n';
+    std::cout << "Corrupt frames on primary interface: " << data.m_primaryCorruptFrames << '\n';
+    std::cout << "Corrupt frames on secondary interface: " << data.m_secondaryCorruptFrames << '\n';
 }
 
-void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file)
+void DumpLatencyData(const LatencyData& data, std::ofstream& file)
 {
     // Add column header
     file << "Sequence number, Primary Send timestamp (microsec), Primary Echo timestamp (microsec), Primary Receive "
             "timestamp (microsec), "
          << "Secondary Send timestamp (microsec), Secondary Echo timestamp (microsec), Secondary Receive timestamp (microsec)\n";
     // Add raw timestamp data
-    for (auto i = 0; i < data.size(); ++i)
+    for (auto i = 0; i < data.m_latencies.size(); ++i)
     {
-        const auto& stat = data[i];
+        const auto& stat = data.m_latencies[i];
         file << i << ", ";
         file << stat.m_primarySendTimestamp << ", " << stat.m_primaryEchoTimestamp << ", " << stat.m_primaryReceiveTimestamp << ", ";
         file << stat.m_secondarySendTimestamp << ", " << stat.m_secondaryEchoTimestamp << ", " << stat.m_secondaryReceiveTimestamp;
