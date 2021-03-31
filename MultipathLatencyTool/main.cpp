@@ -101,11 +101,12 @@ void PrintUsage()
         L"---------------------------------------------------------\n"
         L"-target:<addr or name>\n"
         L"\t- the IP address, FQDN, or hostname to connect to\n"
-        L"-bitrate:<sd,hd,4k>\n"
+        L"-bitrate:<sd,hd,4k,##>\n"
         L"\t- the rate at which to send data; based on common video streaming rates:\n"
         L"\t\t- sd sends data at 3 megabits per second\n"
         L"\t\t- hd sends data at 5 megabits per second (default)\n"
         L"\t\t- 4k sends data at 25 megabits per second\n"
+        L"\t\t- ## specifies the desired bitrate in magatbits per second\n"
         L"-framerate:####\n"
         L"\t- the number of frames to process during each send operation\n"
         L"-duration:####\n"
@@ -217,7 +218,8 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         }
         else
         {
-            throw std::invalid_argument("-bitrate value must be one of: sd, hd, 4k, test");
+            // Convert from mb/s to b/s
+            config.m_bitrate = integer_cast<unsigned long>(*bitrate) * 1024 * 1024;
         }
     }
 
