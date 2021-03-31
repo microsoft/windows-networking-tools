@@ -60,6 +60,7 @@ public:
     BufferArray& GetBuffers() noexcept
     {
         // refresh QPC value at last possible moment
+        // TODO: Need to convert to usable time!! Does it even make sense? Does QPC on server has the same orig?
         QueryPerformanceCounter(&m_sendTimestamp);
         return m_wsabufs;
     }
@@ -76,7 +77,7 @@ private:
     LARGE_INTEGER m_echoTimestamp{};
 };
 
-inline bool ValidateBufferLength(const char* /*buffer*/, size_t /*bufferLength*/, size_t completedBytes) noexcept
+inline bool ValidateBufferLength(size_t completedBytes) noexcept
 {
     if (completedBytes < c_datagramHeaderLength)
     {

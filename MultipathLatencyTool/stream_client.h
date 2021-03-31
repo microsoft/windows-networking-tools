@@ -6,16 +6,13 @@
 
 #include <wil/resource.h>
 
-#include <array>
 #include <atomic>
 #include <fstream>
 #include <memory>
-#include <optional>
 #include <vector>
 
 #include "latencyStatistics.h"
-#include "sockaddr.h"
-#include "threadpool_io.h"
+#include "measuredSocket.h"
 #include "threadpool_timer.h"
 
 using namespace winrt;
@@ -36,7 +33,7 @@ public:
     void PrintStatistics();
     void DumpLatencyData(std::ofstream& file);
 
-    // not copyable or movable
+    // Not copyable or movable
     StreamClient(const StreamClient&) = delete;
     StreamClient& operator=(const StreamClient&) = delete;
     StreamClient(StreamClient&&) = delete;
@@ -45,104 +42,44 @@ public:
     ~StreamClient() = default;
 
 private:
-    NetworkInformation::NetworkStatusChanged_revoker m_networkInformationEventRevoker{};
-    // The client must keep this handle open to keep the secondary STA port active
-    wil::unique_wlan_handle m_wlanHandle;
-
     enum class Interface
     {
         Primary,
         Secondary
     };
 
-    static constexpr size_t c_sendBufferSize = 1024; // 1KB send buffer
-    using SendBuffer = std::array<char, c_sendBufferSize>;
-
-    struct SendState
-    {
-        long long m_sequenceNumber;
-        long long m_sendTimestamp;
-    };
-
-    static constexpr size_t c_receiveBufferSize = 1024; // 1KB receive buffer
-    struct ReceiveState
-    {
-        std::array<char, c_receiveBufferSize> m_buffer{};
-        long long m_receiveTimestamp{};
-    };
-
-    enum class AdapterStatus
-    {
-        Disabled,
-        Connecting,
-        Ready
-    };
-
-    struct SocketState
-    {
-        SocketState(Interface interface);
-        ~SocketState() noexcept;
-
-        void Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex = 0);
-        void Cancel() noexcept;
-
-        void PrepareToReceivePing(wil::shared_event pingReceived);
-        void PingEchoServer();
-        void CheckConnectivity();
-
-        wil::critical_section m_lock{500};
-        wil::unique_socket m_socket;
-        std::unique_ptr<ctl::ctThreadIocp> m_threadpoolIo;
-
-        // whether the this socket is the primary or secondary
-        const Interface m_interface;
-
-        // the contexts used for each posted receive
-        std::vector<ReceiveState> m_receiveStates;
-        long long m_corruptFrames = 0;
-        std::atomic<AdapterStatus> m_adapterStatus{AdapterStatus::Disabled};
-
-        // All interfaces are sending the same data, stored in a shared buffer
-        static constexpr const SendBuffer s_sharedSendBuffer = []() {
-            // initialize the send buffer
-            SendBuffer sharedSendBuffer{};
-            for (size_t i = 0; i < sharedSendBuffer.size(); ++i)
-            {
-                sharedSendBuffer[i] = static_cast<char>(i);
-            }
-            return sharedSendBuffer;
-        }();
-    };
+    NetworkInformation::NetworkStatusChanged_revoker m_networkInformationEventRevoker{};
+    // The client must keep this handle open to keep the secondary STA port active
+    wil::unique_wlan_handle m_wlanHandle;
 
     void SetupSecondaryInterface();
 
     void TimerCallback() noexcept;
 
     void SendDatagrams() noexcept;
-    void SendDatagram(SocketState& socketState) noexcept;
-    void SendCompletion(SocketState& socketState, const SendState& sendState) noexcept;
-
-    void InitiateReceive(SocketState& socketState, ReceiveState& receiveState) noexcept;
-    void ReceiveCompletion(SocketState& socketState, ReceiveState& receiveState, DWORD messageSize) noexcept;
+    void SendCompletion(const Interface interface, const MeasuredSocket::SendResult& sendState) noexcept;
+    void ReceiveCompletion(const Interface interface, const MeasuredSocket::ReceiveResult& result) noexcept;
 
     ctl::ctSockaddr m_targetAddress{};
 
-    SocketState m_primaryState{Interface::Primary};
-    SocketState m_secondaryState{Interface::Secondary};
+    MeasuredSocket m_primaryState{};
+    MeasuredSocket m_secondaryState{};
 
     // The number of datagrams to send on each timer callback
     long long m_frameRate = 0;
     unsigned long m_receiveBufferCount = 1;
 
     FILETIME m_tickInterval{};
-    // Initialize to -1 as the first datagram has sequence number 0
-    long long m_finalSequenceNumber = -1;
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer{};
     std::atomic<bool> m_running = false;
 
+    // Initialize to -1 as the first datagram has sequence number 0
+    long long m_finalSequenceNumber = -1;
     long long m_sequenceNumber = 0;
 
     std::vector<LatencyData> m_latencyData;
+    long long m_primaryCorruptFrames = 0;
+    long long m_secondaryCorruptFrames = 0;
 
     HANDLE m_completeEvent = nullptr;
 };

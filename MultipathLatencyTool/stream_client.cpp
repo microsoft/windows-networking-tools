@@ -1,19 +1,14 @@
 #include "stream_client.h"
 
 #include "adapters.h"
-#include "datagram.h"
 #include "logs.h"
-#include "socket_utils.h"
 
 #include <wil/result.h>
 
 #include <iostream>
-#include <fstream>
 
 namespace multipath {
 namespace {
-
-    constexpr DWORD c_defaultSocketReceiveBufferSize = 1048576; // 1MB receive buffer
 
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
     constexpr long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
@@ -34,142 +29,6 @@ namespace {
     }
 
 } // namespace
-
-
-// ------------------------------------------------------------------------------------------------
-//  SocketState implementation
-// ------------------------------------------------------------------------------------------------
-
-StreamClient::SocketState::SocketState(Interface interface) : m_interface{interface}
-{
-}
-
-StreamClient::SocketState ::~SocketState() noexcept
-{
-    // guarantee the socket is torn down and all callbacks are completed before freeing member buffers
-    Cancel();
-}
-
-void StreamClient::SocketState::Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex)
-{
-    {
-        auto lock = m_lock.lock();
-
-        m_socket.reset(CreateDatagramSocket());
-        SetSocketReceiveBufferSize(m_socket.get(), c_defaultSocketReceiveBufferSize);
-        SetSocketOutgoingInterface(m_socket.get(), targetAddress.family(), interfaceIndex);
-        m_receiveStates.resize(numReceivedBuffers);
-
-        auto error = WSAConnect(m_socket.get(), targetAddress.sockaddr(), targetAddress.length(), nullptr, nullptr, nullptr, nullptr);
-        FAIL_FAST_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSAConnect failed");
-
-        m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
-    }
-}
-
-void StreamClient::SocketState::Cancel() noexcept
-{
-    // Ensure the socket is torn down and wait for all callbacks
-    {
-        const auto lock = m_lock.lock();
-        m_adapterStatus = AdapterStatus::Disabled;
-        m_socket.reset();
-    }
-    m_threadpoolIo.reset();
-}
-
-void StreamClient::SocketState::PrepareToReceivePing(wil::shared_event pingReceived)
-{
-    auto lock = m_lock.lock();
-    if (!m_socket.is_valid())
-    {
-        THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
-    }
-
-    DWORD flags = 0;
-    WSABUF wsabuf;
-    wsabuf.buf = m_receiveStates[0].m_buffer.data();
-    wsabuf.len = static_cast<ULONG>(m_receiveStates[0].m_buffer.size());
-
-    auto callback = [pingReceived, this](OVERLAPPED* ov) noexcept {
-        auto lock = m_lock.lock();
-        if (!m_socket.is_valid())
-        {
-            Log<LogLevel::Debug>("StreamClient::PingEchoServer [callback] - The socket is no longer valid\n");
-            return;
-        }
-
-        DWORD bytesTransferred = 0;
-        DWORD flags = 0;
-        if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &flags))
-        {
-            FAIL_FAST_LAST_ERROR_MSG("WSARecv failed");
-        }
-
-        Log<LogLevel::Debug>("StreamClient::PingEchoServer [callback] - Received ping answer\n");
-        pingReceived.SetEvent();
-    };
-
-    DWORD bytesTransferred = 0;
-    OVERLAPPED* ov = m_threadpoolIo->new_request(callback);
-
-    Log<LogLevel::All>("StreamClient::PingEchoServer - initiating WSARecv on socket %zu\n", m_socket.get());
-
-    auto error = WSARecv(m_socket.get(), &wsabuf, 1, &bytesTransferred, &flags, ov, nullptr);
-    if (SOCKET_ERROR == error)
-    {
-        error = WSAGetLastError();
-        if (WSA_IO_PENDING != error)
-        {
-            m_threadpoolIo->cancel_request(ov);
-            THROW_WIN32_MSG(error, "WSARecv failed");
-        }
-    }
-}
-
-void StreamClient::SocketState::PingEchoServer()
-{
-    auto lock = m_lock.lock();
-    if (!m_socket.is_valid())
-    {
-        THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
-    }
-
-    const auto sequenceNumber = -1;
-    DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
-    auto& buffers = sendRequest.GetBuffers();
-
-    // Synchronous send
-    DWORD transmitedBytes = 0;
-    auto error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
-    THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSASend failed");
-}
-
-void StreamClient::SocketState::CheckConnectivity()
-{
-    wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
-
-    PrepareToReceivePing(connectedEvent);
-
-    // Check connectivity
-    const auto maxPingAttempts = 2;
-    for (auto i = 0; i < maxPingAttempts; ++i)
-    {
-        PingEchoServer();
-
-        // Wait 10sec for the answer, return false on timeout
-        if (connectedEvent.wait(10000))
-        {
-            return;
-        }
-    }
-
-    THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not get an answer from the echo server");
-}
-
-// ------------------------------------------------------------------------------------------------
-//  StreamClient implementation
-// ------------------------------------------------------------------------------------------------
 
 StreamClient::StreamClient(ctl::ctSockaddr targetAddress, unsigned long receiveBufferCount, HANDLE completeEvent) :
     m_targetAddress(std::move(targetAddress)), m_completeEvent(completeEvent), m_receiveBufferCount(receiveBufferCount)
@@ -210,7 +69,7 @@ void StreamClient::SetupSecondaryInterface()
             primaryInterfaceGuid = connectedInterfaceGuid;
 
             // If a secondary wlan interface was used for the previous primary, tear it down
-            if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
+            if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Ready)
             {
                 m_secondaryState.Cancel();
                 Log<LogLevel::Info>("Secondary interface removed\n");
@@ -220,13 +79,13 @@ void StreamClient::SetupSecondaryInterface()
             if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), primaryInterfaceGuid))
             {
                 secondaryInterfaceGuid = *secondaryGuid;
-                m_secondaryState.m_adapterStatus = AdapterStatus::Connecting;
+                m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Connecting;
                 Log<LogLevel::Info>("Secondary interface added. Waiting for connectivity.\n");
             }
         }
 
         // Once the secondary interface has network connectivity, setup it up for sending data
-        if (m_secondaryState.m_adapterStatus == AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
+        if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
         {
             try
             {
@@ -234,22 +93,19 @@ void StreamClient::SetupSecondaryInterface()
                     "StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
                 m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
                 m_secondaryState.CheckConnectivity();
-
-                for (auto& receiveState : m_secondaryState.m_receiveStates)
-                {
-                    InitiateReceive(m_secondaryState, receiveState);
-                }
+                m_secondaryState.PrepareToReceive([this](auto& r) { ReceiveCompletion(Interface::Secondary, r); });
 
                 // The secondary interface is ready to send data, the client can start using it
-                m_secondaryState.m_adapterStatus = AdapterStatus::Ready;
+                m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
                 Log<LogLevel::Info>("Secondary interface ready for use.\n");
             }
             catch (wil::ResultException& ex)
             {
                 if (ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NOT_CONNECTED))
                 {
-                    Log<LogLevel::Debug>("Secondary interface could not reach the server. Disabling it.");
+                    Log<LogLevel::Debug>("Secondary interface could not reach the server.");
                     m_secondaryState.Cancel();
+                    m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Connecting;
                 }
                 else
                 {
@@ -282,9 +138,9 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     }
 
     m_frameRate = sendFrameRate;
-    const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, c_sendBufferSize);
+    const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, MeasuredSocket::c_bufferSize);
     m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
-    const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, c_sendBufferSize);
+    const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, MeasuredSocket::c_bufferSize);
     m_finalSequenceNumber += nbDatagramToSend;
 
     Log<LogLevel::Output>(
@@ -301,11 +157,8 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     SetupSecondaryInterface();
 
     // initiate receives before starting the send timer
-    for (auto& receiveState : m_primaryState.m_receiveStates)
-    {
-        InitiateReceive(m_primaryState, receiveState);
-    }
-    m_primaryState.m_adapterStatus = AdapterStatus::Ready;
+    m_primaryState.PrepareToReceive([this](auto& r) { ReceiveCompletion(Interface::Primary, r); });
+    m_primaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
 
     // start sending data
     m_running = true;
@@ -375,81 +228,23 @@ void StreamClient::TimerCallback() noexcept
 
 void StreamClient::SendDatagrams() noexcept
 {
-    SendDatagram(m_primaryState);
+    m_primaryState.SendDatagram(m_sequenceNumber, [this](const auto& r) { SendCompletion(Interface::Primary, r); });
 
-    if (m_secondaryState.m_adapterStatus == AdapterStatus::Ready)
+    if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Ready)
     {
-        SendDatagram(m_secondaryState);
+        m_secondaryState.SendDatagram(
+            m_sequenceNumber, [this](const auto& r) { SendCompletion(Interface::Secondary, r); });
     }
 
     m_sequenceNumber += 1;
 }
 
-void StreamClient::SendDatagram(SocketState& socketState) noexcept
-{
-    auto lock = socketState.m_lock.lock();
-    if (!socketState.m_socket.is_valid())
-    {
-        Log<LogLevel::Error>("StreamClient::SendDatagram - invalid socket, ignoring send request\n");
-        return;
-    }
-
-    DatagramSendRequest sendRequest{m_sequenceNumber, socketState.s_sharedSendBuffer};
-    auto& buffers = sendRequest.GetBuffers();
-    const SendState sendState{m_sequenceNumber, sendRequest.GetQpc()};
-
-    Log<LogLevel::All>(
-        "StreamClient::SendDatagram - sending sequence number %lld on %s socket %zu\n",
-        m_sequenceNumber,
-        socketState.m_interface == Interface::Primary ? "primary" : "secondary",
-        socketState.m_socket.get());
-
-    auto callback = [this, &socketState, sendState](OVERLAPPED* ov) noexcept {
-        try
-        {
-            auto lock = socketState.m_lock.lock();
-
-            if (!socketState.m_socket.is_valid())
-            {
-                Log<LogLevel::Debug>("StreamClient::SendDatagram - The socket is no longer valid, ignoring send completion\n");
-                return;
-            }
-
-            DWORD bytesTransmitted = 0;
-            DWORD flags = 0;
-            if (WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransmitted, false, &flags))
-            {
-                SendCompletion(socketState, sendState);
-            }
-            else
-            {
-                const auto lastError = WSAGetLastError();
-                Log<LogLevel::Error>("StreamClient::SendDatagram - WSASend failed : %u\n", lastError);
-            }
-        }
-        CATCH_FAIL_FAST_MSG("FATAL: Unhandled exception in send completion callback");
-    };
-
-    OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
-
-    auto error = WSASend(socketState.m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), nullptr, 0, ov, nullptr);
-    if (SOCKET_ERROR == error)
-    {
-        error = WSAGetLastError();
-        if (WSA_IO_PENDING != error)
-        {
-            socketState.m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(error, "WSASend failed");
-        }
-    }
-}
-
-void StreamClient::SendCompletion(SocketState& socketState, const SendState& sendState) noexcept
+void StreamClient::SendCompletion(const Interface interface, const MeasuredSocket::SendResult& sendState) noexcept
 {
     FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: sequence number out of bounds of vector");
     auto& stat = m_latencyData[static_cast<size_t>(sendState.m_sequenceNumber)];
 
-    if (socketState.m_interface == Interface::Primary)
+    if (interface == Interface::Primary)
     {
         stat.m_primarySendTimestamp = sendState.m_sendTimestamp;
     }
@@ -459,93 +254,35 @@ void StreamClient::SendCompletion(SocketState& socketState, const SendState& sen
     }
 }
 
-void StreamClient::InitiateReceive(SocketState& socketState, ReceiveState& receiveState) noexcept
+void StreamClient::ReceiveCompletion(const Interface interface, const MeasuredSocket::ReceiveResult& result) noexcept
 {
-    auto lock = socketState.m_lock.lock();
-
-    if (!socketState.m_socket.is_valid())
+    if (result.m_sequenceNumber < 0 || result.m_sequenceNumber >= m_finalSequenceNumber)
     {
-        Log<LogLevel::Debug>("StreamClient::InitiateReceive - The socket is no longer valid\n");
+        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame, sequence number: %lld\n", result.m_sequenceNumber);
+        if (interface == Interface::Primary)
+        {
+            m_primaryCorruptFrames += 1;
+        }
+        else
+        {
+            m_secondaryCorruptFrames += 1;
+        }
         return;
     }
 
-    DWORD flags = 0;
-    WSABUF wsabuf;
-    wsabuf.buf = receiveState.m_buffer.data();
-    wsabuf.len = static_cast<ULONG>(receiveState.m_buffer.size());
-
-    auto callback = [this, &socketState, &receiveState](OVERLAPPED* ov) noexcept {
-        receiveState.m_receiveTimestamp = SnapQpc();
-
-        auto lock = socketState.m_lock.lock();
-
-        if (!socketState.m_socket.is_valid())
-        {
-            Log<LogLevel::Debug>("StreamClient::InitiateReceive [callback] - The socket is no longer valid, ignoring receive completion\n");
-            return;
-        }
-
-        DWORD bytesTransferred = 0;
-        DWORD flags = 0;
-        if (!WSAGetOverlappedResult(socketState.m_socket.get(), ov, &bytesTransferred, false, &flags))
-        {
-            FAIL_FAST_LAST_ERROR_MSG("WSARecv failed");
-        }
-
-        ReceiveCompletion(socketState, receiveState, bytesTransferred);
-        InitiateReceive(socketState, receiveState);
-    };
-
-    Log<LogLevel::All>("StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n", socketState.m_socket.get());
-
-    DWORD bytesTransferred = 0;
-    OVERLAPPED* ov = socketState.m_threadpoolIo->new_request(callback);
-    auto error = WSARecv(socketState.m_socket.get(), &wsabuf, 1, &bytesTransferred, &flags, ov, nullptr);
-    if (SOCKET_ERROR == error)
+    auto& stat = m_latencyData[static_cast<size_t>(result.m_sequenceNumber)];
+    if (interface == Interface::Primary)
     {
-        error = WSAGetLastError();
-        if (WSA_IO_PENDING != error)
-        {
-            socketState.m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(error, "WSARecv failed");
-        }
-    }
-}
-
-void StreamClient::ReceiveCompletion(SocketState& socketState, ReceiveState& receiveState, DWORD messageSize) noexcept
-try
-{
-    FAIL_FAST_IF_MSG(!ValidateBufferLength(receiveState.m_buffer.data(), receiveState.m_buffer.size(), messageSize), "Received invalid message");
-
-    const auto& header = ParseDatagramHeader(receiveState.m_buffer.data());
-
-    Log<LogLevel::All>(
-        "StreamClient::ReceiveCompletion - received sequence number %lld on %s socket %zu\n",
-        header.m_sequenceNumber,
-        socketState.m_interface == Interface::Primary ? "primary" : "secondary",
-        socketState.m_socket.get());
-
-    if (header.m_sequenceNumber < 0 || header.m_sequenceNumber >= m_finalSequenceNumber)
-    {
-        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame, sequence number: %lld\n", header.m_sequenceNumber);
-        socketState.m_corruptFrames += 1;
-        return;
-    }
-
-    auto& stat = m_latencyData[static_cast<size_t>(header.m_sequenceNumber)];
-    if (socketState.m_interface == Interface::Primary)
-    {
-        stat.m_primarySendTimestamp = header.m_sendTimestamp;
-        stat.m_primaryEchoTimestamp = header.m_echoTimestamp;
-        stat.m_primaryReceiveTimestamp = receiveState.m_receiveTimestamp;
+        stat.m_primarySendTimestamp = result.m_sendTimestamp;
+        stat.m_primaryEchoTimestamp = result.m_echoTimestamp;
+        stat.m_primaryReceiveTimestamp = result.m_receiveTimestamp;
     }
     else
     {
-        stat.m_secondarySendTimestamp = header.m_sendTimestamp;
-        stat.m_secondaryEchoTimestamp = header.m_echoTimestamp;
-        stat.m_secondaryReceiveTimestamp = receiveState.m_receiveTimestamp;
+        stat.m_secondarySendTimestamp = result.m_sendTimestamp;
+        stat.m_secondaryEchoTimestamp = result.m_echoTimestamp;
+        stat.m_secondaryReceiveTimestamp = result.m_receiveTimestamp;
     }
 }
-CATCH_FAIL_FAST_MSG("FATAL: Unhandled exception in receive completion callback");
 
 } // namespace multipath

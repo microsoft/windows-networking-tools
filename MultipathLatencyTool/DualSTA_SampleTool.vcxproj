@@ -120,6 +120,7 @@
     <ClCompile Include="latencyStatistics.cpp" />
     <ClCompile Include="logs.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="measuredSocket.cpp" />
     <ClCompile Include="stream_client.cpp" />
     <ClCompile Include="stream_server.cpp" />
   </ItemGroup>
@@ -136,6 +137,7 @@
     <ClInclude Include="datagram.h" />
     <ClInclude Include="latencyStatistics.h" />
     <ClInclude Include="logs.h" />
+    <ClInclude Include="measuredSocket.h" />
     <ClInclude Include="sockaddr.h" />
     <ClInclude Include="socket_utils.h" />
     <ClInclude Include="stream_client.h" />

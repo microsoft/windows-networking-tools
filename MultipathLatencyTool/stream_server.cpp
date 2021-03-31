@@ -73,6 +73,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
         auto& header = *reinterpret_cast<DatagramHeader*>(receiveContext.m_buffer.data());
 
         // Update the echo timestamp
+        // TODO: Fix this! It does not make sense to send a QPC!!
         QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&header.m_echoTimestamp));
         Log<LogLevel::All>("StreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
 
