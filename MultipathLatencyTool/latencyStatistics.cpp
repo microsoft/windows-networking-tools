@@ -11,11 +11,10 @@
 
 namespace multipath {
 
-constexpr long long ConvertHundredNanosToMillis(long long hundredNs) noexcept
+constexpr long long ConvertMicrosToMillis(long long micros) noexcept
 {
-    return static_cast<long long>(hundredNs / 10000LL);
+    return static_cast<long long>(micros / 1000LL);
 }
-
 
 template <std::ranges::range R, class T, class F>
 [[nodiscard]] constexpr T accumulate(R&& range, T val, F reduceOp)
@@ -157,7 +156,7 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     std::cout << "--- OVERVIEW ---\n";
     std::cout << '\n';
     std::cout << "The secondary interface prevented " << primaryLostFrames - aggregatedLostFrames << " lost frames\n";
-    std::cout << "The secondary interface saved " << ConvertHundredNanosToMillis(sumPrimaryLatencies - sumEffectiveLatencies)
+    std::cout << "The secondary interface saved " << ConvertMicrosToMillis(sumPrimaryLatencies - sumEffectiveLatencies)
               << " ms (" << percent(sumPrimaryLatencies - sumEffectiveLatencies, sumPrimaryLatencies) << "%)\n";
     std::cout << receivedOnSecondaryFirst << " frames were received first on the secondary interface ("
               << percent(receivedOnSecondaryFirst, aggregatedReceivedFrames) << "%)\n";
@@ -188,9 +187,9 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto effectiveAverageLatency = average(effectiveLatencies);
 
     std::cout << '\n';
-    std::cout << "Average latency on primary interface: " << ConvertHundredNanosToMillis(primaryAverageLatency) << " ms\n";
-    std::cout << "Average latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryAverageLatency) << " ms\n";
-    std::cout << "Average effective latency on combined interface: " << ConvertHundredNanosToMillis(effectiveAverageLatency)
+    std::cout << "Average latency on primary interface: " << ConvertMicrosToMillis(primaryAverageLatency) << " ms\n";
+    std::cout << "Average latency on secondary interface: " << ConvertMicrosToMillis(secondaryAverageLatency) << " ms\n";
+    std::cout << "Average effective latency on combined interface: " << ConvertMicrosToMillis(effectiveAverageLatency)
               << " ms (" << percent(primaryAverageLatency - effectiveAverageLatency, primaryAverageLatency)
               << "% improvement over primary) \n";
 
@@ -199,9 +198,11 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto secondaryStandardDeviation = standardDeviation(secondaryLatencies, secondaryAverageLatency);
     const auto effectiveStandardDeviation = standardDeviation(effectiveLatencies, effectiveAverageLatency);
     std::cout << '\n';
-    std::cout << "Jitter (standard deviation) on primary interface: " << ConvertHundredNanosToMillis(primaryStandardDeviation) << " ms\n";
-    std::cout << "Jitter (standard deviation) on secondary interface: " << ConvertHundredNanosToMillis(secondaryStandardDeviation) << " ms\n";
-    std::cout << "Jitter (standard deviation) on combined interfaces: " << ConvertHundredNanosToMillis(effectiveStandardDeviation) << " ms\n";
+    std::cout << "Jitter (standard deviation) on primary interface: " << ConvertMicrosToMillis(primaryStandardDeviation) << " ms\n";
+    std::cout << "Jitter (standard deviation) on secondary interface: " << ConvertMicrosToMillis(secondaryStandardDeviation)
+              << " ms\n";
+    std::cout << "Jitter (standard deviation) on combined interfaces: " << ConvertMicrosToMillis(effectiveStandardDeviation)
+              << " ms\n";
 
     // Median latency
     const auto primaryMedianLatency = median(primaryLatencies);
@@ -209,9 +210,9 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto effectiveMedianLatency = median(effectiveLatencies);
 
     std::cout << '\n';
-    std::cout << "Median latency on primary interface: " << ConvertHundredNanosToMillis(primaryMedianLatency) << " ms\n";
-    std::cout << "Median latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryMedianLatency) << " ms\n";
-    std::cout << "Median effective latency on combined interfaces: " << ConvertHundredNanosToMillis(effectiveMedianLatency)
+    std::cout << "Median latency on primary interface: " << ConvertMicrosToMillis(primaryMedianLatency) << " ms\n";
+    std::cout << "Median latency on secondary interface: " << ConvertMicrosToMillis(secondaryMedianLatency) << " ms\n";
+    std::cout << "Median effective latency on combined interfaces: " << ConvertMicrosToMillis(effectiveMedianLatency)
               << " ms (" << percent(primaryMedianLatency - effectiveMedianLatency, primaryMedianLatency)
               << "% improvement over primary) \n";
 
@@ -221,9 +222,9 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto effectiveIrqLatency = interquartileRange(effectiveLatencies);
 
     std::cout << '\n';
-    std::cout << "Interquartile range on primary interface: " << ConvertHundredNanosToMillis(primaryIrqLatency) << " ms\n";
-    std::cout << "Interquartile range on secondary interface: " << ConvertHundredNanosToMillis(secondaryIrqLatency) << " ms\n";
-    std::cout << "Interquartile range latency on combined interfaces: " << ConvertHundredNanosToMillis(effectiveIrqLatency) << " ms\n";
+    std::cout << "Interquartile range on primary interface: " << ConvertMicrosToMillis(primaryIrqLatency) << " ms\n";
+    std::cout << "Interquartile range on secondary interface: " << ConvertMicrosToMillis(secondaryIrqLatency) << " ms\n";
+    std::cout << "Interquartile range latency on combined interfaces: " << ConvertMicrosToMillis(effectiveIrqLatency) << " ms\n";
 
     // Minimum and maximum latency
     const auto primaryMinimumLatency = std::ranges::min(primaryLatencies);
@@ -231,18 +232,18 @@ void PrintLatencyStatistics(std::span<const LatencyData> data)
     const auto secondaryMinimumLatency = std::ranges::min(secondaryLatencies);
     const auto secondaryMaximumLatency = std::ranges::max(secondaryLatencies);
     std::cout << '\n';
-    std::cout << "Minimum / Maximum latency on primary interface: " << ConvertHundredNanosToMillis(primaryMinimumLatency)
-              << " ms / " << ConvertHundredNanosToMillis(primaryMaximumLatency) << " ms\n";
-    std::cout << "Minimum / Maximum latency on secondary interface: " << ConvertHundredNanosToMillis(secondaryMinimumLatency)
-              << " ms / " << ConvertHundredNanosToMillis(secondaryMaximumLatency) << " ms\n";
+    std::cout << "Minimum / Maximum latency on primary interface: " << ConvertMicrosToMillis(primaryMinimumLatency)
+              << " ms / " << ConvertMicrosToMillis(primaryMaximumLatency) << " ms\n";
+    std::cout << "Minimum / Maximum latency on secondary interface: " << ConvertMicrosToMillis(secondaryMinimumLatency)
+              << " ms / " << ConvertMicrosToMillis(secondaryMaximumLatency) << " ms\n";
 }
 
 void DumpLatencyData(std::span<const LatencyData> data, std::ofstream& file)
 {
     // Add column header
-    file << "Sequence number, Primary Send timestamp (100ns), Primary Echo timestamp (100ns), Primary Receive "
-            "timestamp (100ns), "
-         << "Secondary Send timestamp (100ns), Secondary Echo timestamp (100ns), Secondary Receive timestamp (100ns)\n";
+    file << "Sequence number, Primary Send timestamp (microsec), Primary Echo timestamp (microsec), Primary Receive "
+            "timestamp (microsec), "
+         << "Secondary Send timestamp (microsec), Secondary Echo timestamp (microsec), Secondary Receive timestamp (microsec)\n";
     // Add raw timestamp data
     for (auto i = 0; i < data.size(); ++i)
     {

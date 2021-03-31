@@ -30,15 +30,15 @@ public:
     struct SendResult
     {
         long long m_sequenceNumber;
-        long long m_sendTimestamp;
+        long long m_sendTimestamp; // Microsec
     };
 
     struct ReceiveResult
     {
         long long m_sequenceNumber;
-        long long m_sendTimestamp;
-        long long m_receiveTimestamp;
-        long long m_echoTimestamp;
+        long long m_sendTimestamp; // Microsec
+        long long m_receiveTimestamp; // Microsec
+        long long m_echoTimestamp; // Microsec
     };
 
     MeasuredSocket() = default;

@@ -10,6 +10,17 @@
 namespace multipath {
 namespace {
 
+    constexpr FILETIME ConvertHundredNanosToRelativeFiletime(long long hundredNs) noexcept
+    {
+        ULARGE_INTEGER value{};
+        value.QuadPart = static_cast<ULONGLONG>(-hundredNs);
+
+        FILETIME result{};
+        result.dwHighDateTime = value.HighPart;
+        result.dwLowDateTime = value.LowPart;
+        return result;
+    }
+
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
     constexpr long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
     {

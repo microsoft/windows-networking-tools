@@ -10,11 +10,19 @@ constexpr unsigned long c_datagramSequenceNumberLength = 8;
 constexpr unsigned long c_datagramTimestampLength = 8;
 constexpr unsigned long c_datagramHeaderLength = c_datagramSequenceNumberLength + 2 * c_datagramTimestampLength;
 
+inline long long SnapQpc() noexcept
+{
+    LARGE_INTEGER qpc{};
+    QueryPerformanceCounter(&qpc);
+
+    return qpc.QuadPart;
+}
+
 struct DatagramHeader
 {
     long long m_sequenceNumber;
-    long long m_sendTimestamp;
-    long long m_echoTimestamp;
+    long long m_sendTimestamp; // QPC
+    long long m_echoTimestamp; // QPC
 };
 
 static_assert(sizeof(DatagramHeader) == c_datagramHeaderLength);

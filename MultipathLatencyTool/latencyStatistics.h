@@ -7,6 +7,7 @@ namespace multipath {
 
 struct LatencyData
 {
+    // All timestamps are in microseconds
     long long m_primarySendTimestamp = -1;
     long long m_secondarySendTimestamp = -1;
 
