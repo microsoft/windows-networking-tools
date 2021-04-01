@@ -101,7 +101,8 @@ void StreamClient::SetupSecondaryInterface()
             }
             catch (wil::ResultException& ex)
             {
-                if (ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NOT_CONNECTED))
+                if (ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NOT_CONNECTED) ||
+                    ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE))
                 {
                     Log<LogLevel::Debug>("Secondary interface could not reach the server.");
                     m_secondaryState.Cancel();
@@ -131,12 +132,6 @@ void StreamClient::SetupSecondaryInterface()
 
 void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
 {
-    // Ensure we are stopped
-    if (m_running)
-    {
-        Stop();
-    }
-
     m_frameRate = sendFrameRate;
     const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, MeasuredSocket::c_bufferSize);
     const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, MeasuredSocket::c_bufferSize);
@@ -161,7 +156,6 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     m_primaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
 
     // start sending data
-    m_running = true;
     Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback\n");
     // TODO: Clean types
     m_threadpoolTimer->Schedule(static_cast<unsigned long>(tickInterval));
@@ -170,8 +164,6 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 void StreamClient::Stop() noexcept
 {
     Log<LogLevel::Debug>("StreamClient::Stop - stop sending datagrams\n");
-    // Stop sending datagrams. `m_running` allows to stop correctly even if a concurrent callback re-schedule the timer after it is stopped.
-    m_running = false;
     m_threadpoolTimer->Stop();
 
     Log<LogLevel::Debug>("StreamClient::Stop - canceling network information event subscription\n");
@@ -200,17 +192,12 @@ void StreamClient::DumpLatencyData(std::ofstream& file)
 
 void StreamClient::TimerCallback() noexcept
 {
-    if (!m_running)
-    {
-        return;
-    }
-
     for (auto i = 0; i < m_frameRate && m_sequenceNumber < m_finalSequenceNumber; ++i)
     {
         SendDatagrams();
     }
 
-    // requeue the timer
+    // Stop when the last sequence number is reached
     if (m_sequenceNumber >= m_finalSequenceNumber)
     {
         Log<LogLevel::Debug>("StreamClient::TimerCallback - final sequence number sent, canceling timer callback\n");

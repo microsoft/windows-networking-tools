@@ -70,7 +70,6 @@ private:
     unsigned long m_receiveBufferCount = 1;
 
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer{};
-    std::atomic<bool> m_running = false;
 
     // Initialize to -1 as the first datagram has sequence number 0
     long long m_finalSequenceNumber = -1;

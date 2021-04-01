@@ -28,7 +28,7 @@ void MeasuredSocket::Setup(const ctl::ctSockaddr& targetAddress, int numReceived
     m_receiveStates.resize(numReceivedBuffers);
 
     auto error = WSAConnect(m_socket.get(), targetAddress.sockaddr(), targetAddress.length(), nullptr, nullptr, nullptr, nullptr);
-    FAIL_FAST_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSAConnect failed");
+    THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSAConnect failed");
 
     m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
 }
