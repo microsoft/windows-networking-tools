@@ -4,25 +4,12 @@
 #include "datagram.h"
 #include "logs.h"
 #include "socket_utils.h"
-#include "threadpool_timer.h"
+#include "time_utils.h"
 
 namespace multipath {
 
 namespace {
     constexpr DWORD c_defaultSocketReceiveBufferSize = 1048576; // 1MB receive buffer
-
-    inline long long QpcToMicroSec(const long long qpc) noexcept
-    {
-        // snap the frequency on first call; C++11 guarantees this is thread-safe
-        static const long long c_qpf = []() {
-            LARGE_INTEGER qpf;
-            QueryPerformanceFrequency(&qpf);
-            return qpf.QuadPart;
-        }();
-
-        // multiply by 1_000_000 as (qpc / qpf) is in seconds
-        return static_cast<long long>(qpc * 1000000LL / c_qpf);
-    }
 }
 
 MeasuredSocket::~MeasuredSocket() noexcept
@@ -157,7 +144,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
 
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
-    const MeasuredSocket::SendResult sendState{sequenceNumber, QpcToMicroSec(sendRequest.GetQpc())};
+    const MeasuredSocket::SendResult sendState{sequenceNumber, ConvertQpcToMicroSec(sendRequest.GetQpc())};
 
     Log<LogLevel::All>(
         "StreamClient::SendDatagram - sending sequence number %lld on socket %zu\n",
@@ -259,9 +246,9 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
 
             ReceiveResult result = {
                 .m_sequenceNumber{header.m_sequenceNumber},
-                .m_sendTimestamp{QpcToMicroSec(header.m_sendTimestamp)},
-                .m_receiveTimestamp{QpcToMicroSec(receiveTimestamp)},
-                .m_echoTimestamp{QpcToMicroSec(header.m_echoTimestamp)}}; // TODO: Remove, it doesn't make sense
+                .m_sendTimestamp{ConvertQpcToMicroSec(header.m_sendTimestamp)},
+                .m_receiveTimestamp{ConvertQpcToMicroSec(receiveTimestamp)},
+                .m_echoTimestamp{ConvertQpcToMicroSec(header.m_echoTimestamp)}}; // TODO: Remove, it doesn't make sense
             clientCallback(result);
 
             PrepareToReceiveDatagram(receiveState, std::move(clientCallback));

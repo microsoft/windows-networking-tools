@@ -69,7 +69,6 @@ private:
     long long m_frameRate = 0;
     unsigned long m_receiveBufferCount = 1;
 
-    FILETIME m_tickInterval{};
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer{};
     std::atomic<bool> m_running = false;
 

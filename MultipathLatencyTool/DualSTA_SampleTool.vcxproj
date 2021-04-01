@@ -135,6 +135,7 @@
     <ClInclude Include="adapters.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="datagram.h" />
+    <ClInclude Include="time_utils.h" />
     <ClInclude Include="latencyStatistics.h" />
     <ClInclude Include="logs.h" />
     <ClInclude Include="measuredSocket.h" />

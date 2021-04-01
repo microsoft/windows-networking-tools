@@ -10,14 +10,6 @@ constexpr unsigned long c_datagramSequenceNumberLength = 8;
 constexpr unsigned long c_datagramTimestampLength = 8;
 constexpr unsigned long c_datagramHeaderLength = c_datagramSequenceNumberLength + 2 * c_datagramTimestampLength;
 
-inline long long SnapQpc() noexcept
-{
-    LARGE_INTEGER qpc{};
-    QueryPerformanceCounter(&qpc);
-
-    return qpc.QuadPart;
-}
-
 struct DatagramHeader
 {
     long long m_sequenceNumber;
@@ -68,7 +60,6 @@ public:
     BufferArray& GetBuffers() noexcept
     {
         // refresh QPC value at last possible moment
-        // TODO: Need to convert to usable time!! Does it even make sense? Does QPC on server has the same orig?
         QueryPerformanceCounter(&m_sendTimestamp);
         return m_wsabufs;
     }

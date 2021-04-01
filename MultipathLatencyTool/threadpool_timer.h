@@ -5,6 +5,8 @@
 
 #include <wil/result.h>
 
+#include "time_utils.h"
+
 namespace multipath {
 
 using ThreadpoolTimerCallback = std::function<void()>;
@@ -32,13 +34,19 @@ public:
     ThreadpoolTimer(ThreadpoolTimer&&) = delete;
     ThreadpoolTimer& operator=(ThreadpoolTimer&&) = delete;
 
-    void Schedule(FILETIME dueTime) const noexcept
+    void Schedule(unsigned long periodInHundredNanosec) noexcept
     {
-        SetThreadpoolTimer(m_ptpTimer, &dueTime, 0, 0);
+        m_exiting = false;
+        m_period = periodInHundredNanosec;
+        m_timerExpiration = SnapSystemTimeInHundredNs();
+
+        FILETIME expiration{};
+        SetThreadpoolTimer(m_ptpTimer, &expiration, 0, 0);
     }
 
-    void Stop() const noexcept
+    void Stop() noexcept
     {
+        m_exiting = true;
         if (m_ptpTimer)
         {
             SetThreadpoolTimer(m_ptpTimer, nullptr, 0, 0);
@@ -46,6 +54,30 @@ public:
     }
 
 private:
+
+    void ScheduleNextPeriod() noexcept
+    {
+        // Don't schedule a next period if the callback (or someone else) called stop
+        if (m_exiting)
+        {
+            return;
+        }
+
+        m_timerExpiration += m_period;
+        const long long remainingTime = max(0, m_timerExpiration - SnapSystemTimeInHundredNs());
+
+        // We are late! Call the next callback immediately
+        if (remainingTime <= 0)
+        {
+            TimerCallback(nullptr, this, nullptr);
+        }
+        else
+        {
+            FILETIME expiration = ConvertHundredNsToRelativeFiletime(remainingTime);
+            SetThreadpoolTimer(m_ptpTimer, &expiration, 0, 0);
+        }
+    }
+
     static void CALLBACK TimerCallback(PTP_CALLBACK_INSTANCE /*instance*/, PVOID context, PTP_TIMER /*ptpTimer*/) noexcept
     {
         auto* self = static_cast<ThreadpoolTimer*>(context);
@@ -64,10 +96,15 @@ private:
             // immediately break if we catch an exception
             FAIL_FAST_MSG("exception raised in timer callback routine");
         }
+
+        // Schedule the next period manually to ensure the callbacks run sequentially
+        self->ScheduleNextPeriod();
     }
 
     std::atomic_bool m_exiting = false;
     PTP_TIMER m_ptpTimer = nullptr;
+    long long m_timerExpiration{};
+    unsigned long m_period = 0;
     ThreadpoolTimerCallback m_callback{};
 };
 

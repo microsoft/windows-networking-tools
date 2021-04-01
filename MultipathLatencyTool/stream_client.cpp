@@ -10,23 +10,12 @@
 namespace multipath {
 namespace {
 
-    constexpr FILETIME ConvertHundredNanosToRelativeFiletime(long long hundredNs) noexcept
-    {
-        ULARGE_INTEGER value{};
-        value.QuadPart = static_cast<ULONGLONG>(-hundredNs);
-
-        FILETIME result{};
-        result.dwHighDateTime = value.HighPart;
-        result.dwLowDateTime = value.LowPart;
-        return result;
-    }
-
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
     constexpr long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
     {
         // bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
         // We look for the tick interval in 100 nanosecond
-        const long long hundredNanoSecInSecond = 10'000'000LL; // hundred ns / s
+        const unsigned long hundredNanoSecInSecond = 10'000'000UL; // hundred ns / s
         const long long byteRate = bitRate / 8;                // byte/s
         return (datagramSize * frameRate * hundredNanoSecInSecond) / byteRate;
     }
@@ -150,7 +139,6 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
 
     m_frameRate = sendFrameRate;
     const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, MeasuredSocket::c_bufferSize);
-    m_tickInterval = ConvertHundredNanosToRelativeFiletime(tickInterval);
     const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, MeasuredSocket::c_bufferSize);
     m_finalSequenceNumber += nbDatagramToSend;
 
@@ -175,7 +163,8 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     // start sending data
     m_running = true;
     Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback\n");
-    m_threadpoolTimer->Schedule(m_tickInterval);
+    // TODO: Clean types
+    m_threadpoolTimer->Schedule(static_cast<unsigned long>(tickInterval));
 }
 
 void StreamClient::Stop() noexcept
@@ -222,11 +211,7 @@ void StreamClient::TimerCallback() noexcept
     }
 
     // requeue the timer
-    if (m_sequenceNumber < m_finalSequenceNumber)
-    {
-        m_threadpoolTimer->Schedule(m_tickInterval);
-    }
-    else
+    if (m_sequenceNumber >= m_finalSequenceNumber)
     {
         Log<LogLevel::Debug>("StreamClient::TimerCallback - final sequence number sent, canceling timer callback\n");
         FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "FATAL: Exceeded the expected number of packets sent");
