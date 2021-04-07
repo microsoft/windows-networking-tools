@@ -15,7 +15,7 @@ StreamServer::StreamServer(ctl::ctSockaddr listenAddress) :
     const auto error = bind(m_socket.get(), m_listenAddress.sockaddr(), m_listenAddress.length());
     if (SOCKET_ERROR == error)
     {
-        THROW_WIN32_MSG(WSAGetLastError(), "bind failed");
+        THROW_WIN32_MSG(WSAGetLastError(), "Failed to bind the socket");
     }
 
     m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
@@ -62,7 +62,7 @@ void StreamServer::InitiateReceive(ReceiveContext& receiveContext)
         {
             // must cancel the threadpool IO request
             m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(lastError, "WSARecvFrom failed");
+            FAIL_FAST_WIN32_MSG(lastError, "Failed to initiate a receive operation");
         }
     }
 }
@@ -77,7 +77,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
         // Update the echo timestamp
 
         header.m_echoTimestamp = SnapQpcInMicroSec();
-        Log<LogLevel::All>("StreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
+        Log<LogLevel::All>("Echoing sequence number %lld\n", header.m_sequenceNumber);
 
         // echo the data received. A synchronous send is enough.
         WSABUF wsabuf;
@@ -95,8 +95,7 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
     }
     else
     {
-        const auto lastError = WSAGetLastError();
-        Log<LogLevel::Error>("StreamServer::ReceiveCompletion - WSARecvFrom failed %u\n", lastError);
+        Log<LogLevel::Error>("The receive operation failed: %u\n", WSAGetLastError());
     }
 
     // post another receive

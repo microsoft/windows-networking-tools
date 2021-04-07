@@ -44,7 +44,7 @@ void StreamClient::RequestSecondaryWlanConnection()
         m_wlanHandle = OpenWlanHandle();
         RequestSecondaryInterface(m_wlanHandle.get());
 
-        Log<LogLevel::Output>("Secondary wlan interfaces enabled\n");
+        Log<LogLevel::Dualsta>("Secondary wlan interfaces enabled\n");
     }
 }
 
@@ -52,71 +52,86 @@ void StreamClient::SetupSecondaryInterface()
 {
     if (!m_wlanHandle)
     {
-        Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Secondary wlan connection not requested\n");
+        Log<LogLevel::Dualsta>("Secondary wlan connection not requested\n");
         return;
     }
 
     // Callback to update the secondary interface state in response to network status events
     auto updateSecondaryInterfaceStatus = [this, primaryInterfaceGuid = winrt::guid{}, secondaryInterfaceGuid = winrt::guid{}]() mutable {
-        Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - Network changed event received\n");
-        // Check if the primary interface changed
-        auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
-
-        // If the default internet ip interface changes, the secondary wlan interface status changes too
-        if (connectedInterfaceGuid != primaryInterfaceGuid)
+        try
         {
-            Log<LogLevel::Debug>("StreamClient::SetupSecondaryInterface - The preferred primary interface changed\n");
-            primaryInterfaceGuid = connectedInterfaceGuid;
 
-            // If a secondary wlan interface was used for the previous primary, tear it down
-            if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Ready)
-            {
-                m_secondaryState.Cancel();
-                Log<LogLevel::Info>("Secondary interface removed\n");
-            }
+            Log<LogLevel::Info>("Network status changed event received\n");
 
-            // If a secondary wlan interface is available for the new primary interface, get ready to use it
-            if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), primaryInterfaceGuid))
-            {
-                secondaryInterfaceGuid = *secondaryGuid;
-                m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Connecting;
-                Log<LogLevel::Info>("Secondary interface added. Waiting for connectivity.\n");
-            }
-        }
+            // Check if the primary interface changed
+            auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
 
-        // Once the secondary interface has network connectivity, setup it up for sending data
-        if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
-        {
-            try
+            // If the default internet ip interface changes, the secondary wlan interface status changes too
+            if (connectedInterfaceGuid != primaryInterfaceGuid)
             {
-                Log<LogLevel::Debug>(
-                    "StreamClient::SetupSecondaryInterface - Secondary interface connected. Setting up a socket.\n");
-                m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
-                m_secondaryState.CheckConnectivity();
-                m_secondaryState.PrepareToReceive([this](auto& r) { ReceiveCompletion(Interface::Secondary, r); });
+                primaryInterfaceGuid = connectedInterfaceGuid;
+                Log<LogLevel::Dualsta>("The preferred primary interface changed. Updating the secondary interface.\n");
 
-                // The secondary interface is ready to send data, the client can start using it
-                m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
-                Log<LogLevel::Info>("Secondary interface ready for use.\n");
-            }
-            catch (wil::ResultException& ex)
-            {
-                if (ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NOT_CONNECTED) ||
-                    ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE))
+                // If a secondary wlan interface was used for the previous primary, tear it down
+                if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Ready)
                 {
-                    Log<LogLevel::Debug>("Secondary interface could not reach the server.");
                     m_secondaryState.Cancel();
+                    Log<LogLevel::Dualsta>("Secondary interface removed\n");
+                }
+
+                // If a secondary wlan interface is available for the new primary interface, get ready to use it
+                if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), primaryInterfaceGuid))
+                {
+                    secondaryInterfaceGuid = *secondaryGuid;
                     m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Connecting;
+                    Log<LogLevel::Dualsta>("Secondary interface added. Waiting for connectivity.\n");
                 }
                 else
                 {
-                    FAIL_FAST_CAUGHT_EXCEPTION();
+                    Log<LogLevel::Dualsta>("No secondary interface found for this primary.\n");
                 }
             }
-            catch(...)
+
+            // Once the secondary interface has network connectivity, setup it up for sending data
+            if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Connecting && IsAdapterConnected(secondaryInterfaceGuid))
             {
-                FAIL_FAST_CAUGHT_EXCEPTION();
+                try
+                {
+                    Log<LogLevel::Dualsta>("Secondary interface connected. Setting up a socket.\n");
+                    m_secondaryState.Setup(m_targetAddress, m_receiveBufferCount, ConvertInterfaceGuidToIndex(secondaryInterfaceGuid));
+                    m_secondaryState.CheckConnectivity();
+                    m_secondaryState.PrepareToReceive([this](auto& r) { ReceiveCompletion(Interface::Secondary, r); });
+
+                    // The secondary interface is ready to send data, the client can start using it
+                    m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
+                    Log<LogLevel::Info>("Secondary interface ready for use.\n");
+                }
+                catch (wil::ResultException& ex)
+                {
+                    if (ex.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_NOT_CONNECTED) ||
+                        ex.GetErrorCode() == HRESULT_FROM_WIN32(WSAENETUNREACH))
+                    {
+                        Log<LogLevel::Dualsta>(
+                            "Secondary interface could not reach the echo server. It will retry after a "
+                            "network status change.");
+                        m_secondaryState.Cancel();
+                        m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Connecting;
+                    }
+                    else
+                    {
+                        FAIL_FAST_CAUGHT_EXCEPTION();
+                    }
+                }
             }
+            else if (m_secondaryState.m_adapterStatus == MeasuredSocket::AdapterStatus::Ready && !IsAdapterConnected(secondaryInterfaceGuid))
+            {
+                m_secondaryState.Cancel();
+                Log<LogLevel::Dualsta>("Secondary interface removed after losing connectivity\n");
+            }
+        }
+        catch (...)
+        {
+            FAIL_FAST_CAUGHT_EXCEPTION();
         }
     };
 
@@ -137,15 +152,13 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, MeasuredSocket::c_bufferSize);
     m_finalSequenceNumber += nbDatagramToSend;
 
-    Log<LogLevel::Output>(
-        "Sending %d datagrams, by groups of %d every %lld microseconds\n", nbDatagramToSend, m_frameRate, tickInterval / 10);
-
     // allocate statistics buffer
     FAIL_FAST_IF_MSG(m_finalSequenceNumber > MAXSIZE_T, "Final sequence number exceeds limit of vector storage");
     m_latencyData.m_latencies.resize(static_cast<size_t>(m_finalSequenceNumber));
     m_latencyData.m_datagramSize = MeasuredSocket::c_bufferSize;
 
     // Setup the interfaces
+    Log<LogLevel::Info>("Setting up the interfaces\n");
     m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
     m_primaryState.CheckConnectivity();
 
@@ -155,28 +168,31 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     m_primaryState.PrepareToReceive([this](auto& r) { ReceiveCompletion(Interface::Primary, r); });
     m_primaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
 
+    Log<LogLevel::Output>(
+        "%d datagrams will be sent, by groups of %d every %lld microseconds\n", nbDatagramToSend, m_frameRate, tickInterval / 10);
+
     // start sending data
-    Log<LogLevel::Debug>("StreamClient::Start - scheduling timer callback\n");
+    Log<LogLevel::Info>("Start sending datagrams\n");
     // TODO: Clean types
     m_threadpoolTimer->Schedule(static_cast<unsigned long>(tickInterval));
 }
 
 void StreamClient::Stop() noexcept
 {
-    Log<LogLevel::Debug>("StreamClient::Stop - stop sending datagrams\n");
+    Log<LogLevel::Info>("Stop sending datagrams\n");
     m_threadpoolTimer->Stop();
 
-    Log<LogLevel::Debug>("StreamClient::Stop - canceling network information event subscription\n");
+    Log<LogLevel::Info>("Canceling network status changed event subscription\n");
     m_networkInformationEventRevoker.revoke();
 
     // Wait a little for in-flight packets (we don't want to count them as lost)
     Sleep(1000); // 1 sec
 
-    Log<LogLevel::Debug>("StreamClient::Stop - closing sockets\n");
+    Log<LogLevel::Info>("Closing the sockets\n");
     m_primaryState.Cancel();
     m_secondaryState.Cancel();
 
-    Log<LogLevel::Debug>("StreamClient::Stop - the client has stopped\n");
+    Log<LogLevel::Info>("The client has stopped\n");
     SetEvent(m_completeEvent);
 }
 
@@ -200,8 +216,8 @@ void StreamClient::TimerCallback() noexcept
     // Stop when the last sequence number is reached
     if (m_sequenceNumber >= m_finalSequenceNumber)
     {
-        Log<LogLevel::Debug>("StreamClient::TimerCallback - final sequence number sent, canceling timer callback\n");
-        FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "FATAL: Exceeded the expected number of packets sent");
+        Log<LogLevel::Info>("Final sequence number sent, canceling timer callback\n");
+        FAIL_FAST_IF_MSG(m_sequenceNumber > m_finalSequenceNumber, "Exceeded the expected number of packets sent");
         Stop();
     }
 }
@@ -221,7 +237,6 @@ void StreamClient::SendDatagrams() noexcept
 
 void StreamClient::SendCompletion(const Interface interface, const MeasuredSocket::SendResult& sendState) noexcept
 {
-    FAIL_FAST_IF_MSG(sendState.m_sequenceNumber > MAXSIZE_T, "FATAL: sequence number out of bounds of vector");
     auto& stat = m_latencyData.m_latencies[static_cast<size_t>(sendState.m_sequenceNumber)];
 
     if (interface == Interface::Primary)
@@ -238,7 +253,7 @@ void StreamClient::ReceiveCompletion(const Interface interface, const MeasuredSo
 {
     if (result.m_sequenceNumber < 0 || result.m_sequenceNumber >= m_finalSequenceNumber)
     {
-        Log<LogLevel::Debug>("StreamClient::ReceiveCompletion - received corrupt frame, sequence number: %lld\n", result.m_sequenceNumber);
+        Log<LogLevel::Debug>("Received a corrupt frame, sequence number: %lld\n", result.m_sequenceNumber);
         if (interface == Interface::Primary)
         {
             m_latencyData.m_primaryCorruptFrames += 1;

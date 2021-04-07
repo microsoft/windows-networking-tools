@@ -32,7 +32,7 @@ std::vector<GUID> GetPrimaryWlanInterfaceGuids(HANDLE wlanHandle)
 
     if (primaryInterfaceList->dwNumberOfItems < 1)
     {
-        THROW_WIN32_MSG(ERROR_NOT_FOUND, "Did not find a WiFi interface");
+        THROW_WIN32_MSG(ERROR_NOT_FOUND, "No WiFi interface was found");
     }
 
     for (auto i = 0u; i < primaryInterfaceList->dwNumberOfItems; ++i)
@@ -55,7 +55,7 @@ void RequestSecondaryInterface(HANDLE wlanHandle)
         sizeof(BOOL),
         static_cast<PVOID>(&enable),
         nullptr);
-    THROW_IF_WIN32_ERROR_MSG(error, "WlanSetInterface(wlan_intf_opcode_secondary_sta_synchronized_connections) failed");
+    THROW_IF_WIN32_ERROR_MSG(error, "Failed to enable secondary interfaces");
 }
 
 winrt::guid GetPrimaryInterfaceGuid() noexcept
@@ -91,9 +91,9 @@ std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const wi
         &dataSize,
         wil::out_param_ptr<PVOID*>(secondaryInterfaceList),
         nullptr);
-    THROW_IF_WIN32_ERROR_MSG(error, "WlanQueryInterface failed");
+    THROW_IF_WIN32_ERROR_MSG(error, "Failed to query secondary interfaces");
 
-    Log<LogLevel::Debug>("GetSecondaryInterfaceGuids - received %lu secondary interface GUIDs\n", secondaryInterfaceList->dwNumberOfItems);
+    Log<LogLevel::Info>("Found %lu secondary interface(s)\n", secondaryInterfaceList->dwNumberOfItems);
 
     // There is at most one secondary interface for a primary interface
     if (secondaryInterfaceList->dwNumberOfItems > 0)
@@ -115,7 +115,7 @@ bool IsAdapterConnected(const winrt::guid& adapterId)
         if (adapterId == profileAdapterId)
         {
             const auto connectivityLevel = profile.GetNetworkConnectivityLevel();
-            Log<LogLevel::Info>("Adapter connectivity level: %d\n", connectivityLevel);
+            Log<LogLevel::Info>("Adapter found, connectivity level: %d\n", connectivityLevel);
 
             return connectivityLevel != NetworkConnectivityLevel::None;
         }

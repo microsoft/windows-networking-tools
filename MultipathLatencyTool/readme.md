@@ -167,7 +167,8 @@ to the network.
     secondary interface GUID by using `ConvertInterfaceGuidToLuid` and
     `ConvertLuidToIndex` (from the "netioapi.h" header).
 
-    👁️‍🗨️ See `SetSocketOutgoingInterface` in ["socket_utils.h"](socket_utils.h)
+    👁️‍🗨️ See `SetSocketOutgoingInterface` and in ["socket_utils.h"](socket_utils.h)
+    and `ConvertInterfaceGuidToIndex` in ["adapter.cpp"](adapter.cpp)
 
 From this point, the secondary interface is completely set up and the socket
 can be used as a normal socket.

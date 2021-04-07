@@ -61,7 +61,7 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
         auto lock = m_lock.lock();
         if (!m_socket.is_valid())
         {
-            Log<LogLevel::Debug>("StreamClient::PingEchoServer [callback] - The socket is no longer valid\n");
+            Log<LogLevel::Info>("Ping reception callback canceled on socket %z\n", m_socket.get());
             return;
         }
 
@@ -69,17 +69,17 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
         DWORD flags = 0;
         if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &flags))
         {
-            FAIL_FAST_LAST_ERROR_MSG("WSARecv failed");
+            FAIL_FAST_LAST_ERROR_MSG("A ping receive operation failed on socket %zu", m_socket.get());
         }
 
-        Log<LogLevel::Debug>("StreamClient::PingEchoServer [callback] - Received ping answer\n");
+        Log<LogLevel::Info>("Received a ping answer on socket %zu\n", m_socket.get());
         pingReceived.SetEvent();
     };
 
     DWORD bytesTransferred = 0;
     OVERLAPPED* ov = m_threadpoolIo->new_request(callback);
 
-    Log<LogLevel::All>("StreamClient::PingEchoServer - initiating WSARecv on socket %zu\n", m_socket.get());
+    Log<LogLevel::All>("Initiating a ping receive on socket %zu\n", m_socket.get());
 
     auto error = WSARecv(m_socket.get(), &wsabuf, 1, &bytesTransferred, &flags, ov, nullptr);
     if (SOCKET_ERROR == error)
@@ -88,7 +88,7 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
         if (WSA_IO_PENDING != error)
         {
             m_threadpoolIo->cancel_request(ov);
-            THROW_WIN32_MSG(error, "WSARecv failed");
+            THROW_WIN32_MSG(error, "Failed to initiate a ping receive on socket %zu", m_socket.get());
         }
     }
 }
@@ -101,6 +101,8 @@ void MeasuredSocket::PingEchoServer()
         THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
     }
 
+    Log<LogLevel::Info>("Sending a ping on socket %zu\n", m_socket.get());
+
     const auto sequenceNumber = -1;
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
@@ -108,7 +110,7 @@ void MeasuredSocket::PingEchoServer()
     // Synchronous send
     DWORD transmitedBytes = 0;
     auto error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
-    THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSASend failed");
+    THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "Failed to send a ping");
 }
 
 void MeasuredSocket::CheckConnectivity()
@@ -126,11 +128,13 @@ void MeasuredSocket::CheckConnectivity()
         // Wait 10sec for the answer, return false on timeout
         if (connectedEvent.wait(10000))
         {
+            Log<LogLevel::Info>("Connectivity to the server confirmed on socket %zu\n", m_socket.get());
             return;
         }
     }
 
-    THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not get an answer from the echo server");
+    Log<LogLevel::Info>("Could not reach the server on socket %zu\n", m_socket.get());
+    THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not reach the server on socket %zu\n", m_socket.get());
 }
 
 void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(const SendResult&)> clientCallback) noexcept
@@ -138,7 +142,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
     auto lock = m_lock.lock();
     if (!m_socket.is_valid())
     {
-        Log<LogLevel::Error>("StreamClient::SendDatagram - invalid socket, ignoring send request\n");
+        Log<LogLevel::Error>("Invalid socket, ignoring send request\n");
         return;
     }
 
@@ -146,10 +150,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
     auto& buffers = sendRequest.GetBuffers();
     const MeasuredSocket::SendResult sendState{sequenceNumber, sendRequest.GetQpc()};
 
-    Log<LogLevel::All>(
-        "StreamClient::SendDatagram - sending sequence number %lld on socket %zu\n",
-        sequenceNumber,
-        m_socket.get());
+    Log<LogLevel::All>("Sending sequence number %lld on socket %zu\n", sequenceNumber, m_socket.get());
 
     auto callback = [clientCallback = std::move(clientCallback), this, sendState](OVERLAPPED* ov) noexcept {
         try
@@ -158,8 +159,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
 
             if (!m_socket.is_valid())
             {
-                Log<LogLevel::Debug>(
-                    "StreamClient::SendDatagram - The socket is no longer valid, ignoring send completion\n");
+                Log<LogLevel::Info>("Send callback canceled on socket %z\n");
                 return;
             }
 
@@ -171,10 +171,10 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
             }
             else
             {
-                Log<LogLevel::Error>("StreamClient::SendDatagram - WSASend failed : %u\n", WSAGetLastError());
+                Log<LogLevel::Error>("The send operation failed: %u\n", WSAGetLastError());
             }
         }
-        CATCH_FAIL_FAST_MSG("FATAL: Unhandled exception in send completion callback");
+        CATCH_FAIL_FAST_MSG("Unhandled exception in send completion callback");
     };
 
     OVERLAPPED* ov = m_threadpoolIo->new_request(callback);
@@ -186,7 +186,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
         if (WSA_IO_PENDING != error)
         {
             m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(error, "WSASend failed");
+            FAIL_FAST_WIN32_MSG(error, "Failed to initiate a send operation");
         }
     }
 }
@@ -205,7 +205,7 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
 
     if (!m_socket.is_valid())
     {
-        Log<LogLevel::Debug>("StreamClient::InitiateReceive - The socket is no longer valid\n");
+        Log<LogLevel::Error>("Invalid socket\n");
         return;
     }
 
@@ -223,9 +223,7 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
 
             if (!m_socket.is_valid())
             {
-                Log<LogLevel::Debug>(
-                    "StreamClient::InitiateReceive [callback] - The socket is no longer valid, ignoring "
-                    "receive completion\n");
+                Log<LogLevel::Info>("Receive callback canceled on socket %z\n");
                 return;
             }
 
@@ -233,16 +231,13 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
             DWORD flags = 0;
             if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &flags))
             {
-                FAIL_FAST_LAST_ERROR_MSG("WSARecv failed");
+                FAIL_FAST_LAST_ERROR_MSG("A receive operation failed");
             }
 
-            FAIL_FAST_IF_MSG(!ValidateBufferLength(bytesTransferred), "Received invalid message");
+            FAIL_FAST_IF_MSG(!ValidateBufferLength(bytesTransferred), "Received an invalid message");
 
             const auto& header = ParseDatagramHeader(receiveState.m_buffer.data());
-            Log<LogLevel::All>(
-                "StreamClient::ReceiveCompletion - received sequence number %lld on socket %zu\n",
-                header.m_sequenceNumber,
-                m_socket.get());
+            Log<LogLevel::All>("Received sequence number %lld on socket %zu\n", header.m_sequenceNumber, m_socket.get());
 
             ReceiveResult result = {
                 .m_sequenceNumber{header.m_sequenceNumber},
@@ -253,10 +248,10 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
 
             PrepareToReceiveDatagram(receiveState, std::move(clientCallback));
         }
-        CATCH_FAIL_FAST_MSG("FATAL: Unhandled exception in send completion callback");
+        CATCH_FAIL_FAST_MSG("Unhandled exception in send completion callback");
     };
 
-    Log<LogLevel::All>("StreamClient::InitiateReceive - initiating WSARecv on socket %zu\n", m_socket.get());
+    Log<LogLevel::All>("Initiating receive operation on socket %zu\n", m_socket.get());
 
     DWORD bytesTransferred = 0;
     OVERLAPPED* ov = m_threadpoolIo->new_request(callback);
@@ -267,7 +262,7 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
         if (WSA_IO_PENDING != error)
         {
             m_threadpoolIo->cancel_request(ov);
-            FAIL_FAST_WIN32_MSG(error, "WSARecv failed");
+            FAIL_FAST_WIN32_MSG(error, "Failed to initiate a receive operation");
         }
     }
 }
