@@ -25,8 +25,12 @@ interfaces or reassembled after reception.
 The application focus on collecting statistics to evaluate the impact of a
 secondary interface on a Wi-Fi connection.
 
-The application will also work without a secondary interface and for other type
-of connections, but this is not a focus point.
+By default, it will use a secondary interface on a best-effort basis and fall
+back to using only one interface if a secondary interface is not available or
+is no longer available.
+
+The application will work without a secondary interface and for non Wi-Fi
+connections, but this is not a primary goal.
 
 ## Quick Start
 
@@ -237,8 +241,8 @@ Changes the port used for communications.
 
 `-loglevel:<N>`
 
-Controls the logs verbosity. Goes from `0` to `4`. `2` is recommended to follow
-how the secondary interface is used.
+Controls the logs verbosity. Goes from 0 to 5. The level 2 provides additionnal details about the behavior of the secondary interface.
+The level 5 is extremely verbose and should generaly not be used.
 
 `-prepostrecvs:<N>`
 
