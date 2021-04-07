@@ -12,7 +12,7 @@ inline long long SnapQpc() noexcept
     return qpc.QuadPart;
 }
 
-inline long long ConvertQpcToMicroSec(const long long qpc) noexcept
+inline long long SnapQpcInMicroSec() noexcept
 {
     // snap the frequency on first call; C++11 guarantees this is thread-safe
     static const long long c_qpf = []() {
@@ -22,7 +22,7 @@ inline long long ConvertQpcToMicroSec(const long long qpc) noexcept
     }();
 
     // (qpc / qpf) is in seconds
-    return static_cast<long long>(qpc * 1'000'000LL / c_qpf);
+    return static_cast<long long>(SnapQpc() * 1'000'000LL / c_qpf);
 }
 
 // Create a negative FILETIME, which for some timer APIs indicate a 'relative' time

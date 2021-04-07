@@ -1,5 +1,7 @@
 #pragma once
 
+#include "time_utils.h"
+
 #include <array>
 #include <span>
 #include <WinSock2.h>
@@ -13,8 +15,8 @@ constexpr unsigned long c_datagramHeaderLength = c_datagramSequenceNumberLength 
 struct DatagramHeader
 {
     long long m_sequenceNumber;
-    long long m_sendTimestamp; // QPC
-    long long m_echoTimestamp; // QPC
+    long long m_sendTimestamp; // Microsec
+    long long m_echoTimestamp; // Microsec
 };
 
 static_assert(sizeof(DatagramHeader) == c_datagramHeaderLength);
@@ -43,14 +45,14 @@ public:
     {
         static_assert(c_bufferArraySize == c_datagramPayloadOffset + 1);
 
-        // buffer layout: sequence number, send timestamp (QPC), echo timestamp (QPC), then buffer data
+        // buffer layout: sequence number, send timestamp, echo timestamp, then buffer data
         m_wsabufs[c_datagramSequenceNumberOffset].buf = reinterpret_cast<char*>(&m_sequenceNumber);
         m_wsabufs[c_datagramSequenceNumberOffset].len = c_datagramSequenceNumberLength;
 
-        m_wsabufs[c_datagramSendTimestampOffset].buf = reinterpret_cast<char*>(&m_sendTimestamp.QuadPart);
+        m_wsabufs[c_datagramSendTimestampOffset].buf = reinterpret_cast<char*>(&m_sendTimestamp);
         m_wsabufs[c_datagramSendTimestampOffset].len = c_datagramTimestampLength;
 
-        m_wsabufs[c_datagramEchoTimestampOffset].buf = reinterpret_cast<char*>(&m_echoTimestamp.QuadPart);
+        m_wsabufs[c_datagramEchoTimestampOffset].buf = reinterpret_cast<char*>(&m_echoTimestamp);
         m_wsabufs[c_datagramEchoTimestampOffset].len = c_datagramTimestampLength;
 
         m_wsabufs[c_datagramPayloadOffset].buf = const_cast<char*>(sendBuffer.data());
@@ -60,20 +62,20 @@ public:
     BufferArray& GetBuffers() noexcept
     {
         // refresh QPC value at last possible moment
-        QueryPerformanceCounter(&m_sendTimestamp);
+        m_sendTimestamp = SnapQpcInMicroSec();
         return m_wsabufs;
     }
 
     [[nodiscard]] long long GetQpc() const noexcept
     {
-        return m_sendTimestamp.QuadPart;
+        return m_sendTimestamp;
     }
 
 private:
     BufferArray m_wsabufs{};
     long long m_sequenceNumber = 0;
-    LARGE_INTEGER m_sendTimestamp{};
-    LARGE_INTEGER m_echoTimestamp{};
+    long long m_sendTimestamp = 0;
+    long long m_echoTimestamp = 0;
 };
 
 inline bool ValidateBufferLength(size_t completedBytes) noexcept

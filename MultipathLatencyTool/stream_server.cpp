@@ -1,7 +1,9 @@
 #include "stream_server.h"
-#include "socket_utils.h"
-#include "logs.h"
+
 #include "datagram.h"
+#include "logs.h"
+#include "socket_utils.h"
+#include "time_utils.h"
 
 namespace multipath {
 StreamServer::StreamServer(ctl::ctSockaddr listenAddress) :
@@ -73,8 +75,8 @@ void StreamServer::CompleteReceive(ReceiveContext& receiveContext, OVERLAPPED* o
         auto& header = *reinterpret_cast<DatagramHeader*>(receiveContext.m_buffer.data());
 
         // Update the echo timestamp
-        // TODO: Fix this! It does not make sense to send a QPC!!
-        QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&header.m_echoTimestamp));
+
+        header.m_echoTimestamp = SnapQpcInMicroSec();
         Log<LogLevel::All>("StreamServer::ReceiveCompletion - echoing sequence number %lld\n", header.m_sequenceNumber);
 
         // echo the data received. A synchronous send is enough.

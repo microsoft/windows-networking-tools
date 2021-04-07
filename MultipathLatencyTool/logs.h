@@ -5,6 +5,7 @@
 enum class LogLevel
 {
     Output,
+    Dualsta,
     Error,
     Info,
     Debug,

@@ -421,6 +421,5 @@ catch (const std::exception& ex)
 }
 catch (...)
 {
-    std::cerr << "FATAL: UNHANDLED EXCEPTION";
     FAIL_FAST_MSG("FATAL: UNHANDLED EXCEPTION");
 }

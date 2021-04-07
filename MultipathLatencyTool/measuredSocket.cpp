@@ -144,7 +144,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
 
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
-    const MeasuredSocket::SendResult sendState{sequenceNumber, ConvertQpcToMicroSec(sendRequest.GetQpc())};
+    const MeasuredSocket::SendResult sendState{sequenceNumber, sendRequest.GetQpc()};
 
     Log<LogLevel::All>(
         "StreamClient::SendDatagram - sending sequence number %lld on socket %zu\n",
@@ -217,7 +217,7 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
     auto callback = [this, &receiveState, clientCallback = std::move(clientCallback)](OVERLAPPED* ov) noexcept {
         try
         {
-            const auto receiveTimestamp = SnapQpc();
+            const auto receiveTimestamp = SnapQpcInMicroSec();
 
             auto lock = m_lock.lock();
 
@@ -246,9 +246,9 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
 
             ReceiveResult result = {
                 .m_sequenceNumber{header.m_sequenceNumber},
-                .m_sendTimestamp{ConvertQpcToMicroSec(header.m_sendTimestamp)},
-                .m_receiveTimestamp{ConvertQpcToMicroSec(receiveTimestamp)},
-                .m_echoTimestamp{ConvertQpcToMicroSec(header.m_echoTimestamp)}}; // TODO: Remove, it doesn't make sense
+                .m_sendTimestamp{header.m_sendTimestamp},
+                .m_receiveTimestamp{receiveTimestamp},
+                .m_echoTimestamp{header.m_echoTimestamp}};
             clientCallback(result);
 
             PrepareToReceiveDatagram(receiveState, std::move(clientCallback));
