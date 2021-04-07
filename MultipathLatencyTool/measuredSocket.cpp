@@ -142,7 +142,7 @@ void MeasuredSocket::CheckConnectivity()
     }
 
     Log<LogLevel::Info>("Could not reach the server on socket %zu\n", m_socket.get());
-    THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not reach the server on socket %zu\n", m_socket.get());
+    THROW_WIN32_MSG(ERROR_NOT_CONNECTED, "Could not reach the server on socket %zu", m_socket.get());
 }
 
 void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(const SendResult&)> clientCallback) noexcept

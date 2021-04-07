@@ -346,7 +346,7 @@ try
 
         wchar_t logMessage[sizeOfLogMessageWithNul];
         wil::GetFailureLogString(logMessage, sizeOfLogMessageWithNul, failure);
-        std::fputws(logMessage, stderr);
+        Log<LogLevel::Debug>(logMessage);
     });
 
     init_apartment();
@@ -406,7 +406,12 @@ try
 }
 catch (const wil::ResultException& ex)
 {
-    std::cerr << "Caught exception: " << ex.what() << '\n';
+    std::wcerr << "Caught exception: " << ex.GetErrorCode();
+    if (ex.GetFailureInfo().pszMessage)
+    {
+        std::wcerr << ", " << ex.GetFailureInfo().pszMessage << '\n';
+    }
+
     std::exit(-1);
 }
 catch (const std::invalid_argument& ex)

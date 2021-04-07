@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <utility>
 
 enum class LogLevel
 {
@@ -22,7 +23,22 @@ void Log(const char* format, T... args)
     {
         try
         {
-            ::printf_s(format, args...);
+            ::printf_s(format, std::forward<T>(args)...);
+        }
+        catch (...)
+        {
+        }
+    }
+}
+
+template <LogLevel L, typename... T>
+void Log(const wchar_t* format, T... args)
+{
+    if (L <= GetLogLevel())
+    {
+        try
+        {
+            ::wprintf_s(format, std::forward<T>(args)...);
         }
         catch (...)
         {
