@@ -151,9 +151,9 @@ void PrintLatencyStatistics(LatencyData& data)
 
     const auto secondaryTimeSave = std::max(sumPrimaryLatencies - sumEffectiveLatencies, 0LL);
     auto effectiveTimestamps = latencies | transform(selectEffective) | filter(received);
-    const auto runDuration = effectiveTimestamps.back().first - effectiveTimestamps.front().first;
+    const auto runDuration = ConvertMicrosToSeconds(effectiveTimestamps.back().first - effectiveTimestamps.front().first);
     const auto bitTransfered = aggregatedSentFrames * data.m_datagramSize * 8 / 1024;
-    const auto bitRate = bitTransfered / ConvertMicrosToSeconds(runDuration);
+    const auto bitRate = runDuration > 0 ? bitTransfered / runDuration : 0;
 
     std::cout << '\n';
     std::cout << "-----------------------------------------------------------------------\n";

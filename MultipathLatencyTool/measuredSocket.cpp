@@ -64,7 +64,7 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
         auto lock = m_lock.lock();
         if (!m_socket.is_valid())
         {
-            Log<LogLevel::Info>("Ping reception callback canceled on socket %z\n", m_socket.get());
+            Log<LogLevel::Info>("Ping reception callback canceled\n");
             return;
         }
 
@@ -167,7 +167,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
 
             if (!m_socket.is_valid())
             {
-                Log<LogLevel::Info>("Send callback canceled on socket %z\n");
+                Log<LogLevel::Info>("Send callback canceled\n");
                 return;
             }
 
@@ -231,7 +231,7 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
 
             if (!m_socket.is_valid())
             {
-                Log<LogLevel::Info>("Receive callback canceled on socket %z\n");
+                Log<LogLevel::Info>("Receive callback canceled\n");
                 return;
             }
 
