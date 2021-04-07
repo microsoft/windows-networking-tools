@@ -12,6 +12,10 @@ Binaries for latest sources are now available: https://github.com/microsoft/wind
   * This tool programmatically enumerates all the profiles on the device and prints all properties of the profile.
   * It also demonstrates how to use the Windows.Networking.NetworkInformation WinRT APIs using modern C++, greatly simplifying WinRT coding requirements. (https://docs.microsoft.com/en-us/uwp/api/Windows.Networking.Connectivity.NetworkInformation)
 
+* **DualSTA_SampleTool**
+  * This tool measure Wi-Fi network performances with a focus on WLAN secondary interfaces (DualSTA)
+  * It also demonstrate how to enable and use a secondary WLAN interface using the Wlan API (https://docs.microsoft.com/en-us/windows/win32/api/wlanapi/) and modern C++.
+
 # Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a

@@ -9,7 +9,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SetNetworkCategory", "SetNe
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PrintConnectionProfiles", "PrintConnectionProfiles\PrintConnectionProfiles.vcxproj", "{66F2F985-3CE5-4343-A25C-B8D8A17F118B}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MultipathLatencyTool", "MultipathLatencyTool\MultipathLatencyTool.vcxproj", "{61C19407-A0A1-4D64-AA64-9AB790146C09}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DualSTA_SampleTool", "MultipathLatencyTool\DualSTA_SampleTool.vcxproj", "{85164DA8-EC9C-41DA-A26F-8B7C0695B810}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,16 +45,16 @@ Global
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B}.Release|x64.Build.0 = Release|x64
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B}.Release|x86.ActiveCfg = Release|Win32
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B}.Release|x86.Build.0 = Release|Win32
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Debug|ARM64.ActiveCfg = Debug|Win32
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Debug|x64.ActiveCfg = Debug|x64
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Debug|x64.Build.0 = Debug|x64
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Debug|x86.ActiveCfg = Debug|Win32
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Debug|x86.Build.0 = Debug|Win32
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Release|ARM64.ActiveCfg = Release|Win32
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Release|x64.ActiveCfg = Release|x64
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Release|x64.Build.0 = Release|x64
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Release|x86.ActiveCfg = Release|Win32
-		{61C19407-A0A1-4D64-AA64-9AB790146C09}.Release|x86.Build.0 = Release|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|ARM64.ActiveCfg = Debug|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x64.ActiveCfg = Debug|x64
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x64.Build.0 = Debug|x64
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x86.ActiveCfg = Debug|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x86.Build.0 = Debug|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|ARM64.ActiveCfg = Release|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x64.ActiveCfg = Release|x64
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x64.Build.0 = Release|x64
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.ActiveCfg = Release|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
