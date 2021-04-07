@@ -262,7 +262,7 @@ void DumpLatencyData(const LatencyData& data, std::ofstream& file)
             "timestamp (microsec), "
          << "Secondary Send timestamp (microsec), Secondary Echo timestamp (microsec), Secondary Receive timestamp (microsec)\n";
     // Add raw timestamp data
-    for (auto i = 0; i < data.m_latencies.size(); ++i)
+    for (std::size_t i = 0; i < data.m_latencies.size(); ++i)
     {
         const auto& stat = data.m_latencies[i];
         file << i << ", ";
