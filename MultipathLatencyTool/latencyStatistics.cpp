@@ -165,7 +165,7 @@ void PrintLatencyStatistics(LatencyData& data)
     std::cout << "--- OVERVIEW ---\n";
     std::cout << '\n';
     std::cout << bitTransfered << " kb (" << aggregatedSentFrames
-              << " datagrams) were sent in " << ConvertMicrosToSeconds(runDuration) << " seconds. The effective bitrate was "
+              << " datagrams) were sent in " << runDuration << " seconds. The effective bitrate was "
               << bitRate << " kB/s.\n";
     std::cout << '\n';
     std::cout << "The secondary interface prevented " << primaryLostFrames - aggregatedLostFrames << " lost frames\n";
