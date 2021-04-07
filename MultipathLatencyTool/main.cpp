@@ -184,7 +184,6 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         }
 
         // just pick the first resolved address from the list
-        // TODO: should try to determine which address(es) are actually reachable?
         config.m_targetAddress = resolvedAddresses.front();
     }
 
@@ -219,13 +218,22 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         else
         {
             // Convert from mb/s to b/s
-            config.m_bitrate = integer_cast<unsigned long>(*bitrate) * 1024 * 1024;
+            const auto bitrateInMbs = integer_cast<unsigned long>(*bitrate);
+            if (bitrateInMbs < 1)
+            {
+                throw std::invalid_argument("-bitrate invalid argument");
+            }
+            config.m_bitrate = bitrateInMbs * 1024 * 1024;
         }
     }
 
     if (auto framerate = ParseArgument(L"-framerate", args))
     {
         config.m_framerate = integer_cast<unsigned long>(*framerate);
+        if (config.m_framerate < 1)
+        {
+            throw std::invalid_argument("-framerate invalid argument");
+        }
     }
 
     if (auto duration = ParseArgument(L"-duration", args))
@@ -266,7 +274,13 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
 
     if (auto logLevel = ParseArgument(L"-loglevel", args))
     {
-        SetLogLevel(static_cast<LogLevel>(integer_cast<unsigned long>(*logLevel)));
+        const auto logLevelAsInt = integer_cast<unsigned long>(*logLevel);
+        if (logLevelAsInt < 0)
+        {
+            throw std::invalid_argument("-loglevel invalid argument");
+        }
+
+        SetLogLevel(static_cast<LogLevel>(logLevelAsInt));
     }
 
     if (!args.empty())
@@ -328,7 +342,7 @@ void RunClientMode(Configuration& config)
 
     if (!config.m_outputFile.empty())
     {
-        Log<LogLevel::Output>("Dumping data to %s...\n", config.m_outputFile.filename().c_str());
+        Log<LogLevel::Output>("Dumping data to file...\n");
         std::ofstream file{config.m_outputFile};
         client.DumpLatencyData(file);
         file.close();
