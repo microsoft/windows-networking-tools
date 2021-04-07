@@ -6,6 +6,9 @@
 #include "socket_utils.h"
 #include "time_utils.h"
 
+#include <Windows.h>
+#include <winrt/Windows.Networking.Connectivity.h>
+
 namespace multipath {
 
 namespace {
@@ -118,6 +121,11 @@ void MeasuredSocket::CheckConnectivity()
     wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
 
     PrepareToReceivePing(connectedEvent);
+
+    // Re-send a ping immediately if the network status changes
+    using winrt::Windows::Networking::Connectivity::NetworkInformation;
+    auto revokeToken =
+        NetworkInformation::NetworkStatusChanged(winrt::auto_revoke, [this](const auto&) { PingEchoServer(); });
 
     // Check connectivity
     const auto maxPingAttempts = 2;
