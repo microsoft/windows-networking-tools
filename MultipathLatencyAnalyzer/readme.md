@@ -1,6 +1,6 @@
-# DualSTA_SampleTool
+# MultipathLatencyAnalyzer
 
-DualSTA_SampleTool is a simple network performance measurement program with a
+MultipathLatencyAnalyzer is a simple network performance measurement program with a
 focus on Windows "DualSTA" Wi-Fi feature.
 
 This feature allows Windows to use simultaneous connections to multiple bands
@@ -15,7 +15,7 @@ This project has two main goals:
 
 ### Demonstrating how to best use the DualSTA feature
 
-DualSTA_SampleTool aims to demonstrate how to enable and make use of a
+MultipathLatencyAnalyzer aims to demonstrate how to enable and make use of a
 secondary Wi-Fi interface in a realistic use case, using modern C++.
 
 More specificaly, it demonstrates how an applicication is expected to:
@@ -25,7 +25,7 @@ More specificaly, it demonstrates how an applicication is expected to:
 - listen to network status change notification to dynamically enable or disable
   the secondary interface
 
-DualSTA_SampleTool show how to use a secondary interface in a best-effort basis: it
+MultipathLatencyAnalyzer show how to use a secondary interface in a best-effort basis: it
 prioritizes sending data over the primary interface as soon as possible and
 over the best interface as possible. A secondary interface is used whenever
 possible and is dynamically updated when the network status changes.
@@ -36,14 +36,14 @@ reception, or how a higher level protocol should make use of the two interfaces.
 
 ### Providing statistics over network performances
 
-DualSTA_SampleTool collects latency data on the packets it sends to an echo
+MultipathLatencyAnalyzer collects latency data on the packets it sends to an echo
 server.  It displays latency statistics, with a focus on evaluating the impact
 of a secondary interface on a Wi-Fi connection.
 
 It collects the latency *as seen from the app* (as opposed to at the hardware
 level): the overhead introduced by the OS is included.
 
-DualSTA_SampleTool makes use of a Wi-Fi secondary interface on a best-effort
+MultipathLatencyAnalyzer makes use of a Wi-Fi secondary interface on a best-effort
 basis: it supports systems, configuration, and networks where a using secondary
 interface is not possible (ethernet for instance) by using only one interface
 in those situation. It handles switching seamlessly between using a secondary
@@ -54,21 +54,21 @@ interface or not.
 The application is a simple echo program that tracks the latency of packets
 between a client and a server.
 
-### Using DualSTA_SampleTool
+### Using MultipathLatencyAnalyzer
 
 The latest binaries are present in the "LatestBuilds" folder.
 
 To start the server, run
 ```
-DualSTA_SampleTool.exe -listen:*
+MultipathLatencyAnalyzer.exe -listen:*
 ```
 
 To start the client, with SERVER_IP being the IP address of the server, run
 ```
-DualSTA_SampleTool.exe -target:"SERVER_IP"
+MultipathLatencyAnalyzer.exe -target:"SERVER_IP"
 ```
 
-### Building DualSTA_SampleTool
+### Building MultipathLatencyAnalyzer
 
 To build the project, you need Visual Studio 2019 version 2.8 or higher and
 Windows SDK version 10.0.21318.0 (or more recent, in which case you need to
@@ -79,147 +79,24 @@ From there, simply build the project from Visual Studio.
 ## Using DualSTA in your application
 
 The DualSTA feature must be enabled using Windows [Wlan
-API](https://docs.microsoft.com/en-us/windows/win32/api/wlanapi/). It is also
-recommended to use the [Networking connectivity
+API](https://docs.microsoft.com/en-us/windows/win32/api/wlanapi/).
+
+- To enable DualSTA, call `WlanSetInterface` with the opcode
+  `wlan_intf_opcode_secondary_sta_synchronized_connections`. This enable the feature gloably (for all interfaces), until the handle the the WLAN API is closed.
+
+- To retrieve the secondary interfaces associated to a primary interface, call
+  `WlanQueryInterface` with the opcode
+  `wlan_intf_opcode_secondary_sta_interfaces` and the primary interface GUID.
+
+It is also recommended to use the [Networking connectivity
 API](https://docs.microsoft.com/en-us/uwp/api/Windows.Networking.Connectivity.NetworkInformation?view=winrt-19041)
-to determine when the secondary interface should be used.
+to determine when a secondary interface can be used and when it is ready.
 
-### Enabling DualSTA
+Detailed explanations about how to use DualSTA in an application are available [here](documentation/using_dualSta.md).
 
-First thing, the application needs to indicate to the OS it wants to use a
-secondary interface. This will let the OS connect the secondary interface if
-needed.
+## Using MultipathLatencyAnalyzer
 
-1. Open a handle to the WLAN service (`WLANOpenHandle`)
-
-    This handle **must** remain opened for the entire time the application with
-    be using the DualSTA feature. The OS will disconnect the secondary
-    interface if it detects no client applications are using it.
-
-    👁️‍🗨️ See `OpenWlanHandle` in ["adapters.cpp"](adapters.cpp)
-
-2. Get a WLAN interface GUID (`WlanEnumInterfaces`)
-
-    If there are several WLAN interfaces in the system, you can pick any of
-    them. DualSTA is enabled globally, for all interfaces. We simply need a
-    GUID to call the `WlanSetInterface` API.
-
-    👁️‍🗨️ See `GetPrimaryWlanInterfaceGuids` in ["adapters.cpp"](adapters.cpp)
-
-3. Enable secondary STA connections (`WlanSetInterface`)
-
-    Using the opcode `wlan_intf_opcode_secondary_sta_synchronized_connections`
-    and the GUID from step 2, a call to `WlanSetInterface` will enable
-    secondary STA connections.
-
-    👁️‍🗨️ See `RequestSecondaryInterface` in ["adapters.cpp"](adapters.cpp)
-
-This is it! At this point, the WLAN service will bring up a secondary interface
-for each Wi-Fi adapter supporting DualSTA (this depends on the driver). If
-there is a Wi-Fi connection to a network with several bands, it will start
-connecting the secondary interface to the network.
-
-### Querying a secondary interface (and when not to do it)
-
-To send data over the secondary interface, we will need to bind a socket to it.
-Without it, the traffic on this socket would go through the same interface as
-for any other socket of your application.  However, this also mean the OS
-cannot route the packets through the right interface in some situations. For
-instance:
-
-- the target address is behind a VPN
-- the traffic needs to go through a virtual switch
-- there simply is a connected ethernet adapter. It is generally better to
-  simply use it
-
-Therefore it is recommended to only use a secondary interface when the
-situation is "simple". In more complex cases, it is recommended to keep using a
-single interface.
-
-In this context, "simple" means that the primary IP interface is directly
-matching a physical WLAN adapter. This ensures the secondary interface traffic
-will be routed correctly.  When the IP interface directly matches a physical
-WLAN adapter, they share the same GUID.
-
-1. Get the GUID of the primary IP interface (`GetInternetConnectionProfile()`)
-
-    In most scenario, you can get the interface GUID from the preferred
-    internet connection profile:
-
-    ```
-    NetworkInformation::GetInternetConnectionProfile().NetworkAdapter().NetworkAdapterId();
-    ```
-    👁️‍🗨️ See `GetPrimaryInterfaceGuid` in ["adapters.cpp"](adapters.cpp)
-
-    *Remark*: If your application needs to communicate on local networks, you
-    may need more complex solutions such as `GetBestInterfaceEx`.
-
-2. Find a matching WLAN adapter (`WlanEnumInterfaces`)
-
-    Once again, `WlanEnumInterfaces` provide the list of the Wi-Fi interfaces
-    in the system. It is then simply a matter of looking if one is matching the
-    GUID from step 1.
-
-    👁️‍🗨️ See `GetSecondaryInterfaceGuid` in ["adapters.cpp"](adapters.cpp)
-
-3. Query for the secondary interface (`WlanQueryInterface`)
-
-    Using the opcode `wlan_intf_opcode_secondary_sta_interfaces` and the
-    primary interface GUID, a call to `WlanQueryInterface` will return the list
-    of secondary interfaces related to the primary.
-
-    👁️‍🗨️ See `GetSecondaryInterfaceGuid` in ["adapters.cpp"](adapters.cpp)
-
-### Using a secondary interface
-
-We now have identified a secondary interface. Let's see how to use it!
-
-The secondary interface GUID may not be usable right away: there might be a
-delay until the corresponding IP interface is ready and can access the network.
-This happens for instance when the secondary WLAN adapter is still connecting
-to the network.
-
-1. Wait for connectivity (`GetNetworkConnectivityLevel`)
-
-    The Network Connectivity API indicates when an interface is ready through
-    the connection profiles. It is recommended to wait until the secondary
-    interface is present with a connectivity level different from
-    `NetworkConnectivityLevel::None`.
-
-    👁️‍🗨️ See `IsAdapterConnected` in ["adapters.cpp"](adapters.cpp)
-
-2. Bind a socket to the secondary interface (`setsockopt`)
-
-    It is necessary to bind a socket to the secondary interface to use it, by
-    calling `setsockopt` with the options `IP_UNICAST_IP` or `IPV6_UNICAST_IF`.
-    This option requires an interface index. It can be obtained from the
-    secondary interface GUID by using `ConvertInterfaceGuidToLuid` and
-    `ConvertLuidToIndex` (from the "netioapi.h" header).
-
-    👁️‍🗨️ See `SetSocketOutgoingInterface` and in ["socket_utils.h"](socket_utils.h)
-    and `ConvertInterfaceGuidToIndex` in ["adapter.cpp"](adapter.cpp)
-
-From this point, the secondary interface is completely set up and the socket
-can be used as a normal socket.
-
-### Monitoring network status change notifications
-
-While the application is running, the network conditions could change. For
-instance, an ethernet connection could be setup, and the Wi-Fi connection be
-disconnected. For non-bounded sockets, the OS automatically redirect the
-traffic toward the correct IP interface. But the secondary socket has to be
-bound to the secondary interface: it will have to be enabled and disabled
-manually depending on the network status.
-
-This can be done by subscribing to the network status change notifications from
-`NetworkInformation::NetworkStatusChanged`. It allows to check whether the
-primary changes and to tear down or setup a secondary interface when needed.
-
-👁️‍🗨️ See `SetupSecondaryInterface` in ["stream_client.cpp"](stream_client.cpp)
-
-## Using DualSTA_SampleTool
-
-DualSTA_SampleTool is a simple echo program that track the latency of packets.
+MultipathLatencyAnalyzer is a simple echo program that track the latency of packets.
 It then displays statistics over the the collected data, allowing to evaluate
 the impact of a secondary interface.
 
@@ -331,7 +208,7 @@ using the option `-output`.
 The result below were obtained by running DualSTA_SampleApp for one hour on a client connected over Wi-Fi and a server connected to the access point directly over ethernet:
 
 ```
-> .\DualSTA_SampleTool.exe -target:"10.0.0.192" -prepostrecvs:5 -bitrate:hd -framerate:30 -duration:3600 -output:latencyData.csv
+> .\MultipathLatencyAnalyzer.exe -target:"10.0.0.192" -prepostrecvs:5 -bitrate:hd -framerate:30 -duration:3600 -output:latencyData.csv
 
 -----------------------------------------------------------------------
                             STATISTICS
@@ -382,4 +259,4 @@ Corrupt frames on secondary interface: 0
 
 In this case, the effective interface show a significant reduction of the latency and jitter.
 
-A more detailed analysis of these results is present in [this Jupyter notebook](.\latency_analysis.ipynb).
+A more detailed analysis of these results is present in [this Jupyter notebook](documentation/latency_analysis.ipynb).

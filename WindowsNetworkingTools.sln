@@ -9,7 +9,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SetNetworkCategory", "SetNe
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PrintConnectionProfiles", "PrintConnectionProfiles\PrintConnectionProfiles.vcxproj", "{66F2F985-3CE5-4343-A25C-B8D8A17F118B}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DualSTA_SampleTool", "MultipathLatencyTool\DualSTA_SampleTool.vcxproj", "{85164DA8-EC9C-41DA-A26F-8B7C0695B810}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MultipathLatencyAnalyzer", "MultipathLatencyAnalyzer\MultipathLatencyAnalyzer.vcxproj", "{85164DA8-EC9C-41DA-A26F-8B7C0695B810}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
