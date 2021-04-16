@@ -92,7 +92,7 @@ It is also recommended to use the [Networking connectivity
 API](https://docs.microsoft.com/en-us/uwp/api/Windows.Networking.Connectivity.NetworkInformation?view=winrt-19041)
 to determine when a secondary interface can be used and when it is ready.
 
-Detailed explanations about how to use DualSTA in an application are available [here](documentation/using_dualSta.md).
+👁️‍🗨️ **Detailed explanations about how to use DualSTA in an application are available [here](documentation/using_dualSta.md)**.
 
 ## Using MultipathLatencyAnalyzer
 
@@ -259,4 +259,4 @@ Corrupt frames on secondary interface: 0
 
 In this case, the effective interface show a significant reduction of the latency and jitter.
 
-A more detailed analysis of these results is present in [this Jupyter notebook](documentation/latency_analysis.ipynb).
+👁️‍🗨️ **A more detailed analysis of these results is present in [this Jupyter notebook](documentation/latency_analysis.ipynb)**.
