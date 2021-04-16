@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <iomanip>
 #include <limits>
 #include <numeric>
 #include <ranges>
@@ -11,14 +12,14 @@
 
 namespace multipath {
 
-constexpr long long ConvertMicrosToMillis(long long micros) noexcept
+constexpr double ConvertMicrosToMillis(long long micros) noexcept
 {
-    return static_cast<long long>(micros / 1000LL);
+    return micros / 1'000.;
 }
 
-constexpr long long ConvertMicrosToSeconds(long long micros)
+constexpr double ConvertMicrosToSeconds(long long micros)
 {
-    return static_cast<long long>(micros / 1'000'000LL);
+    return micros / 1'000'000.;
 }
 
 template <std::ranges::range R, class T>
@@ -94,25 +95,25 @@ void PrintLatencyStatistics(LatencyData& data)
 
     auto sum = [](auto& data) { return accumulate(data, 0LL); };
     auto average = [](auto& data) { return data.size() > 0 ? accumulate(data, 0LL) / data.size() : 0LL; };
-    auto percent = [](auto a, auto b) { return b > 0LL ? a * 100LL / b : 0LL; };
-    auto median = [](const auto& data) { return data.size() > 0 ? data[data.size() / 2LL] : 0LL; };
+    auto percent = [](auto a, auto b) { return b > 0 ? a * 100. / b : 0.; };
+    auto median = [](const auto& data) { return data.size() > 0 ? data[data.size() / 2] : 0LL; };
     auto interquartileRange = [](const auto& data) {
         const auto s = data.size();
         return s > 0 ? data[3 * s / 4] - data[s / 4] : 0LL;
     };
 
-    auto standardDeviation = [](auto& data, long long average) {
+    auto standardDeviation = [](auto& data, auto average) {
         if (data.size() == 0)
         {
             return 0LL;
         }
 
-        long long r = 0LL;
+        auto r = 0LL;
         for (const auto& d: data)
         {
             r += d * d;
         }
-        return static_cast<long long>(std::sqrt(r / static_cast<long long>(data.size()) - average * average));
+        return static_cast<long long>(std::sqrt(r / data.size() - average * average));
     };
 
     const auto& latencies = data.m_latencies;
@@ -152,8 +153,11 @@ void PrintLatencyStatistics(LatencyData& data)
     const auto secondaryTimeSave = std::max(sumPrimaryLatencies - sumEffectiveLatencies, 0LL);
     auto effectiveTimestamps = latencies | transform(selectEffective) | filter(received);
     const auto runDuration = ConvertMicrosToSeconds(effectiveTimestamps.back().first - effectiveTimestamps.front().first);
-    const auto bitTransfered = aggregatedSentFrames * data.m_datagramSize * 8 / 1024;
-    const auto bitRate = runDuration > 0 ? bitTransfered / runDuration : 0;
+    const auto byteTransfered = aggregatedSentFrames * data.m_datagramSize / 1024;
+    const auto bitRate = runDuration > 0 ? byteTransfered * 8 / runDuration : 0;
+
+    // Print 2 decimals, no scientific notation
+    std::cout << std::setprecision(2) << std::fixed;
 
     std::cout << '\n';
     std::cout << "-----------------------------------------------------------------------\n";
@@ -164,12 +168,12 @@ void PrintLatencyStatistics(LatencyData& data)
     std::cout << '\n';
     std::cout << "--- OVERVIEW ---\n";
     std::cout << '\n';
-    std::cout << bitTransfered << " kb (" << aggregatedSentFrames
+    std::cout << byteTransfered << " kB (" << aggregatedSentFrames
               << " datagrams) were sent in " << runDuration << " seconds. The effective bitrate was "
-              << bitRate << " kB/s.\n";
+              << bitRate << " kb/s.\n";
     std::cout << '\n';
     std::cout << "The secondary interface prevented " << primaryLostFrames - aggregatedLostFrames << " lost frames\n";
-    std::cout << "The secondary interface saved " << ConvertMicrosToMillis(secondaryTimeSave)
+    std::cout << "The secondary interface reduced the overall time waiting for datagrams by" << ConvertMicrosToMillis(secondaryTimeSave)
               << " ms (" << percent(secondaryTimeSave, sumPrimaryLatencies) << "%)\n";
     std::cout << receivedOnSecondaryFirst << " frames were received first on the secondary interface ("
               << percent(receivedOnSecondaryFirst, aggregatedReceivedFrames) << "%)\n";
