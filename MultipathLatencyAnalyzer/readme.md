@@ -215,42 +215,42 @@ The result below were obtained by running DualSTA_SampleApp for one hour on a cl
 
 --- OVERVIEW ---
 
-18431992 kb (2303999 datagrams) were sent in 3599 seconds. The effective bitrate was 5121 kB/s.
+2303999 kB (2303999 datagrams) were sent in 3599 seconds. The effective bitrate was 5121.42 kb/s.
 
 The secondary interface prevented 2940 lost datagrams
-The secondary interface saved 1399099 ms (9%)
-266538 datagrams were received first on the secondary interface (11%)
+The secondary interface reduced the overall time waiting for datagrams by 1423860.94 ms (9.79%)
+266538 datagrams were received first on the secondary interface (11.57%)
 
 --- DETAILS ---
 
 Sent datagrams on primary interface: 2303999
 Sent datagrams on secondary interface: 2296109
 
-Received datagrams on primary interface: 2300051 (99%)
-Received datagrams on secondary interface: 2294709 (99%)
+Received datagrams on primary interface: 2300051 (99.82%)
+Received datagrams on secondary interface: 2294709 (99.93%)
 
-Lost datagrams on primary interface: 3948 (0%)
-Lost datagrams on secondary interface: 1400 (0%)
-Lost datagrams on both interface simultaneously: 1008 (0%)
+Lost datagrams on primary interface: 3948 (0.17%)
+Lost datagrams on secondary interface: 1400 (0.06%)
+Lost datagrams on both interface simultaneously: 1008 (0.04%)
 
-Average latency on primary interface: 6 ms
-Average latency on secondary interface: 9 ms
-Average effective latency on combined interface: 5 ms (9% improvement over primary)
+Average latency on primary interface: 6.32 ms
+Average latency on secondary interface: 9.24 ms
+Average effective latency on combined interface: 5.69 ms (9.96% improvement over primary)
 
-Jitter (standard deviation) on primary interface: 9 ms
-Jitter (standard deviation) on secondary interface: 6 ms
-Jitter (standard deviation) on combined interfaces: 5 ms
+Jitter (standard deviation) on primary interface: 9.63 ms
+Jitter (standard deviation) on secondary interface: 6.92 ms
+Jitter (standard deviation) on combined interfaces: 5.74 ms
 
-Median latency on primary interface: 5 ms
-Median latency on secondary interface: 8 ms
-Median effective latency on combined interfaces: 5 ms (2% improvement over primary)
+Median latency on primary interface: 5.60 ms
+Median latency on secondary interface: 8.11 ms
+Median effective latency on combined interfaces: 5.44 ms (2.85% improvement over primary)
 
-Interquartile range on primary interface: 1 ms
-Interquartile range on secondary interface: 3 ms
-Interquartile range latency on combined interfaces: 1 ms
+Interquartile range on primary interface: 1.68 ms
+Interquartile range on secondary interface: 3.36 ms
+Interquartile range latency on combined interfaces: 1.56 ms
 
-Minimum / Maximum latency on primary interface: 1 ms / 674 ms
-Minimum / Maximum latency on secondary interface: 1 ms / 289 ms
+Minimum / Maximum latency on primary interface: 1.53 ms / 674.05 ms
+Minimum / Maximum latency on secondary interface: 1.90 ms / 289.65 ms
 
 Corrupt datagrams on primary interface: 0
 Corrupt datagrams on secondary interface: 0
