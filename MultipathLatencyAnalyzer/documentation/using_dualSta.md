@@ -51,8 +51,7 @@ instance:
 
 - the target address is behind a VPN
 - the traffic needs to go through a virtual switch
-- there simply is a connected ethernet adapter. It is generally better to
-  simply use it
+- there is a connected ethernet adapter
 
 Therefore it is recommended to only use a secondary interface when the
 situation is "simple". In more complex cases, it is recommended to keep using a

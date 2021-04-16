@@ -26,19 +26,18 @@ More specificaly, it demonstrates how an applicication is expected to:
   the secondary interface
 
 MultipathLatencyAnalyzer show how to use a secondary interface in a best-effort basis: it
-prioritizes sending data over the primary interface as soon as possible and
-over the best interface as possible. A secondary interface is used whenever
+prioritizes sending data over the primary interface. A secondary interface is used whenever
 possible and is dynamically updated when the network status changes.
 
 However, this project does **not** aim to provide any guidance about how
 communication should be split between the two interfaces or reassembled after
 reception, or how a higher level protocol should make use of the two interfaces.
 
-### Providing statistics over network performances
+### Providing statistics over network performance
 
-MultipathLatencyAnalyzer collects latency data on the packets it sends to an echo
-server.  It displays latency statistics, with a focus on evaluating the impact
-of a secondary interface on a Wi-Fi connection.
+MultipathLatencyAnalyzer collects latency data on the datagrams it sends to an
+echo server.  It displays latency statistics, with a focus on evaluating the
+impact of a secondary interface on a Wi-Fi connection.
 
 It collects the latency *as seen from the app* (as opposed to at the hardware
 level): the overhead introduced by the OS is included.
@@ -51,7 +50,7 @@ interface or not.
 
 ## Quick Start
 
-The application is a simple echo program that tracks the latency of packets
+The application is a simple echo program that tracks the latency of datagrams
 between a client and a server.
 
 ### Using MultipathLatencyAnalyzer
@@ -138,19 +137,19 @@ Access the help
 
 `-port:<N>`
 
-Changes the port used for communications.
+Changes the port used for communications. (*Default:8888*)
 
 `-loglevel:<N>`
 
 Controls the logs verbosity. Goes from 0 to 5. The level 2 provides additionnal details about the behavior of the secondary interface.
-The level 5 is extremely verbose and should generaly avoided.
+The level 5 is extremely verbose and should generaly avoided. (*Default: 3*)
 
 `-prepostrecvs:<N>`
 
 Controls the number of receive operations the application will keep posted on
 the Windows IO Completion Port for the socket. See the Windows Threadpool API
 documentation that was introduced in Vista for more information, as well as the
-WinSock documentation for WSARecv and WSASend.
+WinSock documentation for WSARecv and WSASend. (*Default: 2*)
 
 #### Parameters for the client only:
 
@@ -158,20 +157,20 @@ WinSock documentation for WSARecv and WSASend.
 
 The rate at which the application send data. The values correspond to streaming
 rates for common video streams (sd is 3 megabits per seconds, hd is 5 and 4k is
-25). It is also possible to specify a custom value in megabit per second.
+25). It is also possible to specify a custom value in megabit per second. (*Default: hd*)
 
 `-framerate:<N>`
 
 How many datagrams are sent during each send operation (effectively grouping
 them in a burst). A value too high or too low might cause packet loss rate or
-impact the bitrate.
+impact the bitrate. (*Default: 30*)
 
 `-secondary:<0,1>`
 
 Whether to use the secondary interface. When set to `0`, a secondary interface
 won't be queried, which can be useful for comparison purpose. Note that setting
 this parameter to `1` will only cause the application to use a secondary
-interface on a best effort basis.
+interface on a best effort basis. (*Default: 1*)
 
 `-output:<path>`
 

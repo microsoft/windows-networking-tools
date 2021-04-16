@@ -87,6 +87,7 @@ void PrintUsage()
         L"\t- (default value: 8888)\n"
         L"-prepostrecvs:####\n"
         L"\t- the number of receive requests to be kept in-flight\n"
+        L"\t- (default value: 2)\n"
         L"-help\n"
         L"\t- prints this usage information\n"
         L"\n\n"

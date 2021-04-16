@@ -19,7 +19,7 @@ struct Configuration
 
     static constexpr unsigned short c_defaultPort = 8888;
 
-    static constexpr unsigned long c_defaultPrePostRecvs = 1;
+    static constexpr unsigned long c_defaultPrePostRecvs = 2;
 
     static constexpr unsigned long c_defaultDuration = 60; // 1 minute
 
