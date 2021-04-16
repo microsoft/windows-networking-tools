@@ -104,7 +104,7 @@ back any packet it receives after adding a timestamp.
 
 The client allows to send data at different rates, over one interface or
 duplicated over two interfaces.  It will then display a set of statistics (lost
-frames, average and median latency, jitter...) for the primary interface, the
+datagrams, average and median latency, jitter...) for the primary interface, the
 secondary interface and the *effective* connection. The effective statistics
 use the latency between the time a packet is first sent and when its echo is
 first received, ignoring on which interface each event occurs.
@@ -159,7 +159,7 @@ The rate at which the application send data. The values correspond to streaming
 rates for common video streams (sd is 3 megabits per seconds, hd is 5 and 4k is
 25). It is also possible to specify a custom value in megabit per second. (*Default: hd*)
 
-`-framerate:<N>`
+`-grouping:<N>`
 
 How many datagrams are sent during each send operation (effectively grouping
 them in a burst). A value too high or too low might cause packet loss rate or
@@ -207,7 +207,7 @@ using the option `-output`.
 The result below were obtained by running DualSTA_SampleApp for one hour on a client connected over Wi-Fi and a server connected to the access point directly over ethernet:
 
 ```
-> .\MultipathLatencyAnalyzer.exe -target:"10.0.0.192" -prepostrecvs:5 -bitrate:hd -framerate:30 -duration:3600 -output:latencyData.csv
+> .\MultipathLatencyAnalyzer.exe -target:"10.0.0.192" -prepostrecvs:5 -bitrate:hd -grouping:30 -duration:3600 -output:latencyData.csv
 
 -----------------------------------------------------------------------
                             STATISTICS
@@ -217,21 +217,21 @@ The result below were obtained by running DualSTA_SampleApp for one hour on a cl
 
 18431992 kb (2303999 datagrams) were sent in 3599 seconds. The effective bitrate was 5121 kB/s.
 
-The secondary interface prevented 2940 lost frames
+The secondary interface prevented 2940 lost datagrams
 The secondary interface saved 1399099 ms (9%)
-266538 frames were received first on the secondary interface (11%)
+266538 datagrams were received first on the secondary interface (11%)
 
 --- DETAILS ---
 
-Sent frames on primary interface: 2303999
-Sent frames on secondary interface: 2296109
+Sent datagrams on primary interface: 2303999
+Sent datagrams on secondary interface: 2296109
 
-Received frames on primary interface: 2300051 (99%)
-Received frames on secondary interface: 2294709 (99%)
+Received datagrams on primary interface: 2300051 (99%)
+Received datagrams on secondary interface: 2294709 (99%)
 
-Lost frames on primary interface: 3948 (0%)
-Lost frames on secondary interface: 1400 (0%)
-Lost frames on both interface simultaneously: 1008 (0%)
+Lost datagrams on primary interface: 3948 (0%)
+Lost datagrams on secondary interface: 1400 (0%)
+Lost datagrams on both interface simultaneously: 1008 (0%)
 
 Average latency on primary interface: 6 ms
 Average latency on secondary interface: 9 ms
@@ -252,8 +252,8 @@ Interquartile range latency on combined interfaces: 1 ms
 Minimum / Maximum latency on primary interface: 1 ms / 674 ms
 Minimum / Maximum latency on secondary interface: 1 ms / 289 ms
 
-Corrupt frames on primary interface: 0
-Corrupt frames on secondary interface: 0
+Corrupt datagrams on primary interface: 0
+Corrupt datagrams on secondary interface: 0
 ```
 
 In this case, the effective interface show a significant reduction of the latency and jitter.

@@ -11,18 +11,18 @@ namespace multipath {
 namespace {
 
     // calculates the interval at which to set the timer callback to send data at the specified rate (in bits per second)
-    constexpr long long CalculateTickInterval(long long bitRate, long long frameRate, unsigned long long datagramSize) noexcept
+    constexpr long long CalculateTickInterval(long long bitRate, long long grouping, unsigned long long datagramSize) noexcept
     {
-        // bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
+        // bitRate -> bit/s, datagramSize -> byte, grouping -> N/U
         // We look for the tick interval in 100 nanosecond
         const unsigned long hundredNanoSecInSecond = 10'000'000UL; // hundred ns / s
         const long long byteRate = bitRate / 8;                // byte/s
-        return (datagramSize * frameRate * hundredNanoSecInSecond) / byteRate;
+        return (datagramSize * grouping * hundredNanoSecInSecond) / byteRate;
     }
 
     long long CalculateNumberOfDatagramToSend(long long duration, long long bitRate, unsigned long long datagramSize) noexcept
     {
-        // duration ->s, bitRate -> bit/s, datagramSize -> byte, frameRate -> N/U
+        // duration ->s, bitRate -> bit/s, datagramSize -> byte, grouping -> N/U
         // We look for total number of datagram to send
         const long long byteRate = bitRate / 8; // byte/s
         return (duration * byteRate) / datagramSize;
@@ -145,11 +145,11 @@ void StreamClient::SetupSecondaryInterface()
         });
 }
 
-void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration)
+void StreamClient::Start(unsigned long bitRate, unsigned long grouping, unsigned long duration)
 {
-    m_frameRate = sendFrameRate;
-    const auto tickInterval = CalculateTickInterval(sendBitRate, sendFrameRate, MeasuredSocket::c_bufferSize);
-    const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, sendBitRate, MeasuredSocket::c_bufferSize);
+    m_grouping = grouping;
+    const auto tickInterval = CalculateTickInterval(bitRate, grouping, MeasuredSocket::c_bufferSize);
+    const auto nbDatagramToSend = CalculateNumberOfDatagramToSend(duration, bitRate, MeasuredSocket::c_bufferSize);
     m_finalSequenceNumber += nbDatagramToSend;
 
     // allocate statistics buffer
@@ -169,7 +169,7 @@ void StreamClient::Start(unsigned long sendBitRate, unsigned long sendFrameRate,
     m_primaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Ready;
 
     Log<LogLevel::Output>(
-        "%d datagrams will be sent, by groups of %d every %lld microseconds\n", nbDatagramToSend, m_frameRate, tickInterval / 10);
+        "%d datagrams will be sent, by groups of %d every %lld microseconds\n", nbDatagramToSend, m_grouping, tickInterval / 10);
 
     // start sending data
     Log<LogLevel::Info>("Start sending datagrams\n");
@@ -208,7 +208,7 @@ void StreamClient::DumpLatencyData(std::ofstream& file)
 
 void StreamClient::TimerCallback() noexcept
 {
-    for (auto i = 0; i < m_frameRate && m_sequenceNumber < m_finalSequenceNumber; ++i)
+    for (auto i = 0; i < m_grouping && m_sequenceNumber < m_finalSequenceNumber; ++i)
     {
         SendDatagrams();
     }
@@ -253,14 +253,14 @@ void StreamClient::ReceiveCompletion(const Interface interface, const MeasuredSo
 {
     if (result.m_sequenceNumber < 0 || result.m_sequenceNumber >= m_finalSequenceNumber)
     {
-        Log<LogLevel::Debug>("Received a corrupt frame, sequence number: %lld\n", result.m_sequenceNumber);
+        Log<LogLevel::Debug>("Received a corrupt datagrams, sequence number: %lld\n", result.m_sequenceNumber);
         if (interface == Interface::Primary)
         {
-            m_latencyData.m_primaryCorruptFrames += 1;
+            m_latencyData.m_primaryCorruptDatagrams += 1;
         }
         else
         {
-            m_latencyData.m_secondaryCorruptFrames += 1;
+            m_latencyData.m_secondaryCorruptDatagrams += 1;
         }
         return;
     }

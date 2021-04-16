@@ -8,14 +8,13 @@ namespace multipath {
 struct Configuration
 {
     // these values make debugging much easier
-    static constexpr unsigned long c_testSendBitrate = 1024 * 8;
-    static constexpr unsigned long c_testFramerate = 1;
+    static constexpr unsigned long c_testBitrate = 1024 * 8;
 
-    static constexpr unsigned long c_sendBitrateSd = 3 * 1024 * 1024;  // 3 megabits per second
-    static constexpr unsigned long c_sendBitrateHd = 5 * 1024 * 1024;  // 5 megabits per second
-    static constexpr unsigned long c_sendBitrate4K = 25 * 1024 * 1024; // 25 megabits per second
-    static constexpr unsigned long c_defaultBitrate = c_sendBitrateHd;
-    static constexpr unsigned long c_defaultFramerate = 30;
+    static constexpr unsigned long c_bitrateSd = 3 * 1024 * 1024;  // 3 megabits per second
+    static constexpr unsigned long c_bitrateHd = 5 * 1024 * 1024;  // 5 megabits per second
+    static constexpr unsigned long c_bitrate4K = 25 * 1024 * 1024; // 25 megabits per second
+    static constexpr unsigned long c_defaultBitrate = c_bitrateHd;
+    static constexpr unsigned long c_defaultGrouping = 30;
 
     static constexpr unsigned short c_defaultPort = 8888;
 
@@ -37,8 +36,8 @@ struct Configuration
     // the rate at which to send data (client only)
     unsigned long m_bitrate = c_defaultBitrate;
 
-    // the number of frames to send per tick (client only)
-    unsigned long m_framerate = c_defaultFramerate;
+    // the number of datagrams to send per tick (client only)
+    unsigned long m_grouping = c_defaultGrouping;
 
     // the number of receives to keep posted on the socket
     unsigned long m_prePostRecvs = c_defaultPrePostRecvs;

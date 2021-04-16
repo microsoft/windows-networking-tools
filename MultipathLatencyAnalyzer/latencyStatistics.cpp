@@ -131,21 +131,21 @@ void PrintLatencyStatistics(LatencyData& data)
     std::ranges::sort(secondaryLatencies);
     std::ranges::sort(effectiveLatencies);
 
-    const long long primarySentFrames =
+    const long long primarySentDatagrams =
         std::ranges::count_if(latencies, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0; });
-    const long long secondarySentFrames =
+    const long long secondarySentDatagrams =
         std::ranges::count_if(latencies, [](const auto& stat) { return stat.m_secondarySendTimestamp >= 0; });
-    const long long aggregatedSentFrames = std::ranges::count_if(
+    const long long aggregatedSentDatagrams = std::ranges::count_if(
         latencies, [](const auto& stat) { return stat.m_primarySendTimestamp >= 0 || stat.m_secondarySendTimestamp >= 0; });
     const long long receivedOnSecondaryFirst = std::ranges::count_if(latencies, receivedFirstOnSecondary);
 
-    const long long primaryReceivedFrames = primaryLatencies.size();
-    const long long secondaryReceivedFrames = secondaryLatencies.size();
-    const long long aggregatedReceivedFrames = effectiveLatencies.size();
+    const long long primaryReceivedDatagrams = primaryLatencies.size();
+    const long long secondaryReceivedDatagrams = secondaryLatencies.size();
+    const long long aggregatedReceivedDatagrams = effectiveLatencies.size();
 
-    const long long primaryLostFrames = primarySentFrames - primaryReceivedFrames;
-    const long long secondaryLostFrames = secondarySentFrames - secondaryReceivedFrames;
-    const long long aggregatedLostFrames = aggregatedSentFrames - aggregatedReceivedFrames;
+    const long long primaryLostDatagrams = primarySentDatagrams - primaryReceivedDatagrams;
+    const long long secondaryLostDatagrams = secondarySentDatagrams - secondaryReceivedDatagrams;
+    const long long aggregatedLostDatagrams = aggregatedSentDatagrams - aggregatedReceivedDatagrams;
 
     const long long sumPrimaryLatencies = sum(primaryLatencies);
     const long long sumEffectiveLatencies = sum(effectiveLatencies);
@@ -153,7 +153,7 @@ void PrintLatencyStatistics(LatencyData& data)
     const auto secondaryTimeSave = std::max(sumPrimaryLatencies - sumEffectiveLatencies, 0LL);
     auto effectiveTimestamps = latencies | transform(selectEffective) | filter(received);
     const auto runDuration = ConvertMicrosToSeconds(effectiveTimestamps.back().first - effectiveTimestamps.front().first);
-    const auto byteTransfered = aggregatedSentFrames * data.m_datagramSize / 1024;
+    const auto byteTransfered = aggregatedSentDatagrams * data.m_datagramSize / 1024;
     const auto bitRate = runDuration > 0 ? byteTransfered * 8 / runDuration : 0;
 
     // Print 2 decimals, no scientific notation
@@ -168,35 +168,35 @@ void PrintLatencyStatistics(LatencyData& data)
     std::cout << '\n';
     std::cout << "--- OVERVIEW ---\n";
     std::cout << '\n';
-    std::cout << byteTransfered << " kB (" << aggregatedSentFrames
+    std::cout << byteTransfered << " kB (" << aggregatedSentDatagrams
               << " datagrams) were sent in " << runDuration << " seconds. The effective bitrate was "
               << bitRate << " kb/s.\n";
     std::cout << '\n';
-    std::cout << "The secondary interface prevented " << primaryLostFrames - aggregatedLostFrames << " lost frames\n";
-    std::cout << "The secondary interface reduced the overall time waiting for datagrams by" << ConvertMicrosToMillis(secondaryTimeSave)
-              << " ms (" << percent(secondaryTimeSave, sumPrimaryLatencies) << "%)\n";
-    std::cout << receivedOnSecondaryFirst << " frames were received first on the secondary interface ("
-              << percent(receivedOnSecondaryFirst, aggregatedReceivedFrames) << "%)\n";
+    std::cout << "The secondary interface prevented " << primaryLostDatagrams - aggregatedLostDatagrams << " lost datagrams.\n";
+    std::cout << "The secondary interface reduced the overall time waiting for datagrams by " << ConvertMicrosToMillis(secondaryTimeSave)
+              << " ms (" << percent(secondaryTimeSave, sumPrimaryLatencies) << "%).\n";
+    std::cout << receivedOnSecondaryFirst << " datagrams were received first on the secondary interface ("
+              << percent(receivedOnSecondaryFirst, aggregatedReceivedDatagrams) << "%).\n";
 
     std::cout << '\n';
     std::cout << "--- DETAILS ---\n";
     std::cout << '\n';
-    std::cout << "Sent frames on primary interface: " << primarySentFrames << '\n';
-    std::cout << "Sent frames on secondary interface: " << secondarySentFrames << '\n';
+    std::cout << "Sent datagrams on primary interface: " << primarySentDatagrams << '\n';
+    std::cout << "Sent datagrams on secondary interface: " << secondarySentDatagrams << '\n';
 
     std::cout << '\n';
-    std::cout << "Received frames on primary interface: " << primaryReceivedFrames << " ("
-              << percent(primaryReceivedFrames, primarySentFrames) << "%)\n";
-    std::cout << "Received frames on secondary interface: " << secondaryReceivedFrames << " ("
-              << percent(secondaryReceivedFrames, secondarySentFrames) << "%)\n";
+    std::cout << "Received datagrams on primary interface: " << primaryReceivedDatagrams << " ("
+              << percent(primaryReceivedDatagrams, primarySentDatagrams) << "%)\n";
+    std::cout << "Received datagrams on secondary interface: " << secondaryReceivedDatagrams << " ("
+              << percent(secondaryReceivedDatagrams, secondarySentDatagrams) << "%)\n";
 
     std::cout << '\n';
-    std::cout << "Lost frames on primary interface: " << primaryLostFrames << " ("
-              << percent(primaryLostFrames, primarySentFrames) << "%)\n";
-    std::cout << "Lost frames on secondary interface: " << secondaryLostFrames << " ("
-              << percent(secondaryLostFrames, secondarySentFrames) << "%)\n";
-    std::cout << "Lost frames on both interface simultaneously: " << aggregatedLostFrames << " ("
-              << percent(aggregatedLostFrames, aggregatedSentFrames) << "%)\n";
+    std::cout << "Lost datagrams on primary interface: " << primaryLostDatagrams << " ("
+              << percent(primaryLostDatagrams, primarySentDatagrams) << "%)\n";
+    std::cout << "Lost datagrams on secondary interface: " << secondaryLostDatagrams << " ("
+              << percent(secondaryLostDatagrams, secondarySentDatagrams) << "%)\n";
+    std::cout << "Lost datagrams on both interface simultaneously: " << aggregatedLostDatagrams << " ("
+              << percent(aggregatedLostDatagrams, aggregatedSentDatagrams) << "%)\n";
 
     // Average latency
     const long long primaryAverageLatency = average(primaryLatencies);
@@ -255,8 +255,8 @@ void PrintLatencyStatistics(LatencyData& data)
               << " ms / " << ConvertMicrosToMillis(secondaryMaximumLatency) << " ms\n";
 
     std::cout << '\n';
-    std::cout << "Corrupt frames on primary interface: " << data.m_primaryCorruptFrames << '\n';
-    std::cout << "Corrupt frames on secondary interface: " << data.m_secondaryCorruptFrames << '\n';
+    std::cout << "Corrupt datagrams on primary interface: " << data.m_primaryCorruptDatagrams << '\n';
+    std::cout << "Corrupt datagrams on secondary interface: " << data.m_secondaryCorruptDatagrams << '\n';
 }
 
 void DumpLatencyData(const LatencyData& data, std::ofstream& file)

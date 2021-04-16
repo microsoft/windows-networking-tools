@@ -23,8 +23,8 @@ struct LatencyData
     std::vector<LatencyMeasure> m_latencies;
 
     size_t m_datagramSize = 0;
-    long long m_primaryCorruptFrames = 0;
-    long long m_secondaryCorruptFrames = 0;
+    long long m_primaryCorruptDatagrams = 0;
+    long long m_secondaryCorruptDatagrams = 0;
 };
 
 void PrintLatencyStatistics(LatencyData& data);

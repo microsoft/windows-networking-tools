@@ -27,7 +27,7 @@ public:
 
     void RequestSecondaryWlanConnection();
 
-    void Start(unsigned long sendBitRate, unsigned long sendFrameRate, unsigned long duration);
+    void Start(unsigned long bitRate, unsigned long grouping, unsigned long duration);
     void Stop() noexcept;
 
     void PrintStatistics();
@@ -66,7 +66,7 @@ private:
     MeasuredSocket m_secondaryState{};
 
     // The number of datagrams to send on each timer callback
-    long long m_frameRate = 0;
+    long long m_grouping = 0;
     unsigned long m_receiveBufferCount = 1;
 
     std::unique_ptr<ThreadpoolTimer> m_threadpoolTimer{};

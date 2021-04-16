@@ -59,7 +59,7 @@ public:
     void SendDatagram(long long sequenceNumber, std::function<void(const SendResult&)> clientCallback) noexcept;
 
     std::atomic<AdapterStatus> m_adapterStatus{AdapterStatus::Disabled};
-    long long m_corruptFrames = 0;
+    long long m_corruptDatagrams = 0;
 
 private:
     struct ReceiveState

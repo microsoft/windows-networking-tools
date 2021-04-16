@@ -75,7 +75,7 @@ void PrintUsage()
         L"\tMultipathLatencyTool -listen:<addr or *> [-port:####] [-prepostrecvs:####]\n"
         L"\n"
         L"Client-side usage:\n"
-        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-bitrate:<see below>] [-framerate:<see below>] "
+        L"\tMultipathLatencyTool -target:<addr or name> [-port:####] [-bitrate:<see below>] [-grouping:<see below>] "
         L"[-duration:####] [-secondary:#] [-output:<path>]"
         L"[-prepostrecvs:####]\n"
         L"\n\n"
@@ -108,8 +108,8 @@ void PrintUsage()
         L"\t\t- hd sends data at 5 megabits per second (default)\n"
         L"\t\t- 4k sends data at 25 megabits per second\n"
         L"\t\t- ## specifies the desired bitrate in magatbits per second\n"
-        L"-framerate:####\n"
-        L"\t- the number of frames to process during each send operation\n"
+        L"-grouping:####\n"
+        L"\t- the number of datagrams to process during each send operation (default: 30)\n"
         L"-duration:####\n"
         L"\t- the total number of seconds to run (default: 60 seconds)\n"
         L"-secondary:<0,1>\n"
@@ -202,19 +202,19 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
     {
         if (L"sd" == bitrate)
         {
-            config.m_bitrate = Configuration::c_sendBitrateSd;
+            config.m_bitrate = Configuration::c_bitrateSd;
         }
         else if (L"hd" == bitrate)
         {
-            config.m_bitrate = Configuration::c_sendBitrateHd;
+            config.m_bitrate = Configuration::c_bitrateHd;
         }
         else if (L"4k" == bitrate)
         {
-            config.m_bitrate = Configuration::c_sendBitrate4K;
+            config.m_bitrate = Configuration::c_bitrate4K;
         }
         else if (L"test" == bitrate)
         {
-            config.m_bitrate = Configuration::c_testSendBitrate;
+            config.m_bitrate = Configuration::c_testBitrate;
         }
         else
         {
@@ -228,12 +228,12 @@ Configuration ParseArguments(std::vector<const wchar_t*>& args)
         }
     }
 
-    if (auto framerate = ParseArgument(L"-framerate", args))
+    if (auto grouping = ParseArgument(L"-grouping", args))
     {
-        config.m_framerate = integer_cast<unsigned long>(*framerate);
-        if (config.m_framerate < 1)
+        config.m_grouping = integer_cast<unsigned long>(*grouping);
+        if (config.m_grouping < 1)
         {
-            throw std::invalid_argument("-framerate invalid argument");
+            throw std::invalid_argument("-grouping invalid argument");
         }
     }
 
@@ -329,7 +329,7 @@ void RunClientMode(Configuration& config)
     }
 
     Log<LogLevel::Output>("Start transmitting data...\n");
-    client.Start(config.m_bitrate, config.m_framerate, config.m_duration);
+    client.Start(config.m_bitrate, config.m_grouping, config.m_duration);
 
     // wait for twice as long as the duration
     if (!completionEvent.wait(config.m_duration * 2 * 1000))
@@ -410,9 +410,9 @@ try
         std::cout << "--- Client Mode ---\n";
         std::wcout << L"Port: " << config.m_port << L'\n';
         std::wcout << L"Target Address: " << config.m_targetAddress.WriteCompleteAddress() << L'\n';
-        std::wcout << L"Stream Bitrate: " << config.m_bitrate << L" bits per second\n";
-        std::wcout << L"Stream Framerate: " << config.m_framerate << L'\n';
-        std::wcout << L"Stream Duration: " << config.m_duration << L" seconds\n";
+        std::wcout << L"Bitrate: " << config.m_bitrate << L" bits per second\n";
+        std::wcout << L"Datagram grouping: " << config.m_grouping << L'\n';
+        std::wcout << L"Duration: " << config.m_duration << L" seconds\n";
         std::wcout << L"Number of receive buffers: " << config.m_prePostRecvs << L'\n';
         std::cout << "-------------------\n\n";
 
