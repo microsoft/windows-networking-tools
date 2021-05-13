@@ -1,4 +1,7 @@
-﻿#include "latencyStatistics.h"
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+#include "latencyStatistics.h"
 
 #include <algorithm>
 #include <functional>

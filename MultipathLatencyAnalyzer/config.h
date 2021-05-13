@@ -3,6 +3,8 @@
 #include "sockaddr.h"
 
 #include <filesystem>
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
 namespace multipath {
 struct Configuration

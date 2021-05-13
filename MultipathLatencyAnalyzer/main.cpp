@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // ReSharper disable StringLiteralTypo
 #include "adapters.h"
 #include "config.h"

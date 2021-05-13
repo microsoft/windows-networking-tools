@@ -1,5 +1,7 @@
-#include "stream_server.h"
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
+#include "stream_server.h"
 #include "datagram.h"
 #include "logs.h"
 #include "socket_utils.h"

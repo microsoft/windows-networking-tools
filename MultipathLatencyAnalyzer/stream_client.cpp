@@ -1,5 +1,7 @@
-#include "stream_client.h"
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
+#include "stream_client.h"
 #include "adapters.h"
 #include "logs.h"
 
