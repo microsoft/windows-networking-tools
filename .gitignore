@@ -1,9 +1,6 @@
-﻿################################################################################
-# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
-################################################################################
-
-*.user
+﻿*.user
 *.filters
+*.log
 /.vs
 /Debug
 /Release
@@ -19,4 +16,7 @@
 /PrintConnectionProfiles/Release
 /PrintConnectionProfiles/x64
 /PrintConnectionProfiles/ARM64
-/PrintConnectionProfiles/.vs
+
+/MultipathLatencyAnalyzer/x64
+/MultipathLatencyAnalyzer/Debug
+/MultipathLatencyAnalyzer/Release
