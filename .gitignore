@@ -20,3 +20,6 @@
 /PrintConnectionProfiles/x64
 /PrintConnectionProfiles/ARM64
 /PrintConnectionProfiles/.vs
+
+/MultipathLatencyAnalyzer/x64
+/MultipathLatencyAnalyzer/ARM64
