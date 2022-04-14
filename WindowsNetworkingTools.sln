@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.29926.136
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32317.152
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "NetworkInformationTools", "NetworkInformationTools", "{CF53C627-44D9-4B1C-A92D-32FD9C0BC88C}"
 EndProject
@@ -50,7 +50,8 @@ Global
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x64.Build.0 = Debug|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x86.ActiveCfg = Debug|Win32
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x86.Build.0 = Debug|Win32
-		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|ARM64.ActiveCfg = Release|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|ARM64.ActiveCfg = Release|ARM64
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|ARM64.Build.0 = Release|ARM64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x64.ActiveCfg = Release|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x64.Build.0 = Release|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.ActiveCfg = Release|Win32
