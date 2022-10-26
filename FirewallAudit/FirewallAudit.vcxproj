@@ -173,12 +173,12 @@
     <ClCompile Include="PrintFirewallAuditEvents.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="platform_headers.h" />
     <ClInclude Include="ctSockaddr.h" />
     <ClInclude Include="PrintFirewallAuditEvents.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
