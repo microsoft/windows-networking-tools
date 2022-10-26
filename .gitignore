@@ -5,6 +5,8 @@
 /Win32
 /x64
 /ARM64
+/packages
+/_ReSharper.Caches
 
 /SetNetworkCategory/Win32
 /SetNetworkCategory/x64
@@ -18,4 +20,10 @@
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
-/packages
+/FirewallAudit/packages
+/FirewallAudit/x64
+/FirewallAudit/Win32
+/FirewallAudit/ARM64
+/FirewallAudit/Debug
+/FirewallAudit/Release
+/Debug

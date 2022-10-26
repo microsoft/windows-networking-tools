@@ -17,8 +17,8 @@ namespace {
     {
         // bitRate -> bit/s, datagramSize -> byte, grouping -> N/U
         // We look for the tick interval in 100 nanosecond
-        const unsigned long hundredNanoSecInSecond = 10'000'000UL; // hundred ns / s
-        const long long byteRate = bitRate / 8;                // byte/s
+        constexpr unsigned long hundredNanoSecInSecond = 10'000'000UL; // hundred ns / s
+        const long long byteRate = bitRate / 8; // byte/s
         return (datagramSize * grouping * hundredNanoSecInSecond) / byteRate;
     }
 
@@ -66,7 +66,7 @@ void StreamClient::SetupSecondaryInterface()
             Log<LogLevel::Info>("Network status changed event received\n");
 
             // Check if the primary interface changed
-            auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
+            const auto connectedInterfaceGuid = GetPrimaryInterfaceGuid();
 
             // If the default internet ip interface changes, the secondary wlan interface status changes too
             if (connectedInterfaceGuid != primaryInterfaceGuid)
@@ -82,7 +82,7 @@ void StreamClient::SetupSecondaryInterface()
                 }
 
                 // If a secondary wlan interface is available for the new primary interface, get ready to use it
-                if (auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), primaryInterfaceGuid))
+                if (const auto secondaryGuid = GetSecondaryInterfaceGuid(m_wlanHandle.get(), primaryInterfaceGuid))
                 {
                     secondaryInterfaceGuid = *secondaryGuid;
                     m_secondaryState.m_adapterStatus = MeasuredSocket::AdapterStatus::Connecting;
@@ -203,7 +203,7 @@ void StreamClient::PrintStatistics()
     PrintLatencyStatistics(m_latencyData);
 }
 
-void StreamClient::DumpLatencyData(std::ofstream& file)
+void StreamClient::DumpLatencyData(std::ofstream& file) const
 {
     multipath::DumpLatencyData(m_latencyData, file);
 }

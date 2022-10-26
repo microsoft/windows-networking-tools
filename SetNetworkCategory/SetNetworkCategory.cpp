@@ -21,7 +21,7 @@ try
     const std::wstring param(argv[1]);
 
     NLM_NETWORK_CATEGORY targetCategory{};
-    const auto bIgnoreCase = TRUE;
+    constexpr auto bIgnoreCase = TRUE;
     const auto privateComparison = CompareStringOrdinal(param.c_str(), -1, L"private", -1, bIgnoreCase);
     THROW_LAST_ERROR_IF(privateComparison == 0);
     if (privateComparison == CSTR_EQUAL)
@@ -44,7 +44,7 @@ try
     }
 
     const auto coinit = wil::CoInitializeEx();
-    auto nlmInstance = wil::CoCreateInstance<INetworkListManager>(CLSID_NetworkListManager);
+    const auto nlmInstance = wil::CoCreateInstance<INetworkListManager>(CLSID_NetworkListManager);
     wil::com_ptr<IEnumNetworks> nlmEnumNetworks;
     THROW_IF_FAILED(nlmInstance->GetNetworks(NLM_ENUM_NETWORK_CONNECTED, &nlmEnumNetworks));
 

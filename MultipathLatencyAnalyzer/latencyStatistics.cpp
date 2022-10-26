@@ -51,7 +51,7 @@ auto to_vector(R&& r, size_t sizeHint = 0)
     return v;
 }
 
-void PrintLatencyStatistics(LatencyData& data)
+void PrintLatencyStatistics(LatencyData& latencyData)
 {
     using namespace std::views;
 
@@ -86,9 +86,6 @@ void PrintLatencyStatistics(LatencyData& data)
     };
 
     auto received = [](const auto& timestamps) { return timestamps.second >= 0; };
-    auto receivedOnOneInterface = [](const LatencyMeasure& stat) {
-        return stat.m_primaryReceiveTimestamp >= 0 || stat.m_secondaryReceiveTimestamp >= 0;
-    };
     auto receivedFirstOnSecondary = [](const auto& stat) {
         return stat.m_secondaryReceiveTimestamp >= 0 &&
                (stat.m_primaryReceiveTimestamp < 0 || stat.m_secondaryReceiveTimestamp < stat.m_primaryReceiveTimestamp);
@@ -119,7 +116,7 @@ void PrintLatencyStatistics(LatencyData& data)
         return static_cast<long long>(std::sqrt(r / data.size() - average * average));
     };
 
-    const auto& latencies = data.m_latencies;
+    const auto& latencies = latencyData.m_latencies;
 
     // Compute latencies on primary, secondary or both simultaneously
     auto primaryLatencies =
@@ -156,7 +153,7 @@ void PrintLatencyStatistics(LatencyData& data)
     const auto secondaryTimeSave = std::max(sumPrimaryLatencies - sumEffectiveLatencies, 0LL);
     auto effectiveTimestamps = latencies | transform(selectEffective) | filter(received);
     const auto runDuration = ConvertMicrosToSeconds(effectiveTimestamps.back().first - effectiveTimestamps.front().first);
-    const auto byteTransfered = aggregatedSentDatagrams * data.m_datagramSize / 1024;
+    const auto byteTransfered = aggregatedSentDatagrams * latencyData.m_datagramSize / 1024;
     const auto bitRate = runDuration > 0 ? byteTransfered * 8 / runDuration : 0;
 
     // Print 2 decimals, no scientific notation
@@ -258,8 +255,8 @@ void PrintLatencyStatistics(LatencyData& data)
               << " ms / " << ConvertMicrosToMillis(secondaryMaximumLatency) << " ms\n";
 
     std::cout << '\n';
-    std::cout << "Corrupt datagrams on primary interface: " << data.m_primaryCorruptDatagrams << '\n';
-    std::cout << "Corrupt datagrams on secondary interface: " << data.m_secondaryCorruptDatagrams << '\n';
+    std::cout << "Corrupt datagrams on primary interface: " << latencyData.m_primaryCorruptDatagrams << '\n';
+    std::cout << "Corrupt datagrams on secondary interface: " << latencyData.m_secondaryCorruptDatagrams << '\n';
 }
 
 void DumpLatencyData(const LatencyData& data, std::ofstream& file)

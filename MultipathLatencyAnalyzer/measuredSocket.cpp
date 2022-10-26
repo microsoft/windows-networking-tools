@@ -26,14 +26,14 @@ MeasuredSocket::~MeasuredSocket() noexcept
 
 void MeasuredSocket::Setup(const ctl::ctSockaddr& targetAddress, int numReceivedBuffers, int interfaceIndex)
 {
-    auto lock = m_lock.lock();
+    const auto lock = m_lock.lock();
 
     m_socket.reset(CreateDatagramSocket());
     SetSocketReceiveBufferSize(m_socket.get(), c_defaultSocketReceiveBufferSize);
     SetSocketOutgoingInterface(m_socket.get(), targetAddress.family(), interfaceIndex);
     m_receiveStates.resize(numReceivedBuffers);
 
-    auto error = WSAConnect(m_socket.get(), targetAddress.sockaddr(), targetAddress.length(), nullptr, nullptr, nullptr, nullptr);
+    const auto error = WSAConnect(m_socket.get(), targetAddress.sockaddr(), targetAddress.length(), nullptr, nullptr, nullptr, nullptr);
     THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "WSAConnect failed");
 
     m_threadpoolIo = std::make_unique<ctl::ctThreadIocp>(m_socket.get());
@@ -52,7 +52,7 @@ void MeasuredSocket::Cancel() noexcept
 
 void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
 {
-    auto lock = m_lock.lock();
+    const auto lock = m_lock.lock();
     if (!m_socket.is_valid())
     {
         THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
@@ -64,7 +64,7 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
     wsabuf.len = static_cast<ULONG>(m_receiveStates[0].m_buffer.size());
 
     auto callback = [pingReceived, this](OVERLAPPED* ov) noexcept {
-        auto lock = m_lock.lock();
+        const auto lambdaLock = m_lock.lock();
         if (!m_socket.is_valid())
         {
             Log<LogLevel::Info>("Ping reception callback canceled\n");
@@ -72,8 +72,8 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
         }
 
         DWORD bytesTransferred = 0;
-        DWORD flags = 0;
-        if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &flags))
+        DWORD lambdaFlags = 0;
+        if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &lambdaFlags))
         {
             FAIL_FAST_LAST_ERROR_MSG("A ping receive operation failed on socket %zu", m_socket.get());
         }
@@ -101,7 +101,7 @@ void MeasuredSocket::PrepareToReceivePing(wil::shared_event pingReceived)
 
 void MeasuredSocket::PingEchoServer()
 {
-    auto lock = m_lock.lock();
+    const auto lock = m_lock.lock();
     if (!m_socket.is_valid())
     {
         THROW_WIN32_MSG(ERROR_INVALID_PARAMETER, "Invalid socket");
@@ -109,19 +109,19 @@ void MeasuredSocket::PingEchoServer()
 
     Log<LogLevel::Info>("Sending a ping on socket %zu\n", m_socket.get());
 
-    const auto sequenceNumber = -1;
+    constexpr auto sequenceNumber = -1;
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
 
     // Synchronous send
     DWORD transmitedBytes = 0;
-    auto error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
+    const auto error = WSASend(m_socket.get(), buffers.data(), static_cast<DWORD>(buffers.size()), &transmitedBytes, 0, nullptr, nullptr);
     THROW_LAST_ERROR_IF_MSG(SOCKET_ERROR == error, "Failed to send a ping");
 }
 
 void MeasuredSocket::CheckConnectivity()
 {
-    wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
+    const wil::shared_event connectedEvent(wil::EventOptions::ManualReset);
 
     PrepareToReceivePing(connectedEvent);
 
@@ -131,7 +131,7 @@ void MeasuredSocket::CheckConnectivity()
         NetworkInformation::NetworkStatusChanged(winrt::auto_revoke, [this](const auto&) { PingEchoServer(); });
 
     // Check connectivity
-    const auto maxPingAttempts = 2;
+    constexpr auto maxPingAttempts = 2;
     for (auto i = 0; i < maxPingAttempts; ++i)
     {
         PingEchoServer();
@@ -166,7 +166,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
     auto callback = [clientCallback = std::move(clientCallback), this, sendState](OVERLAPPED* ov) noexcept {
         try
         {
-            auto lock = m_lock.lock();
+            const auto lambdaLock = m_lock.lock();
 
             if (!m_socket.is_valid())
             {
@@ -175,8 +175,8 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
             }
 
             DWORD bytesTransmitted = 0;
-            DWORD flags = 0;
-            if (WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransmitted, false, &flags))
+            DWORD lambdaFlags = 0;
+            if (WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransmitted, false, &lambdaFlags))
             {
                 clientCallback(sendState);
             }
@@ -230,7 +230,7 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
         {
             const auto receiveTimestamp = SnapQpcInMicroSec();
 
-            auto lock = m_lock.lock();
+            const auto lambdaLock = m_lock.lock();
 
             if (!m_socket.is_valid())
             {
@@ -239,8 +239,8 @@ void MeasuredSocket::PrepareToReceiveDatagram(ReceiveState& receiveState, std::f
             }
 
             DWORD bytesTransferred = 0;
-            DWORD flags = 0;
-            if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &flags))
+            DWORD lambdaFlags = 0;
+            if (!WSAGetOverlappedResult(m_socket.get(), ov, &bytesTransferred, false, &lambdaFlags))
             {
                 FAIL_FAST_LAST_ERROR_MSG("A receive operation failed");
             }

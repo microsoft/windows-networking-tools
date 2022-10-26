@@ -136,10 +136,10 @@ std::wstring_view ParseArgumentValue(const std::wstring_view str)
 
 std::optional<std::wstring_view> ParseArgument(const std::wstring_view name, std::vector<const wchar_t*>& args)
 {
-    auto foundParameter = std::ranges::find_if(args, [&](const std::wstring_view arg) { return arg.starts_with(name); });
+    const auto foundParameter = std::ranges::find_if(args, [&](const std::wstring_view arg) { return arg.starts_with(name); });
     if (foundParameter != args.end())
     {
-        auto value = ParseArgumentValue(*foundParameter);
+        const auto value = ParseArgumentValue(*foundParameter);
         if (value.empty())
         {
             throw std::invalid_argument("Found parameter without value");
@@ -299,7 +299,7 @@ void RunServerMode(Configuration& config)
 {
     if (config.m_listenAddress.port() == 0)
     {
-        config.m_listenAddress.SetPort(config.m_port);
+        config.m_listenAddress.setPort(config.m_port);
     }
 
     Log<LogLevel::Output>("Starting the echo server...\n");
@@ -317,12 +317,12 @@ void RunClientMode(Configuration& config)
 {
     if (config.m_targetAddress.port() == 0)
     {
-        config.m_targetAddress.SetPort(config.m_port);
+        config.m_targetAddress.setPort(config.m_port);
     }
 
     // must have this handle open until we are done to keep the secondary STA port active
     wil::unique_wlan_handle wlanHandle;
-    wil::unique_event completionEvent(wil::EventOptions::ManualReset);
+    const wil::unique_event completionEvent(wil::EventOptions::ManualReset);
 
     Log<LogLevel::Output>("Starting connection setup...\n");
     StreamClient client(config.m_targetAddress, config.m_prePostRecvs, completionEvent.get());
@@ -370,7 +370,7 @@ try
     init_apartment();
 
     WSADATA wsadata{};
-    int error = WSAStartup(WINSOCK_VERSION, &wsadata);
+    const int error = WSAStartup(WINSOCK_VERSION, &wsadata);
     if (ERROR_SUCCESS != error)
     {
         FAIL_FAST_WIN32_MSG(WSAGetLastError(), "WSAStartup failed");
@@ -386,7 +386,7 @@ try
     const wchar_t** argvEnd = argv + argc;
     std::vector<const wchar_t*> args{argvBegin, argvEnd};
 
-    auto foundHelp =
+    const auto foundHelp =
         std::ranges::find_if(args, [](const std::wstring_view arg) { return arg == L"-help" || arg == L"-?"; });
     if (foundHelp != args.end())
     {
@@ -401,7 +401,7 @@ try
         // Start the server if "-listen" is specified
         std::cout << "--- Server Mode ---\n";
         std::wcout << L"Port: " << config.m_port << L'\n';
-        std::wcout << L"Listen Address: " << config.m_listenAddress.WriteCompleteAddress() << L'\n';
+        std::wcout << L"Listen Address: " << config.m_listenAddress.writeCompleteAddress() << L'\n';
         std::wcout << L"Number of receive buffers: " << config.m_prePostRecvs << L'\n';
         std::cout << "-------------------\n\n";
 
@@ -412,7 +412,7 @@ try
         // Start a client if "-target" is specified
         std::cout << "--- Client Mode ---\n";
         std::wcout << L"Port: " << config.m_port << L'\n';
-        std::wcout << L"Target Address: " << config.m_targetAddress.WriteCompleteAddress() << L'\n';
+        std::wcout << L"Target Address: " << config.m_targetAddress.writeCompleteAddress() << L'\n';
         std::wcout << L"Bitrate: " << config.m_bitrate << L" bits per second\n";
         std::wcout << L"Datagram grouping: " << config.m_grouping << L'\n';
         std::wcout << L"Duration: " << config.m_duration << L" seconds\n";

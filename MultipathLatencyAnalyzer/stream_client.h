@@ -34,7 +34,7 @@ public:
     void Stop() noexcept;
 
     void PrintStatistics();
-    void DumpLatencyData(std::ofstream& file);
+    void DumpLatencyData(std::ofstream& file) const;
 
     // Not copyable or movable
     StreamClient(const StreamClient&) = delete;

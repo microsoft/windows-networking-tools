@@ -19,7 +19,7 @@ wil::unique_wlan_handle OpenWlanHandle()
     constexpr DWORD clientVersion = 2; // Vista+ APIs
     DWORD curVersion = 0;
     wil::unique_wlan_handle wlanHandle;
-    auto error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
+    const auto error = WlanOpenHandle(clientVersion, nullptr, &curVersion, &wlanHandle);
     FAIL_FAST_IF_WIN32_ERROR_MSG(error, "WlanOpenHandle failed");
 
     return wlanHandle;
@@ -48,7 +48,7 @@ std::vector<GUID> GetPrimaryWlanInterfaceGuids(HANDLE wlanHandle)
 
 void RequestSecondaryInterface(HANDLE wlanHandle)
 {
-    auto wlanInterfaceGuids = GetPrimaryWlanInterfaceGuids(wlanHandle);
+    const auto wlanInterfaceGuids = GetPrimaryWlanInterfaceGuids(wlanHandle);
 
     BOOL enable = TRUE;
     const auto error = WlanSetInterface(
@@ -74,7 +74,7 @@ catch (...)
 std::optional<winrt::guid> GetSecondaryInterfaceGuid(HANDLE wlanHandle, const winrt::guid& primaryInterfaceGuid)
 {
     const auto wlanInterfaces = GetPrimaryWlanInterfaceGuids(wlanHandle);
-    auto matchingWlanInterface = std::ranges::find_if(
+    const auto matchingWlanInterface = std::ranges::find_if(
         wlanInterfaces, [&](const auto& guid) { return guid == *reinterpret_cast<const GUID*>(&primaryInterfaceGuid); });
 
     // The IP interface guid doesn't match a wlan adapter guid: don't use dual sta

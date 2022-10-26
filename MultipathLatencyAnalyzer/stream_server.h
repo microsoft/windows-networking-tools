@@ -15,7 +15,7 @@ namespace multipath {
 class StreamServer
 {
 public:
-    StreamServer(ctl::ctSockaddr listenAddress);
+    explicit StreamServer(ctl::ctSockaddr listenAddress);
 
     ~StreamServer() noexcept = default;
 

@@ -25,7 +25,7 @@ inline long long SnapQpcInMicroSec() noexcept
     }();
 
     // (qpc / qpf) is in seconds
-    return static_cast<long long>(SnapQpc() * 1'000'000LL / c_qpf);
+    return SnapQpc() * 1'000'000LL / c_qpf;
 }
 
 // Create a negative FILETIME, which for some timer APIs indicate a 'relative' time

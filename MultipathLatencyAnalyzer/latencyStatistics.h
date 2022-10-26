@@ -30,7 +30,7 @@ struct LatencyData
     long long m_secondaryCorruptDatagrams = 0;
 };
 
-void PrintLatencyStatistics(LatencyData& data);
+void PrintLatencyStatistics(LatencyData& latencyData);
 void DumpLatencyData(const LatencyData& data, std::ofstream& file);
 
 } // namespace multipath

@@ -12,6 +12,7 @@
 
 #include <winrt/Windows.Networking.Connectivity.h>
 
+// ReSharper disable CppInconsistentNaming
 using std::to_wstring;
 
 inline std::wstring exception_to_wstring(hresult_error const& ex)
