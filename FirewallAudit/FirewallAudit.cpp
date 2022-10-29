@@ -94,12 +94,11 @@ private:
             if (!writeResult)
             {
                 const auto gle = GetLastError();
-                printf("  %lu  ", gle);
-                DebugBreak();
+                printf("WriteFile failed :  %lu\n", gle);
             }
             else
             {
-                printf(".");
+                printf("%hs\n", text.c_str());
             }
         }
     }
@@ -203,6 +202,8 @@ try
             }
             break;
         }
+        default:
+            DebugBreak();
     }
 }
 CATCH_LOG()

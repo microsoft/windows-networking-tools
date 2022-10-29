@@ -3,6 +3,9 @@
 #include "platform_headers.h"
 #include "ctSockaddr.h"
 
+constexpr auto* c_notSetString = "{not set}";
+constexpr auto* c_notSetStringW = L"{not set}";
+
 HRESULT ToString(std::string& returnString, _Printf_format_string_ PCSTR pszFormat, const va_list& argsV) noexcept
 try
 {
@@ -36,6 +39,125 @@ std::string ToString(const FILETIME& filetime)
     return ToString("%02d/%02d/%d--%02d:%02d:%02d.%03d",
         stLocal.wMonth, stLocal.wDay, stLocal.wYear,
         stLocal.wHour, stLocal.wMinute, stLocal.wSecond, stLocal.wMilliseconds);
+}
+
+std::string EventHeaderFlagsToString(UINT32 flags)
+{
+    if (flags == 0)
+    {
+        return c_notSetString;
+    }
+
+    std::string returnString;
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET))
+    {
+        returnString += "IP_PROTOCOL_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "LOCAL_ADDR_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "REMOTE_ADDR_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "LOCAL_PORT_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "REMOTE_PORT_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_APP_ID_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "APP_ID_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_USER_ID_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "USER_ID_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_SCOPE_ID_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "SCOPE_ID_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_IP_VERSION_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "IP_VERSION_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "REAUTH_REASON_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "PACKAGE_ID_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "ENTERPRISE_ID_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_POLICY_FLAGS_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "POLICY_FLAGS_SET";
+    }
+    if (WI_IsFlagSet(flags, FWPM_NET_EVENT_FLAG_EFFECTIVE_NAME_SET))
+    {
+        if (!returnString.empty())
+        {
+            returnString.push_back(' ');
+        }
+        returnString += "EFFECTIVE_NAME_SET";
+    }
+    return returnString;
 }
 
 std::string IpProtoToString(UINT8 ipProto)
@@ -118,35 +240,6 @@ PCSTR ToString(FWP_IP_VERSION version) noexcept
     }
 }
 
-std::string HeaderFlagsToString(UINT32 flags)
-{
-    if (flags == 0)
-    {
-	    return "0";
-    }
-
-    std::string returnString;
-	if (flags & FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET)
-	{
-		returnString += "IP_PROTOCOL_SET";
-	}
-	{
-#define FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET  (0x00000002)
-#define FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET (0x00000004)
-#define FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET  (0x00000008)
-#define FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET (0x00000010)
-#define FWPM_NET_EVENT_FLAG_APP_ID_SET      (0x00000020)
-#define FWPM_NET_EVENT_FLAG_USER_ID_SET     (0x00000040)
-#define FWPM_NET_EVENT_FLAG_SCOPE_ID_SET    (0x00000080)
-#define FWPM_NET_EVENT_FLAG_IP_VERSION_SET  (0x00000100)
-#define FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET (0x00000200)
-#define FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET  (0x00000400)
-#define FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET (0x00000800)
-#define FWPM_NET_EVENT_FLAG_POLICY_FLAGS_SET (0x00001000)
-#define FWPM_NET_EVENT_FLAG_EFFECTIVE_NAME_SET (0x00002000)
-	}
-}
-
 PCSTR ToString(FWP_AF af) noexcept
 {
     switch (af)
@@ -194,57 +287,79 @@ std::string PrintEventHeader(FWPM_NET_EVENT_HEADER3 header, _In_ PCSTR eventName
     ctl::ctSockaddr localAddr;
     ctl::ctSockaddr remoteAddr;
 
-    if (header.ipVersion == FWP_IP_VERSION_V4)
+    if (header.addressFamily == FWP_AF_INET)
     {
         in_addr v4Addr{};
+
         localAddr.reset(AF_INET);
-        v4Addr.S_un.S_addr = header.localAddrV4;
-        localAddr.setAddress(&v4Addr);
+        if (header.flags & FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET)
+        {
+            v4Addr.S_un.S_addr = htonl(header.localAddrV4);
+            localAddr.setAddress(&v4Addr);
+        }
 
         remoteAddr.reset(AF_INET);
-        v4Addr.S_un.S_addr = header.remoteAddrV4;
-        remoteAddr.setAddress(&v4Addr);
+        if (header.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET)
+        {
+            v4Addr.S_un.S_addr = htonl(header.remoteAddrV4);
+            remoteAddr.setAddress(&v4Addr);
+        }
     }
-    else if (header.ipVersion == FWP_IP_VERSION_V6)
+    else if (header.addressFamily == FWP_AF_INET6)
     {
         in6_addr v6Addr{};
         static_assert(sizeof v6Addr.u.Byte == sizeof header.localAddrV6.byteArray16);
 
         localAddr.reset(AF_INET6);
-        memcpy(&v6Addr.u.Byte, header.localAddrV6.byteArray16, sizeof v6Addr.u.Byte);
-        localAddr.setAddress(&v6Addr);
-	    localAddr.setScopeId(header.scopeId);
+        if (header.flags & FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET)
+        {
+            memcpy(&v6Addr.u.Byte, header.localAddrV6.byteArray16, sizeof v6Addr.u.Byte);
+            localAddr.setAddress(&v6Addr);
+        }
+        if (header.flags & FWPM_NET_EVENT_FLAG_SCOPE_ID_SET)
+        {
+            localAddr.setScopeId(header.scopeId);
+        }
 
         remoteAddr.reset(AF_INET6);
-        memcpy(&v6Addr.u.Byte, header.remoteAddrV6.byteArray16, sizeof v6Addr.u.Byte);
-        remoteAddr.setAddress(&v6Addr);
+        if (header.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET)
+        {
+            memcpy(&v6Addr.u.Byte, header.remoteAddrV6.byteArray16, sizeof v6Addr.u.Byte);
+            remoteAddr.setAddress(&v6Addr);
+        }
     }
 
-    localAddr.setPort(header.localPort, ctl::ByteOrder::NetworkOrder);
-    remoteAddr.setPort(header.remotePort, ctl::ByteOrder::NetworkOrder);
+    if (header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
+    {
+        localAddr.setPort(header.localPort, ctl::ByteOrder::NetworkOrder);
+    }
+    if (header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
+    {
+        remoteAddr.setPort(header.remotePort, ctl::ByteOrder::NetworkOrder);
+    }
 
-    char localaddressString[ctl::ctSockaddr::FixedStringLength]{};
-    localAddr.writeAddress(localaddressString);
-    char remoteAddressString[ctl::ctSockaddr::FixedStringLength]{};
-    remoteAddr.writeAddress(remoteAddressString);
+    WCHAR localaddressString[ctl::ctSockaddr::FixedStringLength]{};
+    localAddr.writeCompleteAddress(localaddressString, false);
+    WCHAR remoteAddressString[ctl::ctSockaddr::FixedStringLength]{};
+    remoteAddr.writeCompleteAddress(remoteAddressString, false);
 
     // format:
-    // eventName,timeStamp,flags,ipVersion,localAddress,remoteAddress,ipProtocol,appId,userId,addressFamily,packageSid,enterpriseId,policyFlags,effectiveName
-    return ToString("%hs,%hs,%lu,%hs,%hs,%hs,%hs,%hs,%hs,%hs,%hs,%ws,%llu,%hs",
+    // eventName,timeStamp,flags,addressFamily,ipVersion,ipProtocol,localAddress,remoteAddress,appId,userId,packageSid,enterpriseId,policyFlags,effectiveName
+    return ToString("%hs,%hs,%hs,%hs,%hs,%hs,%ws,%ws,%hs,%hs,%hs,%ws,%hs,%hs",
         eventName,
         ToString(header.timeStamp).c_str(),
-        header.flags,
-        ToString(header.ipVersion),
+        EventHeaderFlagsToString(header.flags).c_str(),
+        ToString(header.addressFamily),
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_IP_VERSION_SET) ? ToString(header.ipVersion) : c_notSetString,
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET) ? IpProtoToString(header.ipProtocol).c_str() : c_notSetString,
         localaddressString,
         remoteAddressString,
-        IpProtoToString(header.ipProtocol).c_str(),
-        ToString(header.appId).c_str(),
-        ToString(header.userId).c_str(),
-        ToString(header.addressFamily),
-        ToString(header.packageSid).c_str(),
-        header.enterpriseId == nullptr ? L"null" : header.enterpriseId,
-        header.policyFlags,
-        std::string(header.effectiveName.data, header.effectiveName.data + header.effectiveName.size).c_str());
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_APP_ID_SET) ? ToString(header.appId).c_str() : c_notSetString,
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_USER_ID_SET) ? ToString(header.userId).c_str() : c_notSetString,
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET) ? ToString(header.packageSid).c_str() : c_notSetString,
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET) ? (header.enterpriseId == nullptr ? L"null" : header.enterpriseId) : c_notSetStringW,
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_POLICY_FLAGS_SET) ? std::to_string(header.policyFlags).c_str() : c_notSetString,
+        WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_EFFECTIVE_NAME_SET) ? std::string(header.effectiveName.data, header.effectiveName.data + header.effectiveName.size).c_str() : c_notSetString);
 
     /*
         FILETIME timeStamp;

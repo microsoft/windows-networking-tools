@@ -156,7 +156,9 @@ public:
     // writeCompleteAddress prints the IP address, scope id, and port
     [[nodiscard]] std::wstring writeCompleteAddress(bool trimScope = false) const;
     bool writeCompleteAddress(WCHAR (&address)[FixedStringLength], bool trimScope = false) const noexcept;
+#ifdef _WINSOCK_DEPRECATED_NO_WARNINGS
     bool writeCompleteAddress(CHAR (&address)[FixedStringLength], bool trimScope = false) const noexcept;
+#endif
 
     // Accessors
     [[nodiscard]] int length() const noexcept;
