@@ -29,3 +29,4 @@
 /FirewallAudit/Debug
 /FirewallAudit/Release
 /FirewallAudit/*.csv
+/FirewallAudit/.vs
