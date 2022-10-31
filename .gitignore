@@ -2,6 +2,8 @@
 *.filters
 *.log
 /.vs
+/Debug
+/Release
 /Win32
 /x64
 /ARM64
@@ -26,4 +28,4 @@
 /FirewallAudit/ARM64
 /FirewallAudit/Debug
 /FirewallAudit/Release
-/Debug
+/FirewallAudit/*.csv

@@ -13,23 +13,46 @@ public:
     OutputFileContext() = default;
     ~OutputFileContext() noexcept = default;
 
-    void SetAllowFile(wil::unique_hfile&& allowHFile)
+    void EnableConsoleOutput() noexcept
     {
+        m_writeToConsole = true;
+        WriteNextLine(wil::shared_hfile{}, PrintFileHeader(), true);
+    }
+
+    void SetAllowFile(wil::shared_hfile allowHFile)
+    {
+        THROW_HR_IF(E_INVALIDARG, m_allowFile.is_valid());
         m_allowFile = std::move(allowHFile);
         // always write the header first into the csv
-        WriteNextLine(m_allowFile, PrintFileHeader(), false);
+        WriteNextLine(m_allowFile, PrintFileHeader(), true);
     }
 
-    void SetDropFile(wil::unique_hfile&& dropHFile)
+    void SetDropFile(wil::shared_hfile dropHFile)
     {
+        THROW_HR_IF(E_INVALIDARG, m_dropFile.is_valid());
         m_dropFile = std::move(dropHFile);
-        WriteNextLine(m_dropFile, PrintFileHeader(), false);
+        WriteNextLine(m_dropFile, PrintFileHeader(), true);
     }
 
-    void SetFailureFile(wil::unique_hfile&& failureHFile)
+    void SetFailureFile(wil::shared_hfile failureHFile)
     {
+        THROW_HR_IF(E_INVALIDARG, m_failureFile.is_valid());
         m_failureFile = std::move(failureHFile);
-        WriteNextLine(m_failureFile, PrintFileHeader(), false);
+        WriteNextLine(m_failureFile, PrintFileHeader(), true);
+    }
+
+    void SetAllEventsFile(const wil::shared_hfile& allEventsHFile)
+    {
+        THROW_HR_IF(E_INVALIDARG, m_allowFile.is_valid());
+        m_allowFile = allEventsHFile;
+
+        THROW_HR_IF(E_INVALIDARG, m_dropFile.is_valid());
+        m_dropFile = allEventsHFile;
+
+        THROW_HR_IF(E_INVALIDARG, m_failureFile.is_valid());
+        m_failureFile = allEventsHFile;
+        
+        WriteNextLine(m_failureFile, PrintFileHeader(), true);
     }
 
     [[nodiscard]] bool AllowEnabled() const noexcept
@@ -77,28 +100,35 @@ private:
     // must be declared in this order
     // the c'tor must initialize threadpoolIocp with the hFile
     // the d'tor must first teardown threadpoolIocp, then hFile
-    wil::unique_hfile m_allowFile;
-    wil::unique_hfile m_dropFile;
-    wil::unique_hfile m_failureFile;
+    wil::shared_hfile m_allowFile;
+    wil::shared_hfile m_dropFile;
+    wil::shared_hfile m_failureFile;
+    bool m_writeToConsole{false};
+    mutable bool m_headerWrittenToConsole{false};
 
-    static void WriteNextLine(const wil::unique_hfile& fileHandle, std::string&& text, bool printConsoleStatus = true) noexcept
+    void WriteNextLine(const wil::shared_hfile& fileHandle, std::string&& text, bool printingHeader = false) const noexcept
     try
     {
-        // guarantee carriage-return + line-feed is at the end of each line written
-        constexpr auto* endOfLine{"\r\n"};
-        text.append(endOfLine);
-
-        const auto writeResult = WriteFile(fileHandle.get(), text.data(), static_cast<DWORD>(text.size()), nullptr, nullptr);
-        if (printConsoleStatus)
+        if (m_writeToConsole && (!printingHeader || (printingHeader && !m_headerWrittenToConsole)))
         {
+            fwprintf(stdout, L"%hs\n", text.c_str());
+            if (printingHeader)
+            {
+                m_headerWrittenToConsole = true;
+            }
+        }
+
+        if (fileHandle)
+        {
+            // guarantee carriage-return + line-feed is at the end of each line written
+            constexpr auto* endOfLine{"\r\n"};
+            text.append(endOfLine);
+
+            const auto writeResult = WriteFile(fileHandle.get(), text.data(), static_cast<DWORD>(text.size()), nullptr, nullptr);
             if (!writeResult)
             {
                 const auto gle = GetLastError();
-                printf("WriteFile failed :  %lu\n", gle);
-            }
-            else
-            {
-                printf("%hs\n", text.c_str());
+                fwprintf(stderr, L"WriteFile failed :  %lu\n", gle);
             }
         }
     }
@@ -208,9 +238,9 @@ try
 }
 CATCH_LOG()
 
-wil::unique_hfile CreateCsvFile(_In_ PCWSTR filename)
+wil::shared_hfile CreateCsvFile(_In_ PCWSTR filename)
 {
-    wil::unique_hfile fileHandle{::CreateFileW(
+    wil::shared_hfile fileHandle{CreateFileW(
         filename,
         GENERIC_WRITE,
         FILE_SHARE_READ, // allow others to read the file while we write to it
@@ -224,17 +254,52 @@ wil::unique_hfile CreateCsvFile(_In_ PCWSTR filename)
 
 void PrintHelp() noexcept
 {
-    fwprintf(stdout, L"Invalid arguments\n"
-        "FirewallAudit.exe <FAILURE | DROP | ALLOW>:<output_filename>\n"
-        " e.g. FirewallAudit.exe drop:drop.csv\n"
-        " note: csv will be appended as the file extension to the filename specified\n"
-        "\nThe specified file will be overwritten\n");
+    fwprintf(stdout,
+        L"\nFirewallAudit.exe [all:<all_filename.csv>] | [<failure:failure_filename.csv> <drop:drop_filename.csv> allow:<allow_filename.csv>] | [console]\n"
+        L" e.g. FirewallAudit.exe all:all.csv\n"
+        L" e.g. FirewallAudit.exe failure:failure.csv drop:drop.csv allow:allow.csv\n"
+        L" Append console to the commandline to also write out events to the current console\n"
+        L"\nThe specified file will be overwritten\n");
 }
 
-bool ParseFileType(OutputFileContext& outputFileContext, _In_ PCWSTR inputString)
+bool ParseForTheConsoleArgument(OutputFileContext& outputFileContext, _In_ PCWSTR inputString)
 {
     constexpr auto ignoreCase = TRUE;
-    if (CompareStringOrdinal(L"failure:", 8, inputString, 8, ignoreCase) == CSTR_EQUAL)
+    constexpr auto* allArgument = L"console";
+    if (CompareStringOrdinal(allArgument, 7, inputString, 7, ignoreCase) != CSTR_EQUAL)
+    {
+        return false;
+    }
+
+    outputFileContext.EnableConsoleOutput();
+    return true;
+}
+
+bool ParseForTheAllArgument(OutputFileContext& outputFileContext, _In_ PCWSTR inputString)
+{
+    constexpr auto ignoreCase = TRUE;
+    constexpr auto* allArgument = L"all:";
+    if (CompareStringOrdinal(allArgument, 4, inputString, 4, ignoreCase) == CSTR_EQUAL)
+    {
+        const auto* fileName = inputString + 4;
+        if (wcslen(fileName) == 0)
+        {
+            return false;
+        }
+
+        outputFileContext.SetAllEventsFile(CreateCsvFile(fileName));
+        return true;
+    }
+
+    return false;
+}
+
+bool ParseIndividualFileTypes(OutputFileContext& outputFileContext, _In_ PCWSTR inputString)
+{
+    constexpr auto ignoreCase = TRUE;
+
+    constexpr auto* failureArgument = L"failure:";
+    if (CompareStringOrdinal(failureArgument, 8, inputString, 8, ignoreCase) == CSTR_EQUAL)
     {
         const auto* fileName = inputString + 8;
         if (wcslen(fileName) == 0)
@@ -246,7 +311,8 @@ bool ParseFileType(OutputFileContext& outputFileContext, _In_ PCWSTR inputString
         return true;
     }
 
-    if (CompareStringOrdinal(L"drop:", 5, inputString, 5, ignoreCase) == CSTR_EQUAL)
+    constexpr auto* dropArgument = L"drop:";
+    if (CompareStringOrdinal(dropArgument, 5, inputString, 5, ignoreCase) == CSTR_EQUAL)
     {
         const auto* fileName = inputString + 5;
         if (wcslen(fileName) == 0)
@@ -258,7 +324,8 @@ bool ParseFileType(OutputFileContext& outputFileContext, _In_ PCWSTR inputString
         return true;
     }
 
-    if (CompareStringOrdinal(L"allow:", 6, inputString, 6, ignoreCase) == CSTR_EQUAL)
+    constexpr auto* allowArgument = L"allow:";
+    if (CompareStringOrdinal(allowArgument, 6, inputString, 6, ignoreCase) == CSTR_EQUAL)
     {
         const auto* fileName = inputString + 6;
         if (wcslen(fileName) == 0)
@@ -273,32 +340,70 @@ bool ParseFileType(OutputFileContext& outputFileContext, _In_ PCWSTR inputString
     return false;
 }
 
-// arguments: <failure:filename.csv> <drop:filename.csv> <allow:filename.cvs>
+// arguments: allevents<failure:filename.csv> <drop:filename.csv> <allow:filename.cvs>
 int __cdecl wmain(int argc, wchar_t** argv)
 try
 {
-    if ((argc < 2) || (argc > 4))
+    if ((argc < 2) || (argc > 5))
     {
         PrintHelp();
         return ERROR_INVALID_PARAMETER;
     }
 
-    OutputFileContext outputFileContext;
+    std::vector<std::wstring> outputParameters;
     for (auto i = 1; i < argc; ++i)
     {
-        if (!ParseFileType(outputFileContext, argv[i]))
+        outputParameters.emplace_back(argv[i]);
+    }
+
+    OutputFileContext outputFileContext;
+
+    for (auto iter = outputParameters.begin(); iter != outputParameters.end(); ++iter)
+    {
+        if (ParseForTheConsoleArgument(outputFileContext, iter->c_str()))
         {
-            PrintHelp();
-            return ERROR_INVALID_PARAMETER;
+            outputParameters.erase(iter);
+            break;
         }
     }
+
+    // check see if they want all:
+    auto parseForIndividualFiles = true;
+    for (auto iter = outputParameters.begin(); iter != outputParameters.end(); ++iter)
+    {
+        if (ParseForTheAllArgument(outputFileContext, iter->c_str()))
+        {
+            parseForIndividualFiles = false;
+            outputParameters.erase(iter);
+            break;
+        }
+    }
+
+    // else look for each individual option
+    if (parseForIndividualFiles)
+    {
+        auto iter = outputParameters.begin();
+        while (iter != outputParameters.end())
+        {
+            if (!ParseIndividualFileTypes(outputFileContext, iter->c_str()))
+            {
+                PrintHelp();
+                return ERROR_INVALID_PARAMETER;
+            }
+
+            outputParameters.erase(iter);
+            iter = outputParameters.begin();
+        }
+    }
+
+    THROW_HR_IF(E_INVALIDARG, !outputParameters.empty());
 
     WSADATA wsadata;
     THROW_IF_WIN32_ERROR(WSAStartup(WINSOCK_VERSION, &wsadata));
 
     static wil::slim_event_manual_reset exitEvent{};
     THROW_IF_WIN32_BOOL_FALSE(SetConsoleCtrlHandler(
-        [](DWORD) -> BOOL { exitEvent.SetEvent(); return TRUE; },
+        [] (DWORD) -> BOOL { exitEvent.SetEvent(); return TRUE; },
         TRUE));
 
     GUID firewallAuditSession{};
@@ -323,10 +428,10 @@ try
             LOG_IF_WIN32_ERROR(FwpmNetEventUnsubscribe0(engineHandle, eventsHandle));
         }
     });
-    // passing 
+
+    fwprintf(stdout, L"\n");
     THROW_IF_WIN32_ERROR(FwpmNetEventSubscribe4(engineHandle, &subscription, FirewallNetEventCallback, &outputFileContext, &eventsHandle));
 
-    fwprintf(stdout, L"\nProcessing Firewall events - hit ctrl-c to exit\n");
     exitEvent.wait();
 
     // upon exit, all d'tors will execute in reverse order (correctly):
@@ -334,8 +439,12 @@ try
     // - then closes the FW handle
     // - then waits for all pended IO to complete within the OutputFileContext
     // - then closes the output file handle
+    return ERROR_SUCCESS;
 }
 catch (...)
 {
-    fwprintf(stderr, L"\nError - 0x%x\n", wil::ResultFromCaughtException());
+    const auto hr = wil::ResultFromCaughtException();
+    fwprintf(stderr, L"\nError - 0x%x\n\n", hr);
+    PrintHelp();
+    return hr;
 }
