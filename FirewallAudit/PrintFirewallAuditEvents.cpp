@@ -1,7 +1,7 @@
 #include <string>
 
 #include "platform_headers.h"
-#include "ctSockaddr.h"
+#include "ctSockaddr.hpp"
 
 constexpr auto* c_notSetString = "{not set}";
 constexpr auto* c_notSetStringW = L"{not set}";

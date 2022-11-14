@@ -29,3 +29,7 @@
 /FirewallAudit/Debug
 /FirewallAudit/Release
 /FirewallAudit/*.csv
+
+/EnumerateConnections/x64
+/EnumerateConnections/Win32
+/EnumerateConnections/ARM64
