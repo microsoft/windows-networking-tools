@@ -279,7 +279,7 @@ std::string ToString(_In_ SID* sid)
 
 PCSTR PrintFileHeader() noexcept
 {
-    return "eventName,timeStamp,flags,ipVersion,localAddress,remoteAddress,ipProtocol,appId,userId,addressFamily,packageSid,enterpriseId,policyFlags,effectiveName";
+    return "eventName,timeStamp,addressFamily,ipVersion,ipProtocol,localAddress,remoteAddress,appId,userId,packageSid,enterpriseId,policyFlags,effectiveName";
 }
 
 std::string PrintEventHeader(FWPM_NET_EVENT_HEADER3 header, _In_ PCSTR eventName)
@@ -344,11 +344,10 @@ std::string PrintEventHeader(FWPM_NET_EVENT_HEADER3 header, _In_ PCSTR eventName
     remoteAddr.writeCompleteAddress(remoteAddressString, false);
 
     // format:
-    // eventName,timeStamp,flags,addressFamily,ipVersion,ipProtocol,localAddress,remoteAddress,appId,userId,packageSid,enterpriseId,policyFlags,effectiveName
-    return ToString("%hs,%hs,%hs,%hs,%hs,%hs,%ws,%ws,%hs,%hs,%hs,%ws,%hs,%hs",
+    // eventName,timeStamp,addressFamily,ipVersion,ipProtocol,localAddress,remoteAddress,appId,userId,packageSid,enterpriseId,policyFlags,effectiveName
+    return ToString("%hs,%hs,%hs,%hs,%hs,%ws,%ws,%hs,%hs,%hs,%ws,%hs,%hs",
         eventName,
         ToString(header.timeStamp).c_str(),
-        EventHeaderFlagsToString(header.flags).c_str(),
         ToString(header.addressFamily),
         WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_IP_VERSION_SET) ? ToString(header.ipVersion) : c_notSetString,
         WI_IsFlagSet(header.flags, FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET) ? IpProtoToString(header.ipProtocol).c_str() : c_notSetString,
