@@ -34,3 +34,5 @@
 /EnumerateConnections/x64
 /EnumerateConnections/Win32
 /EnumerateConnections/ARM64
+/EnumerateConnections/Release
+/EnumerateConnections/Debug

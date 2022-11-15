@@ -1,8 +1,10 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #include <cstdio>
 #include <memory>
 #include <string>
 #include <type_traits>
-
 #include "platform_headers.h"
 #include "PrintFirewallAuditEvents.h"
 

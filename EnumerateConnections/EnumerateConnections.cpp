@@ -1,9 +1,9 @@
-// EnumerateConnections.cpp :
-//
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Uses the TCPIP WMI interfaces to enumerate TCP and UDP connections
 // Outputs information in csv format
 // If run from a cmd shell, can redirect the output to a csv file and open in Excel for deeper analysis
-//
 
 #include <iostream>
 #include <string>

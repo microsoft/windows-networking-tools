@@ -1,5 +1,7 @@
-#include <string>
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
+#include <string>
 #include "platform_headers.h"
 #include "ctSockaddr.hpp"
 

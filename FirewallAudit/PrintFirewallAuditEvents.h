@@ -1,4 +1,8 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #pragma once
+
 #include <fwpmtypes.h>
 #include <string>
 
