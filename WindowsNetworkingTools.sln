@@ -11,6 +11,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PrintConnectionProfiles", "
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MultipathLatencyAnalyzer", "MultipathLatencyAnalyzer\MultipathLatencyAnalyzer.vcxproj", "{85164DA8-EC9C-41DA-A26F-8B7C0695B810}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "NetworkListManager", "NetworkListManager\NetworkListManager.vcxproj", "{B6CEBFF2-9383-4657-8BB8-DB1944369B97}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64
@@ -56,6 +58,18 @@ Global
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x64.Build.0 = Release|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.ActiveCfg = Release|Win32
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.Build.0 = Release|Win32
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Debug|ARM64.Build.0 = Debug|ARM64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Debug|x64.ActiveCfg = Debug|x64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Debug|x64.Build.0 = Debug|x64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Debug|x86.ActiveCfg = Debug|Win32
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Debug|x86.Build.0 = Debug|Win32
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Release|ARM64.ActiveCfg = Release|ARM64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Release|ARM64.Build.0 = Release|ARM64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Release|x64.ActiveCfg = Release|x64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Release|x64.Build.0 = Release|x64
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Release|x86.ActiveCfg = Release|Win32
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -63,6 +77,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{9C26514A-31FD-43CB-823F-031FC27F1329} = {CF53C627-44D9-4B1C-A92D-32FD9C0BC88C}
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B} = {CF53C627-44D9-4B1C-A92D-32FD9C0BC88C}
+		{B6CEBFF2-9383-4657-8BB8-DB1944369B97} = {CF53C627-44D9-4B1C-A92D-32FD9C0BC88C}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F9C3B4B4-C9E3-48D9-B588-A37869E0A0E3}
