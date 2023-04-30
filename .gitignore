@@ -18,4 +18,8 @@
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
+/NetworkListManager/Win32
+/NetworkListManager/x64
+/NetworkListManager/ARM64
+
 /packages
