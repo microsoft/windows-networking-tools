@@ -21,5 +21,6 @@
 /NetworkListManager/Win32
 /NetworkListManager/x64
 /NetworkListManager/ARM64
+/NetworkListManager/Debug
 
 /packages
