@@ -65,7 +65,8 @@ try
     std::sort(normalizedServiceRules.begin(), normalizedServiceRules.end());
 
     // find duplicates
-	uint32_t totalDuplicateCount{};
+	uint32_t rulesWithDuplicates{};
+	uint32_t sumOfAllDuplicates{};
 	std::vector<NormalizedRuleInfo>::iterator startingIterator = normalizedRules.begin();
     for (;;)
     {
@@ -74,7 +75,7 @@ try
 		{
 			break;
 		}
-        ++totalDuplicateCount;
+        ++rulesWithDuplicates;
 
 		// find all duplicates of this instance
         auto localDuplicateIterator = duplicateRuleIterator;
@@ -89,8 +90,11 @@ try
             ++localDuplicateRuleCount;
 			++localDuplicateIterator;
         }
+
+		sumOfAllDuplicates += localDuplicateRuleCount;
 		wprintf(L"\nDuplicate rule found! Duplicate count (%u)\n", localDuplicateRuleCount);
-        // startingIterator is now updated to the next rule after the duplicates
+
+    	// startingIterator is now updated to the next rule after the duplicates
 		while (duplicateRuleIterator != startingIterator)
 		{
 			wprintf(L"\tname: %ws, description: %ws\n", duplicateRuleIterator->ruleName.get(), duplicateRuleIterator->ruleDescription.get());
@@ -98,6 +102,6 @@ try
         }
     }
 
-	wprintf(L"\n\nTotal rules: %llu\nTotal duplicate rules: %u\n", normalizedRules.size(), totalDuplicateCount);
+	wprintf(L"\n\nTotal rules: %llu\nRules with duplicates: %u\nTotal of all duplicate rules: %u\n", normalizedRules.size(), rulesWithDuplicates, sumOfAllDuplicates);
 }
 CATCH_RETURN()
