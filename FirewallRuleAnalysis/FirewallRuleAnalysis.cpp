@@ -45,9 +45,79 @@ inline std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* rule
 	return returnInfo;
 }
 
-int main(int argc, wchar_t** argv)
+void PrintHelp() noexcept
+{
+	wprintf(L"Usage (optional): [-includeDetails] [-exactMatches]\n");
+	wprintf(L"  -includeDetails: Print detailed information about the duplicates found\n");
+	wprintf(L"  -exactMatches: Only find exact matches (all fields must match)\n");
+}
+int wmain(int argc, wchar_t** argv)
 try
 {
+	/*
+	 *  support cleaning all rules that match exactly (every field)
+	 *  support finding near-matches
+	 *   - e.g. the first X characters in a rule match
+	 */
+	enum class MatchType
+	{
+		ExactMatch,
+		OnlyDetailsMatch
+	};
+
+	std::optional<bool> printDetails;
+	std::optional<MatchType> matchType;
+	if (argc > 1)
+	{
+		const std::vector<const wchar_t*> args(argv + 1, argv + argc);
+		for (const auto& arg : args)
+		{
+			if ((0 == _wcsicmp(arg, L"-help")) || (0 == _wcsicmp(arg, L"-?")))
+			{
+				PrintHelp();
+				return 0;
+			}
+
+			if (0 == _wcsicmp(arg, L"-includeDetails"))
+			{
+				if (printDetails.has_value())
+				{
+					// they specified the same arg twice!
+					PrintHelp();
+					return 1;
+				}
+
+				printDetails = true;
+			}
+			else if (0 == _wcsicmp(arg, L"-exactMatches"))
+			{
+				if (matchType.has_value())
+				{
+					// they specified the same arg twice!
+					PrintHelp();
+					return 1;
+				}
+
+				matchType = MatchType::ExactMatch;
+			}
+			else
+			{
+				wprintf(L"Unknown argument: %ws\n", arg);
+				PrintHelp();
+				return 1;
+			}
+		}
+	}
+
+	if (!printDetails.has_value())
+	{
+		printDetails = false;
+	}
+	if (!matchType.has_value())
+	{
+		matchType = MatchType::OnlyDetailsMatch;
+	}
+
 	const auto unInit = wil::CoInitializeEx();
 	const auto firewallPolicy = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
 	wil::com_ptr<INetFwRules> rules{};
@@ -65,37 +135,27 @@ try
 	 std::vector<NormalizedRuleInfo> normalizedServiceRules = BuildFirewallRules(rules.get());
 	 */
 
-	 /*
-	  *  support cleaning all rules that match exactly (every field)
-	  *  support finding near-matches
-	  *   - e.g. the first X characters in a rule match
-	  */
-	if (argc > 1)
+	 // find duplicates - excluding the name and if they are enabled or not
+	for (const auto pass : { MatchType::ExactMatch, MatchType::OnlyDetailsMatch })
 	{
-		std::vector<wchar_t*> args(argv, argv + argc);
-		if (args[1] == std::wstring(L"-cleanExactMatches"))
+		if (matchType.value() == MatchType::ExactMatch && pass != MatchType::ExactMatch)
 		{
-
+			continue;
 		}
-	}
+		if (matchType.value() == MatchType::OnlyDetailsMatch && pass != MatchType::OnlyDetailsMatch)
+		{
+			continue;
+		}
 
-	// find duplicates - excluding the name and if they are enabled or not
-	constexpr enum class MatchType
-	{
-		ExactMatch,
-		OnlyDetailsMatch
-	} matchLoop[2] = { MatchType::ExactMatch, MatchType::OnlyDetailsMatch };
-	for (const auto pass : matchLoop)
-	{
 		wprintf(L"\n----------------------------------------------------------------------------------------------------\n");
 		if (pass == MatchType::OnlyDetailsMatch)
 		{
-			wprintf(L"Processing Firewall rules - tracking rule that are duplicated, only matching key fields\n (not comparing the 'Name', 'Description', and 'Enabled' fields)");
+			wprintf(L"Processing Firewall rules - looking for rules that are duplicated, only matching key fields\n (not comparing the 'Name', 'Description', and 'Enabled' fields)");
 			std::ranges::sort(normalizedRules, SortOnlyMatchingDetails);
 		}
 		else
 		{
-			wprintf(L"Processing Firewall rules - tracking the rules that are duplicated, exactly matching all fields\n (except the field 'Enabled' - will match identical rules Enabled and Disabled)");
+			wprintf(L"Processing Firewall rules - looking for rules that are duplicated, exactly matching all fields\n (except the field 'Enabled' - will match identical rules Enabled and Disabled)");
 			std::ranges::sort(normalizedRules, SortExactMatches);
 		}
 		wprintf(L"\n----------------------------------------------------------------------------------------------------\n");
@@ -139,16 +199,19 @@ try
 			// if our sorting and comparison functions are correct, this should always find at least one duplicate
 			FAIL_FAST_IF(localDuplicateRuleCount == 1);
 			// upon exiting the for loop, startingIterator is updated to point to the next rule after the current duplicates
-
 			sumOfAllDuplicates += localDuplicateRuleCount;
-			wprintf(L"\nDuplicate rule found! Duplicate count (%u)\n", localDuplicateRuleCount);
-			while (duplicateRuleIterator != startingIterator)
+
+			if (printDetails.value())
 			{
-				wprintf(L"\t[%ws %ws] name: %ws, description: %ws\n",
-					duplicateRuleIterator->ruleDirection == NET_FW_RULE_DIR_IN ? L"INBOUND" : L"OUTBOUND",
-					duplicateRuleIterator->ruleEnabled ? L"ENABLED" : L"DISABLED",
-					duplicateRuleIterator->ruleName.get(), duplicateRuleIterator->ruleDescription.get());
-				++duplicateRuleIterator;
+				wprintf(L"\nDuplicate rule found! Duplicate count (%u)\n", localDuplicateRuleCount);
+				while (duplicateRuleIterator != startingIterator)
+				{
+					wprintf(L"\t[%ws %ws] name: %ws, description: %ws\n",
+						duplicateRuleIterator->ruleDirection == NET_FW_RULE_DIR_IN ? L"INBOUND" : L"OUTBOUND",
+						duplicateRuleIterator->ruleEnabled ? L"ENABLED" : L"DISABLED",
+						duplicateRuleIterator->ruleName.get(), duplicateRuleIterator->ruleDescription.get());
+					++duplicateRuleIterator;
+				}
 			}
 		}
 
