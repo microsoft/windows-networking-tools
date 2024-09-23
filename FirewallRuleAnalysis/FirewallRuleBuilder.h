@@ -12,6 +12,8 @@ struct NormalizedRuleInfo
 	wil::unique_bstr ruleName;
 	wil::unique_bstr ruleDescription;
 	std::wstring normalizedRuleDetails;
+	NET_FW_RULE_DIRECTION ruleDirection;
+	bool ruleEnabled;
 
 	// guarantee this object is never copied, only moved
 	NormalizedRuleInfo(const NormalizedRuleInfo&) = delete;
@@ -84,34 +86,105 @@ struct NormalizedRuleInfo
 	}
 };
 
-inline bool operator==(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
+inline bool RulesMatchExactly(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs)
 {
+	constexpr BOOL bIgnoreCase = TRUE;
+
 	if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
 	{
 		return false;
 	}
 
-	constexpr BOOL bIgnoreCase = TRUE;
-	return CSTR_EQUAL == CompareStringOrdinal(
+	const auto ruleNamesMatch = CompareStringOrdinal(
+		lhs.ruleName.get(),
+		-1,
+		rhs.ruleName.get(),
+		-1,
+		bIgnoreCase);
+	if (ruleNamesMatch != CSTR_EQUAL)
+	{
+		return false;
+	}
+
+	const auto ruleDescriptionsMatch = CompareStringOrdinal(
+		lhs.ruleDescription.get(),
+		-1,
+		rhs.ruleDescription.get(),
+		-1,
+		bIgnoreCase);
+	if (ruleDescriptionsMatch != CSTR_EQUAL)
+	{
+		return false;
+	}
+
+	const auto ruleDetailsMatch = CompareStringOrdinal(
 		lhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(lhs.normalizedRuleDetails.size()),
 		rhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(rhs.normalizedRuleDetails.size()),
 		bIgnoreCase);
-}
-inline bool operator!=(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
-{
-	return !(lhs == rhs);
+	if (ruleDetailsMatch != CSTR_EQUAL)
+	{
+		return false;
+	}
+
+	return true;
 }
 
-inline bool operator<(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
+inline bool RuleDetailsMatch(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs)
 {
+	constexpr BOOL bIgnoreCase = TRUE;
+
 	if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
+	{
+		return false;
+	}
+
+	const auto ruleDetailsMatch = CompareStringOrdinal(
+		lhs.normalizedRuleDetails.c_str(),
+		static_cast<int>(lhs.normalizedRuleDetails.size()),
+		rhs.normalizedRuleDetails.c_str(),
+		static_cast<int>(rhs.normalizedRuleDetails.size()),
+		bIgnoreCase);
+	if (ruleDetailsMatch != CSTR_EQUAL)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+inline bool SortExactMatches(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
+{
+	constexpr BOOL bIgnoreCase = TRUE;
+
+    if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
 	{
 		return lhs.normalizedRuleDetails.size() < rhs.normalizedRuleDetails.size();
 	}
 
-	constexpr BOOL bIgnoreCase = TRUE;
+	const auto ruleNamesMatch = CompareStringOrdinal(
+		lhs.ruleName.get(),
+		-1,
+		rhs.ruleName.get(),
+		-1,
+		bIgnoreCase);
+	if (ruleNamesMatch != CSTR_EQUAL)
+	{
+		return CSTR_LESS_THAN == ruleNamesMatch;
+	}
+
+	const auto ruleDescriptionsMatch = CompareStringOrdinal(
+		lhs.ruleDescription.get(),
+		-1,
+		rhs.ruleDescription.get(),
+		-1,
+		bIgnoreCase);
+	if (ruleDescriptionsMatch != CSTR_EQUAL)
+	{
+		return CSTR_LESS_THAN == ruleDescriptionsMatch;
+	}
+
 	return CSTR_LESS_THAN == CompareStringOrdinal(
 		lhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(lhs.normalizedRuleDetails.size()),
@@ -119,9 +192,44 @@ inline bool operator<(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& r
 		static_cast<int>(rhs.normalizedRuleDetails.size()),
 		bIgnoreCase);
 }
-inline bool operator>(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
+
+inline bool SortOnlyMatchingDetails(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
 {
-	return !(lhs < rhs);
+	constexpr BOOL bIgnoreCase = TRUE;
+
+    if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
+	{
+		return lhs.normalizedRuleDetails.size() < rhs.normalizedRuleDetails.size();
+	}
+
+	const auto ruleNamesMatch = CompareStringOrdinal(
+		lhs.ruleName.get(),
+		-1,
+		rhs.ruleName.get(),
+		-1,
+		bIgnoreCase);
+	if (ruleNamesMatch != CSTR_EQUAL)
+	{
+		return CSTR_LESS_THAN == ruleNamesMatch;
+	}
+
+	const auto ruleDescriptionsMatch = CompareStringOrdinal(
+		lhs.ruleDescription.get(),
+		-1,
+		rhs.ruleDescription.get(),
+		-1,
+		bIgnoreCase);
+	if (ruleDescriptionsMatch != CSTR_EQUAL)
+	{
+		return CSTR_LESS_THAN == ruleDescriptionsMatch;
+	}
+
+	return CSTR_LESS_THAN == CompareStringOrdinal(
+		lhs.normalizedRuleDetails.c_str(),
+		static_cast<int>(lhs.normalizedRuleDetails.size()),
+		rhs.normalizedRuleDetails.c_str(),
+		static_cast<int>(rhs.normalizedRuleDetails.size()),
+		bIgnoreCase);
 }
 
 inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule>& rule)
@@ -173,6 +281,7 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule>& 
 		NET_FW_RULE_DIRECTION direction{};
 		THROW_IF_FAILED(latestRule->get_Direction(&direction));
 		ruleInfo.AppendValue(direction);
+		ruleInfo.ruleDirection = direction;
 
 		wil::unique_variant interfaces;
 		THROW_IF_FAILED(latestRule->get_Interfaces(&interfaces));
@@ -182,10 +291,11 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule>& 
 		THROW_IF_FAILED(latestRule->get_InterfaceTypes(&interfaceTypes));
 		ruleInfo.AppendValue(interfaceTypes);
 
+		VARIANT_BOOL enabled{};
+		THROW_IF_FAILED(latestRule->get_Enabled(&enabled));
 		// not going to require matching enabled vs disabled when matching the rules
-		// VARIANT_BOOL enabled{};
-		// THROW_IF_FAILED(latestRule->get_Enabled(&enabled));
 		// ruleInfo.AppendValue(enabled);
+		ruleInfo.ruleEnabled = !!enabled;
 
 		wil::unique_bstr grouping{};
 		THROW_IF_FAILED(latestRule->get_Grouping(&grouping));
