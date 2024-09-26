@@ -44,12 +44,20 @@ inline std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* rule
 	std::vector<NormalizedRuleInfo> returnInfo;
 	returnInfo.reserve(count);
 
+	uint32_t enum_count {0};
 	wil::com_ptr<IEnumVARIANT> enumVariant;
 	THROW_IF_FAILED(rules->get__NewEnum(enumVariant.put_unknown()));
 	HRESULT nextResult{ S_OK };
 	// enumerators (IEnum*) loop until S_FALSE
 	while (nextResult == S_OK)
 	{
+		// show progress by a . for every 100 rules
+		if (enum_count % 100 == 0)
+		{
+			wprintf(L".");
+		}
+		++enum_count;
+
 		wil::unique_variant nextInstance;
 		ULONG fetched{};
 		nextResult = enumVariant->Next(1, nextInstance.addressof(), &fetched);
