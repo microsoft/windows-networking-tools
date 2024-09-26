@@ -123,12 +123,7 @@ inline bool RulesMatchExactly(const NormalizedRuleInfo& lhs, const NormalizedRul
 		rhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(rhs.normalizedRuleDetails.size()),
 		bIgnoreCase);
-	if (ruleDetailsMatch != CSTR_EQUAL)
-	{
-		return false;
-	}
-
-	return true;
+	return ruleDetailsMatch == CSTR_EQUAL;
 }
 
 inline bool RuleDetailsMatch(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs)
@@ -146,12 +141,7 @@ inline bool RuleDetailsMatch(const NormalizedRuleInfo& lhs, const NormalizedRule
 		rhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(rhs.normalizedRuleDetails.size()),
 		bIgnoreCase);
-	if (ruleDetailsMatch != CSTR_EQUAL)
-	{
-		return false;
-	}
-
-	return true;
+	return ruleDetailsMatch == CSTR_EQUAL;
 }
 
 inline bool SortExactMatches(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
