@@ -302,6 +302,9 @@ try
 				// - there might be another rule with the same name but not in this set of duplicate rules
 				// - we can't control which duplicate to remove - so we must track if any are enabled
 				//   and once only one remains, we must enable it
+				// - currently tracking OUTBOUND and INBOUND as separate rules (that don't match)
+				//   but this is problematic in this case that there are rules that match both INBOUND and OUTBOUND rules
+				//   since deleting a rule by name would delete both
 
 				// first scan every name that's not part of this set of duplicates
 				bool nonDuplicateWithConflictingName = false;
