@@ -9,9 +9,11 @@
 
 struct NormalizedRuleInfo
 {
+	wil::com_ptr<INetFwRule3> rule;
 	wil::unique_bstr ruleName;
 	wil::unique_bstr ruleDescription;
 	std::wstring normalizedRuleDetails;
+	bool normalizedRuleDetailsContainsNonAsciiString = false;
 	NET_FW_RULE_DIRECTION ruleDirection;
 	bool ruleEnabled;
 
@@ -19,17 +21,34 @@ struct NormalizedRuleInfo
 	NormalizedRuleInfo(const NormalizedRuleInfo&) = delete;
 	NormalizedRuleInfo& operator=(const NormalizedRuleInfo&) = delete;
 
-	NormalizedRuleInfo(NormalizedRuleInfo&&) = default;
-	NormalizedRuleInfo& operator=(NormalizedRuleInfo&&) = default;
+	NormalizedRuleInfo(NormalizedRuleInfo&&) noexcept = default;
+	NormalizedRuleInfo& operator=(NormalizedRuleInfo&&) noexcept = default;
 
 	NormalizedRuleInfo() = default;
 	~NormalizedRuleInfo() = default;
 
-	void AppendValue(const wil::unique_bstr& value)
+	void AppendValue(const BSTR value)
 	{
-		if (value && value.get()[0] != L'\0')
+		if (value && value[0] != L'\0')
 		{
-			normalizedRuleDetails.append(value.get());
+			// if is an ASCII character (ANSI code page) then can trivially convert to lower-case
+			// and can avoid a more expensive call to CompareStringOrdinal
+			for (wchar_t* nextCharacter = value; *nextCharacter != '\0';)
+			{
+				if (iswascii(*nextCharacter))
+				{
+					// towlower only works on ASCII characters
+					*nextCharacter = towlower(*nextCharacter);
+				}
+				else
+				{
+					// if hit any non-ascii character, just break from the loop
+					normalizedRuleDetailsContainsNonAsciiString = true;
+					break;
+				}
+				++nextCharacter;
+			}
+			normalizedRuleDetails.append(value);
 		}
 	}
 
@@ -68,7 +87,7 @@ struct NormalizedRuleInfo
 
 				if (element.bstrVal && element.bstrVal[0] != L'\0')
 				{
-					normalizedRuleDetails.append(element.bstrVal);
+					AppendValue(element.bstrVal);
 				}
 			}
 		}
@@ -86,11 +105,44 @@ struct NormalizedRuleInfo
 	}
 };
 
-inline bool RulesMatchExactly(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs)
+inline uint32_t RuleDetailsDeepMatchComparisonCount = 0;
+
+inline bool RulesNamesMatch(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
+{
+	constexpr BOOL bIgnoreCase = TRUE;
+
+	// checking the string length of a BSTR is very cheap - it just reads the length field in the bstr
+	// (the 32 bits allocated right before the start of the string)
+	if (SysStringLen(lhs.ruleName.get()) != SysStringLen(rhs.ruleName.get()))
+	{
+		return false;
+	}
+
+	const auto ruleNamesMatch = CompareStringOrdinal(
+		lhs.ruleName.get(),
+		-1,
+		rhs.ruleName.get(),
+		-1,
+		bIgnoreCase);
+	return ruleNamesMatch == CSTR_EQUAL;
+}
+
+inline bool RulesMatchExactly(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
 {
 	constexpr BOOL bIgnoreCase = TRUE;
 
 	if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
+	{
+		return false;
+	}
+
+	// checking the string length of a BSTR is very cheap - it just reads the length field in the bstr
+	// (the 32 bits allocated right before the start of the string)
+	if (SysStringLen(lhs.ruleName.get()) != SysStringLen(rhs.ruleName.get()))
+	{
+		return false;
+	}
+	if (SysStringLen(lhs.ruleDescription.get()) != SysStringLen(rhs.ruleDescription.get()))
 	{
 		return false;
 	}
@@ -117,6 +169,16 @@ inline bool RulesMatchExactly(const NormalizedRuleInfo& lhs, const NormalizedRul
 		return false;
 	}
 
+	// if all ascii characters, can just do a raw memcmp without any conversions
+	if (!lhs.normalizedRuleDetailsContainsNonAsciiString && !rhs.normalizedRuleDetailsContainsNonAsciiString)
+	{
+		return memcmp(
+			lhs.normalizedRuleDetails.c_str(),
+			rhs.normalizedRuleDetails.c_str(),
+			lhs.normalizedRuleDetails.size() * sizeof(wchar_t)) == 0;
+	}
+
+	++RuleDetailsDeepMatchComparisonCount;
 	const auto ruleDetailsMatch = CompareStringOrdinal(
 		lhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(lhs.normalizedRuleDetails.size()),
@@ -134,7 +196,16 @@ inline bool RuleDetailsMatch(const NormalizedRuleInfo& lhs, const NormalizedRule
 	{
 		return false;
 	}
+	// if all ascii characters, can just do a raw memcmp without any conversions
+	if (!lhs.normalizedRuleDetailsContainsNonAsciiString && !rhs.normalizedRuleDetailsContainsNonAsciiString)
+	{
+		return memcmp(
+			lhs.normalizedRuleDetails.c_str(),
+			rhs.normalizedRuleDetails.c_str(),
+			lhs.normalizedRuleDetails.size() * sizeof(wchar_t)) == 0;
+	}
 
+	++RuleDetailsDeepMatchComparisonCount;
 	const auto ruleDetailsMatch = CompareStringOrdinal(
 		lhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(lhs.normalizedRuleDetails.size()),
@@ -148,7 +219,7 @@ inline bool SortExactMatches(const NormalizedRuleInfo& lhs, const NormalizedRule
 {
 	constexpr BOOL bIgnoreCase = TRUE;
 
-    if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
+	if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
 	{
 		return lhs.normalizedRuleDetails.size() < rhs.normalizedRuleDetails.size();
 	}
@@ -175,19 +246,30 @@ inline bool SortExactMatches(const NormalizedRuleInfo& lhs, const NormalizedRule
 		return CSTR_LESS_THAN == ruleDescriptionsMatch;
 	}
 
-	return CSTR_LESS_THAN == CompareStringOrdinal(
+	const auto normalizedRulesMatch = CompareStringOrdinal(
 		lhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(lhs.normalizedRuleDetails.size()),
 		rhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(rhs.normalizedRuleDetails.size()),
 		bIgnoreCase);
+	if (normalizedRulesMatch != CSTR_EQUAL)
+	{
+		return CSTR_LESS_THAN == normalizedRulesMatch;
+	}
+
+	// if everything matches, then sort by rules that are enabled before rules that are disabled
+	if (lhs.ruleEnabled && !rhs.ruleEnabled)
+	{
+		return true;
+	}
+	return false;
 }
 
 inline bool SortOnlyMatchingDetails(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
 {
 	constexpr BOOL bIgnoreCase = TRUE;
 
-    if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
+	if (lhs.normalizedRuleDetails.size() != rhs.normalizedRuleDetails.size())
 	{
 		return lhs.normalizedRuleDetails.size() < rhs.normalizedRuleDetails.size();
 	}
@@ -214,128 +296,141 @@ inline bool SortOnlyMatchingDetails(const NormalizedRuleInfo& lhs, const Normali
 		return CSTR_LESS_THAN == ruleDescriptionsMatch;
 	}
 
-	return CSTR_LESS_THAN == CompareStringOrdinal(
+	const auto normalizedRulesMatch = CompareStringOrdinal(
 		lhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(lhs.normalizedRuleDetails.size()),
 		rhs.normalizedRuleDetails.c_str(),
 		static_cast<int>(rhs.normalizedRuleDetails.size()),
 		bIgnoreCase);
+	if (normalizedRulesMatch != CSTR_EQUAL)
+	{
+		return CSTR_LESS_THAN == normalizedRulesMatch;
+	}
+
+	// if everything matches, then sort by rules that are enabled before rules that are disabled
+	if (lhs.ruleEnabled && !rhs.ruleEnabled)
+	{
+		return true;
+	}
+	return false;
 }
 
-inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule>& rule)
+inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>& rule) noexcept
 {
 	NormalizedRuleInfo ruleInfo{};
-
-	// QI to the latest firewall rule interface
-	wil::com_ptr<INetFwRule3> latestRule;
-	rule.query_to<INetFwRule3>(&latestRule);
-
-	// name and description are volatile - they don't impact the final filter
-	THROW_IF_FAILED(latestRule->get_Name(&ruleInfo.ruleName));
-	THROW_IF_FAILED(latestRule->get_Description(&ruleInfo.ruleDescription));
+	// save for later if we determine to delete the rule (if it's a duplicate)
+	// also avoids the cost of deleting each rule object as we enumerate all rules
+	// (deleting the rule object requries a COM call back to the firewall service)
+	ruleInfo.rule = rule;
 
 	try
 	{
+		// name and description are volatile - they don't impact the final filter
+		THROW_IF_FAILED(rule->get_Name(&ruleInfo.ruleName));
+		THROW_IF_FAILED(rule->get_Description(&ruleInfo.ruleDescription));
+
 		wil::unique_bstr applicationName{};
-		THROW_IF_FAILED(latestRule->get_ApplicationName(&applicationName));
-		ruleInfo.AppendValue(applicationName);
+		THROW_IF_FAILED(rule->get_ApplicationName(&applicationName));
+		ruleInfo.AppendValue(applicationName.get());
 
 		wil::unique_bstr serviceName{};
-		THROW_IF_FAILED(latestRule->get_ServiceName(&serviceName));
-		ruleInfo.AppendValue(serviceName);
+		THROW_IF_FAILED(rule->get_ServiceName(&serviceName));
+		ruleInfo.AppendValue(serviceName.get());
 
 		LONG protocol{};
-		THROW_IF_FAILED(latestRule->get_Protocol(&protocol));
+		THROW_IF_FAILED(rule->get_Protocol(&protocol));
 		ruleInfo.AppendValue(protocol);
 
 		wil::unique_bstr localPorts{};
-		THROW_IF_FAILED(latestRule->get_LocalPorts(&localPorts));
-		ruleInfo.AppendValue(localPorts);
+		THROW_IF_FAILED(rule->get_LocalPorts(&localPorts));
+		ruleInfo.AppendValue(localPorts.get());
 
 		wil::unique_bstr remotePorts{};
-		THROW_IF_FAILED(latestRule->get_RemotePorts(&remotePorts));
-		ruleInfo.AppendValue(remotePorts);
+		THROW_IF_FAILED(rule->get_RemotePorts(&remotePorts));
+		ruleInfo.AppendValue(remotePorts.get());
 
 		wil::unique_bstr localAddresses{};
-		THROW_IF_FAILED(latestRule->get_LocalAddresses(&localAddresses));
-		ruleInfo.AppendValue(localAddresses);
+		THROW_IF_FAILED(rule->get_LocalAddresses(&localAddresses));
+		ruleInfo.AppendValue(localAddresses.get());
 
 		wil::unique_bstr remoteAddresses{};
-		THROW_IF_FAILED(latestRule->get_RemoteAddresses(&remoteAddresses));
-		ruleInfo.AppendValue(remoteAddresses);
+		THROW_IF_FAILED(rule->get_RemoteAddresses(&remoteAddresses));
+		ruleInfo.AppendValue(remoteAddresses.get());
 
 		wil::unique_bstr icmpTypesAndCodes{};
-		THROW_IF_FAILED(latestRule->get_IcmpTypesAndCodes(&icmpTypesAndCodes));
-		ruleInfo.AppendValue(icmpTypesAndCodes);
+		THROW_IF_FAILED(rule->get_IcmpTypesAndCodes(&icmpTypesAndCodes));
+		ruleInfo.AppendValue(icmpTypesAndCodes.get());
 
 		NET_FW_RULE_DIRECTION direction{};
-		THROW_IF_FAILED(latestRule->get_Direction(&direction));
+		THROW_IF_FAILED(rule->get_Direction(&direction));
 		ruleInfo.AppendValue(direction);
 		ruleInfo.ruleDirection = direction;
 
 		wil::unique_variant interfaces;
-		THROW_IF_FAILED(latestRule->get_Interfaces(&interfaces));
+		THROW_IF_FAILED(rule->get_Interfaces(&interfaces));
 		ruleInfo.AppendValue(interfaces);
 
 		wil::unique_bstr interfaceTypes;
-		THROW_IF_FAILED(latestRule->get_InterfaceTypes(&interfaceTypes));
-		ruleInfo.AppendValue(interfaceTypes);
+		THROW_IF_FAILED(rule->get_InterfaceTypes(&interfaceTypes));
+		ruleInfo.AppendValue(interfaceTypes.get());
 
 		VARIANT_BOOL enabled{};
-		THROW_IF_FAILED(latestRule->get_Enabled(&enabled));
+		THROW_IF_FAILED(rule->get_Enabled(&enabled));
 		// not going to require matching enabled vs disabled when matching the rules
 		// ruleInfo.AppendValue(enabled);
 		ruleInfo.ruleEnabled = !!enabled;
 
 		wil::unique_bstr grouping{};
-		THROW_IF_FAILED(latestRule->get_Grouping(&grouping));
-		ruleInfo.AppendValue(grouping);
+		THROW_IF_FAILED(rule->get_Grouping(&grouping));
+		ruleInfo.AppendValue(grouping.get());
 
 		long profiles{};
-		THROW_IF_FAILED(latestRule->get_Profiles(&profiles));
+		THROW_IF_FAILED(rule->get_Profiles(&profiles));
 		ruleInfo.AppendValue(profiles);
 
 		VARIANT_BOOL edgeTraversal{};
-		THROW_IF_FAILED(latestRule->get_EdgeTraversal(&edgeTraversal));
+		THROW_IF_FAILED(rule->get_EdgeTraversal(&edgeTraversal));
 		ruleInfo.AppendValue(edgeTraversal);
 
 		NET_FW_ACTION action{};
-		THROW_IF_FAILED(latestRule->get_Action(&action));
+		THROW_IF_FAILED(rule->get_Action(&action));
 		ruleInfo.AppendValue(action);
 
 		long edgeTraversalOptions{};
-		THROW_IF_FAILED(latestRule->get_EdgeTraversalOptions(&edgeTraversalOptions));
+		THROW_IF_FAILED(rule->get_EdgeTraversalOptions(&edgeTraversalOptions));
 		ruleInfo.AppendValue(edgeTraversalOptions);
 
 		wil::unique_bstr localAppPackageId{};
-		THROW_IF_FAILED(latestRule->get_LocalAppPackageId(&localAppPackageId));
-		ruleInfo.AppendValue(localAppPackageId);
+		THROW_IF_FAILED(rule->get_LocalAppPackageId(&localAppPackageId));
+		ruleInfo.AppendValue(localAppPackageId.get());
 
 		wil::unique_bstr localUserOwner{};
-		THROW_IF_FAILED(latestRule->get_LocalUserOwner(&localUserOwner));
-		ruleInfo.AppendValue(localUserOwner);
+		THROW_IF_FAILED(rule->get_LocalUserOwner(&localUserOwner));
+		ruleInfo.AppendValue(localUserOwner.get());
 
 		wil::unique_bstr localUserAuthorizedList{};
-		THROW_IF_FAILED(latestRule->get_LocalUserAuthorizedList(&localUserAuthorizedList));
-		ruleInfo.AppendValue(localUserAuthorizedList);
+		THROW_IF_FAILED(rule->get_LocalUserAuthorizedList(&localUserAuthorizedList));
+		ruleInfo.AppendValue(localUserAuthorizedList.get());
 
 		wil::unique_bstr remoteUserAuthorizedList{};
-		THROW_IF_FAILED(latestRule->get_RemoteUserAuthorizedList(&remoteUserAuthorizedList));
-		ruleInfo.AppendValue(remoteUserAuthorizedList);
+		THROW_IF_FAILED(rule->get_RemoteUserAuthorizedList(&remoteUserAuthorizedList));
+		ruleInfo.AppendValue(remoteUserAuthorizedList.get());
 
 		wil::unique_bstr remoteMachineAuthorizedList{};
-		THROW_IF_FAILED(latestRule->get_RemoteMachineAuthorizedList(&remoteMachineAuthorizedList));
-		ruleInfo.AppendValue(remoteMachineAuthorizedList);
+		THROW_IF_FAILED(rule->get_RemoteMachineAuthorizedList(&remoteMachineAuthorizedList));
+		ruleInfo.AppendValue(remoteMachineAuthorizedList.get());
 
 		long secureFlags{};
-		THROW_IF_FAILED(latestRule->get_SecureFlags(&secureFlags));
+		THROW_IF_FAILED(rule->get_SecureFlags(&secureFlags));
 		ruleInfo.AppendValue(secureFlags);
 	}
 	catch (...)
 	{
 		wprintf(L"Failed to read rule %ws (%ws) - 0x%x\n",
-			ruleInfo.ruleName.get(), ruleInfo.ruleDescription.get(), wil::ResultFromCaughtException());
-		throw;
+			ruleInfo.ruleName ? ruleInfo.ruleName.get() : L"(unknown)",
+			ruleInfo.ruleDescription ? ruleInfo.ruleDescription.get() : L"(unknown)",
+			wil::ResultFromCaughtException());
+		return {};
 	}
 
 	return ruleInfo;
