@@ -121,7 +121,7 @@ void DeleteDuplicateRules(
 	for (auto it = normalized_rules.begin(); it != normalized_rules.end(); ++it)
 	{
 		// ignore this rule if we have previously deleted it
-		if (it->ruleDeleted)
+		if (!it->rule)
 		{
 			continue;
 		}
@@ -191,7 +191,8 @@ void DeleteDuplicateRules(
 		}
 		else
 		{
-			it->ruleDeleted = true;
+			// close the COM object once we have deleted the corresponding rule
+			it->rule.reset();
 			++deletedRules;
 		}
 	}
@@ -457,12 +458,19 @@ try
 			totalRulesWithDuplicates,
 			sumOfAllDuplicateRules);
 
+		wprintf(L"\n\n... <internal statistics> ...");
 		if (!deleteDuplicates.value())
 		{
-			wprintf(L"\n... parsing rules took %lld milliseconds\n", timeToProcess);
+			if (timeToProcess > 0)
+			{
+				wprintf(L"\n... <parsing rules took %lld milliseconds>", timeToProcess);
+			}
+			else
+			{
+				wprintf(L"\n... <parsing rules took less than 1 millisecond>");
+			}
 		}
-
-		wprintf(L"\n... count of rule comparisons that required a deep CompareString call: %u\n", RuleDetailsDeepMatchComparisonCount);
+		wprintf(L"\n... <count of rule comparisons that required a deep CompareString call: %u>\n", RuleDetailsDeepMatchComparisonCount);
 	}
 }
 CATCH_RETURN()

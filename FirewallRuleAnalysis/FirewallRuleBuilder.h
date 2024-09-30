@@ -18,7 +18,6 @@ struct NormalizedRuleInfo
 	bool normalizedRuleDetailsContainsNonAsciiString = false;
 
     bool temporarilyRenamed = false;
-	bool ruleDeleted = false;
 	bool ruleEnabled = false;
 
 	// guarantee this object is never copied, only moved
