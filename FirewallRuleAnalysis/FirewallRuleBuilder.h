@@ -12,10 +12,14 @@ struct NormalizedRuleInfo
 	wil::com_ptr<INetFwRule3> rule;
 	wil::unique_bstr ruleName;
 	wil::unique_bstr ruleDescription;
-	std::wstring normalizedRuleDetails;
-	bool normalizedRuleDetailsContainsNonAsciiString = false;
 	NET_FW_RULE_DIRECTION ruleDirection;
-	bool ruleEnabled;
+
+    std::wstring normalizedRuleDetails;
+	bool normalizedRuleDetailsContainsNonAsciiString = false;
+
+    bool temporarilyRenamed = false;
+	bool ruleDeleted = false;
+	bool ruleEnabled = false;
 
 	// guarantee this object is never copied, only moved
 	NormalizedRuleInfo(const NormalizedRuleInfo&) = delete;
@@ -59,7 +63,7 @@ struct NormalizedRuleInfo
 		if (value.vt == VT_EMPTY)
 		{
 			// it's acceptable to be either EMPTY
-			// or an ARRAY of VARIANTs
+			// or an ARRAY of VARIANT's
 			return;
 		}
 		if (value.vt != (VT_ARRAY | VT_VARIANT))
@@ -107,22 +111,24 @@ struct NormalizedRuleInfo
 
 inline uint32_t RuleDetailsDeepMatchComparisonCount = 0;
 
-inline bool RulesNamesMatch(const NormalizedRuleInfo& lhs, const NormalizedRuleInfo& rhs) noexcept
+inline bool RuleNamesMatch(const wil::unique_bstr& lhs, const wil::unique_bstr& rhs) noexcept
 {
 	constexpr BOOL bIgnoreCase = TRUE;
 
 	// checking the string length of a BSTR is very cheap - it just reads the length field in the bstr
 	// (the 32 bits allocated right before the start of the string)
-	if (SysStringLen(lhs.ruleName.get()) != SysStringLen(rhs.ruleName.get()))
+	const auto lhs_length = SysStringLen(lhs.get());
+	const auto rhs_length = SysStringLen(rhs.get());
+	if (lhs_length != rhs_length)
 	{
 		return false;
 	}
 
 	const auto ruleNamesMatch = CompareStringOrdinal(
-		lhs.ruleName.get(),
-		-1,
-		rhs.ruleName.get(),
-		-1,
+		lhs.get(),
+		static_cast<int>(lhs_length),
+		rhs.get(),
+		static_cast<int>(rhs_length),
 		bIgnoreCase);
 	return ruleNamesMatch == CSTR_EQUAL;
 }
@@ -320,7 +326,7 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 	NormalizedRuleInfo ruleInfo{};
 	// save for later if we determine to delete the rule (if it's a duplicate)
 	// also avoids the cost of deleting each rule object as we enumerate all rules
-	// (deleting the rule object requries a COM call back to the firewall service)
+	// (deleting the rule object requires a COM call back to the firewall service)
 	ruleInfo.rule = rule;
 
 	try
@@ -380,6 +386,10 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		// ruleInfo.AppendValue(enabled);
 		ruleInfo.ruleEnabled = !!enabled;
 
+		// Grouping is technically not a field that creates unique filter
+		// but keeping as part of what makes rules unique
+		// i.e., if there are 2 rules with the same names, but different groups
+		// then we want to keep them both - since presumably that have different sources
 		wil::unique_bstr grouping{};
 		THROW_IF_FAILED(rule->get_Grouping(&grouping));
 		ruleInfo.AppendValue(grouping.get());

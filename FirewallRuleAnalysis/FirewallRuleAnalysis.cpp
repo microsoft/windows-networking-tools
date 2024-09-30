@@ -1,11 +1,12 @@
 /*
  * FwRuleAnalysis
  *
- * - Provides users the ability to find rundancies and inconsistencies in the Windows Firewall rules
+ * - Provides users the ability to find redundancies and inconsistencies in the Windows Firewall rules
  *
  */
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <vector>
 
 #include <Windows.h>
@@ -35,16 +36,13 @@ private:
 	decltype(std::chrono::high_resolution_clock::now()) m_startTime_ns;
 };
 
-inline std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwPolicy2* firewallPolicy)
+inline std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRules)
 {
 	std::vector<NormalizedRuleInfo> returnInfo;
 	uint32_t enum_count{ 0 };
 
-	wil::com_ptr<INetFwRules> rules{};
-	THROW_IF_FAILED(firewallPolicy->get_Rules(&rules));
-
 	wil::com_ptr<IEnumVARIANT> enumRules;
-	THROW_IF_FAILED(rules->get__NewEnum(enumRules.put_unknown()));
+	THROW_IF_FAILED(firewallRules->get__NewEnum(enumRules.put_unknown()));
 
 	// enumerators (IEnum*) loop until Next() returns S_FALSE
 	for (HRESULT nextResult = S_OK; nextResult == S_OK;)
@@ -76,6 +74,152 @@ inline std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwPolicy2* fi
 	return returnInfo;
 }
 
+// The only API to remove a rule is INetFwRules::Remove, but that takes the Name of a rule
+// this is problematic because the Name property of Firewall Rules is not guaranteed to be unique
+// (the COM Name property matches the WMI/Powershell property DisplayName)
+// Thus using the COM API, we can't control *exactly* which rule to remove when we pass it the name
+// To get around this, we must first temporarily rename all the rules matching the Name
+// that we don't want to accidentally delete
+// - i.e., we only keep the duplicate Rules with the identified name
+//   we must rename the first 'duplicate' since that's the one rule of the duplicates to keep
+//   we must rename all the other non-duplicate rules that happen to have the same name
+//   (so they are not accidentally deleted)
+void DeleteDuplicateRules(
+	_In_ INetFwRules* firewallRules,
+	std::vector<NormalizedRuleInfo>& normalized_rules, // non-const as we set a boolean when we need to temporarily rename a rule
+	const std::vector<NormalizedRuleInfo>::iterator& duplicate_rule_begin,
+	const std::vector<NormalizedRuleInfo>::iterator& duplicate_rule_end)
+{
+	wprintf(
+		L"\nDeleting %lld duplicates for the rule:\n"
+		L"\tName: %ws\n"
+		L"\tDescription: %ws\n"
+		L"\tDirection: %ws\n"
+		L"\tEnabled: %ws\n",
+		duplicate_rule_end - duplicate_rule_begin - 1,
+		duplicate_rule_begin->ruleName.get(),
+		duplicate_rule_begin->ruleDescription.get(),
+		duplicate_rule_begin->ruleDirection == NET_FW_RULE_DIR_IN ? L"Inbound" : L"Outbound",
+		duplicate_rule_begin->ruleEnabled ? L"Enabled" : L"Disabled");
+
+	wprintf(L">> Press Y key to continue to delete duplicates of this rule - else any other key to skip this rule <<\n");
+	std::wstring input;
+	std::getline(std::wcin, input);
+	if (input != L"y" && input != L"Y")
+	{
+		wprintf(L" >> skipping this rule <<\n");
+		return;
+	}
+
+	// first, temporarily rename all rules that we don't want to accidentally delete
+	// i.e., keep the rules (duplicate_rule_begin + 1) to (duplicateRuleEndIterator - 1)
+	const auto& ruleNameToKeep = duplicate_rule_begin->ruleName;
+	const auto tempRuleName = wil::make_bstr((std::wstring(ruleNameToKeep.get()) + L"__temp__").c_str());
+
+	uint32_t countOfRulesRenamed = 0;
+	// nothing in the loop should throw - so that we can put all names back that we temporarily renamed
+	for (auto it = normalized_rules.begin(); it != normalized_rules.end(); ++it)
+	{
+		// ignore this rule if we have previously deleted it
+		if (it->ruleDeleted)
+		{
+			continue;
+		}
+		// check if it is pointing to a rule we want to delete (one of the duplicates)
+		if (it > duplicate_rule_begin && it < duplicate_rule_end)
+		{
+			continue;
+		}
+		// check if 'it' is pointing to the one rule we want to keep
+		// if so, rename it so we don't accidentally delete it
+		if (it == duplicate_rule_begin)
+		{
+			// this is the rule we eventually want to keep after removing the other duplicates
+			const auto hr = it->rule->put_Name(tempRuleName.get());
+			if (FAILED(hr))
+			{
+				wprintf(L"FAILED TO RENAME ORIGINAL RULE: %ws (0x%x)\n", it->ruleName.get(), hr);
+				break;
+			}
+			it->temporarilyRenamed = true;
+			++countOfRulesRenamed;
+			continue;
+		}
+
+		// check if the name matches the rule we want to clear of duplicates
+		// - if it matches, we need to take extra steps to not accidentally delete this rule
+		//   as it just happens to have the same name (but otherwise is not a duplicate)
+		if (!RuleNamesMatch(it->ruleName, ruleNameToKeep))
+		{
+			continue;
+		}
+		// TESTING code to fail-fast if we have a bug --> at this stage
+		if (RulesMatchExactly(*it, *(duplicate_rule_begin + 1)))
+		{
+			wprintf(
+				L"BUG: these rules should not match!!\n"
+				L"\tName: %ws\n"
+				L"\tDescription: %ws\n"
+				L"\tDirection: %ws\n"
+				L"\tEnabled: %ws\n",
+				it->ruleName.get(),
+				it->ruleDescription.get(),
+				it->ruleDirection == NET_FW_RULE_DIR_IN ? L"Inbound" : L"Outbound",
+				it->ruleEnabled ? L"Enabled" : L"Disabled");
+			FAIL_FAST();
+		}
+		// rename the rule that happens to have the same name as the duplicate rules we want to remove
+		const auto hr = it->rule->put_Name(tempRuleName.get());
+		if (FAILED(hr))
+		{
+			wprintf(L"\tFAILED TO RENAME EXTRA RULE: %ws (0x%x)\n", it->ruleName.get(), hr);
+			break;
+		}
+		it->temporarilyRenamed = true;
+		++countOfRulesRenamed;
+	}
+
+	wprintf(L"-- Renamed %lu rules to avoid deleting them unnecessarily (including the one we want to keep)\n", countOfRulesRenamed);
+
+	uint32_t deletedRules = 0;
+	for (auto it = duplicate_rule_begin + 1; it != duplicate_rule_end; ++it)
+	{
+		const auto hr = firewallRules->Remove(it->ruleName.get());
+		if (FAILED(hr))
+		{
+			wprintf(L"\tFAILED TO REMOVE RULE: %ws (0x%x)\n", it->ruleName.get(), hr);
+		}
+		else
+		{
+			it->ruleDeleted = true;
+			++deletedRules;
+		}
+	}
+
+	wprintf(L"-- Deleted %u rules that were duplicates\n", deletedRules);
+
+	// rename all temp rules back before we exit
+	uint32_t restoredRuleNames = 0;
+	for (auto& normalized_rule : normalized_rules)
+	{
+		if (normalized_rule.temporarilyRenamed)
+		{
+			const auto hr = normalized_rule.rule->put_Name(ruleNameToKeep.get());
+			if (FAILED(hr))
+			{
+				wprintf(L"\tFAILED TO RENAME RULE BACK TO ITS ORIGINAL NAME: %ws (0x%x)\n", normalized_rule.ruleName.get(), hr);
+			}
+			else
+			{
+				++restoredRuleNames;
+			}
+		}
+
+		normalized_rule.temporarilyRenamed = false;
+	}
+	wprintf(L"-- Renamed %u rules back to their original names that had been temporarily renamed\n", restoredRuleNames);
+}
+
 void PrintHelp() noexcept
 {
 	wprintf(
@@ -89,6 +233,7 @@ void PrintHelp() noexcept
 		L"                     currently requires also setting -exactMatches\n"
 		L"                     if any duplicate rule is Enabled, will keep an Enabled version of that rule\n");
 }
+
 int wmain(int argc, wchar_t** argv)
 try
 {
@@ -111,7 +256,7 @@ try
 		const std::vector<const wchar_t*> args(argv + 1, argv + argc);
 		for (const auto& arg : args)
 		{
-			if ((0 == _wcsicmp(arg, L"-help")) || (0 == _wcsicmp(arg, L"-?")))
+			if (0 == _wcsicmp(arg, L"-help") || 0 == _wcsicmp(arg, L"-?"))
 			{
 				PrintHelp();
 				return 0;
@@ -179,13 +324,15 @@ try
 		matchType = MatchType::OnlyDetailsMatch;
 	}
 
-	ChronoTimer timer;
 	const auto unInit = wil::CoInitializeEx();
 	const auto firewallPolicy = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
+	wil::com_ptr<INetFwRules> firewallRules{};
+	THROW_IF_FAILED(firewallPolicy->get_Rules(&firewallRules));
 
+	ChronoTimer timer;
 	timer.begin();
-	std::vector<NormalizedRuleInfo> normalizedRules = BuildFirewallRules(firewallPolicy.get());
-	wprintf(L"\n... querying for rules took %lld milliseconds\n", timer.end());
+	std::vector<NormalizedRuleInfo> normalizedRules = BuildFirewallRules(firewallRules.get());
+	wprintf(L"\n  Querying for rules took %lld milliseconds to read %lld rules\n", timer.end(), normalizedRules.size());
 
 	/*
 	 *  support processing of Service-rules
@@ -194,11 +341,10 @@ try
 	 wil::com_ptr<INetFwServiceRestriction> serviceRestriction{};
 	 THROW_IF_FAILED(firewallPolicy->get_ServiceRestriction(&serviceRestriction));
 	 THROW_IF_FAILED(serviceRestriction->get_Rules(&rules));
-	 std::vector<NormalizedRuleInfo> normalizedServiceRules = BuildFirewallRules(rules.get());
+	 std::vector<NormalizedRuleInfo> normalizedServiceRules = BuildFirewallRules(firewallRules.get());
 	 */
 
-	timer.begin();
-	// find duplicates - excluding the name and if they are enabled or not
+	 // find duplicates - excluding the name and if they are enabled or not
 	for (const auto pass : { MatchType::ExactMatch, MatchType::OnlyDetailsMatch })
 	{
 		if (matchType.value() == MatchType::ExactMatch && pass != MatchType::ExactMatch)
@@ -221,170 +367,102 @@ try
 		}
 		wprintf(L"\n----------------------------------------------------------------------------------------------------\n");
 
-		uint32_t rulesWithDuplicates{ 0 };
-		uint32_t sumOfAllDuplicates{ 0 };
+		size_t totalRulesWithDuplicates{ 0 };
+		size_t sumOfAllDuplicateRules{ 0 };
 
 		timer.begin();
 		// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
 		std::ranges::sort(normalizedRules, pass == MatchType::OnlyDetailsMatch ? SortOnlyMatchingDetails : SortExactMatches);
-		auto currentIterator = normalizedRules.begin();
-		for (;;)
+
+		for (auto currentIterator = normalizedRules.begin();;)
 		{
 			// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
-			auto duplicateRuleIterator{
+			const auto duplicateRuleBeginIterator{
 				std::adjacent_find(
 					currentIterator,
 					normalizedRules.end(),
 					pass == MatchType::OnlyDetailsMatch ? RuleDetailsMatch : RulesMatchExactly) };
-			if (duplicateRuleIterator == normalizedRules.cend())
+			if (duplicateRuleBeginIterator == normalizedRules.cend())
 			{
+				// if adjacent_find returns the end iterator, there are no more adjacent entries that match
+				// in which case we should break out of the for loop
 				break;
 			}
 
-			++rulesWithDuplicates;
-			// find all duplicates of this instance
-			auto localDuplicateIterator = duplicateRuleIterator;
-			uint32_t localDuplicateRuleCount{ 1 };
-			for (;;)
+			++totalRulesWithDuplicates;
+
+			// duplicateRuleIterator is currently pointing to the first of x number of duplicate rules
+			// start from duplicateRuleIterator and walk forward until the rule doesn't match
+			// i.e., currentIterator will be pointing one-past-the-last-matching-rule
+			currentIterator = duplicateRuleBeginIterator;
+			while (currentIterator != normalizedRules.end())
 			{
-				if (!RuleDetailsMatch(*localDuplicateIterator, *(localDuplicateIterator + 1)))
+				// iterate through normalizedRules until we hit the end of the vector or until RuleDetailsMatch returns false
+				// i.e., we found the iterator past the last duplicate
+				if (!RuleDetailsMatch(*currentIterator, *(currentIterator + 1)))
 				{
-					// update currentIterator to point to the next rule after the current duplicates
-					currentIterator = localDuplicateIterator + 1;
 					break;
 				}
-
-				++localDuplicateRuleCount;
-				++localDuplicateIterator;
+				++currentIterator;
 			}
-			// if our sorting and comparison functions are correct, this should always find at least one duplicate
-			FAIL_FAST_IF(localDuplicateRuleCount == 1);
+			// the loop breaks when currentIterator matches currentIterator + 1
+			// incrementing currentIterator so it points to next-rule-past the one that matched
+			++currentIterator;
 
-			// upon exiting the for loop, startingIterator is updated to point to the next rule after the current duplicates
-			sumOfAllDuplicates += localDuplicateRuleCount;
+			// this should never happen since adjacent_find identified at least 2 rules that match
+			FAIL_FAST_IF(currentIterator == duplicateRuleBeginIterator);
 
 			// give the 'end' iterator of the duplicates a name that doesn't confuse with the currentIterator
 			const auto duplicateRuleEndIterator = currentIterator;
-			FAIL_FAST_IF(localDuplicateRuleCount != duplicateRuleEndIterator - duplicateRuleIterator);
+			const auto duplicateRuleCount{ duplicateRuleEndIterator - duplicateRuleBeginIterator };
+			sumOfAllDuplicateRules += duplicateRuleCount;
 
 			if (printDetails.value())
 			{
-				wprintf(L"\nDuplicate rule found! Duplicate count (%u)\n", localDuplicateRuleCount);
-				while (duplicateRuleIterator != duplicateRuleEndIterator)
+				wprintf(L"\nDuplicate rule found! Count of duplicates of this rule (%lld)\n", duplicateRuleCount);
+				for (auto printIterator = duplicateRuleBeginIterator; printIterator != duplicateRuleEndIterator; ++printIterator)
 				{
 					wprintf(L"\t[%ws %ws] name: %ws, description: %ws\n",
-						duplicateRuleIterator->ruleDirection == NET_FW_RULE_DIR_IN ? L"INBOUND" : L"OUTBOUND",
-						duplicateRuleIterator->ruleEnabled ? L"ENABLED" : L"DISABLED",
-						duplicateRuleIterator->ruleName.get(), duplicateRuleIterator->ruleDescription.get());
-					++duplicateRuleIterator;
+						printIterator->ruleDirection == NET_FW_RULE_DIR_IN ? L"INBOUND" : L"OUTBOUND",
+						printIterator->ruleEnabled ? L"ENABLED" : L"DISABLED",
+						printIterator->ruleName.get(), printIterator->ruleDescription.get());
 				}
 			}
 
 			if (deleteDuplicates.value())
 			{
-				wprintf(
-					L"\nDeleting duplicates for the rule:\n"
-					L"\tName: %ws\n"
-					L"\tDescription: %ws\n"
-					L"\tDirection: %ws\n"
-					L"\tEnabled: %ws\n",
-					duplicateRuleIterator->ruleName.get(),
-					duplicateRuleIterator->ruleDescription.get(),
-					duplicateRuleIterator->ruleDirection == NET_FW_RULE_DIR_IN ? L"Inbound" : L"Outbound",
-					duplicateRuleIterator->ruleEnabled ? L"Enabled" : L"Disabled");
-
-				wil::com_ptr<INetFwRules> rules{};
-				THROW_IF_FAILED(firewallPolicy->get_Rules(&rules));
-
-				// The only API to remove a rule is INetFwRules::Remove
-				// but that takes the Name of a rule
-				// this is problematic because we can't control *exactly* which rule to remove
-				// - there might be another rule with the same name but not in this set of duplicate rules
-				// - we can't control which duplicate to remove - so we must track if any are enabled
-				//   and once only one remains, we must enable it
-				// - currently tracking OUTBOUND and INBOUND as separate rules (that don't match)
-				//   but this is problematic in this case that there are rules that match both INBOUND and OUTBOUND rules
-				//   since deleting a rule by name would delete both
-
-				// first scan every name that's not part of this set of duplicates
-				bool nonDuplicateWithConflictingName = false;
-				for (auto it = normalizedRules.begin(); it != normalizedRules.end(); ++it)
-				{
-					if (it >= duplicateRuleIterator && it < duplicateRuleEndIterator)
-					{
-						// skip this one - it's one of the duplicates
-						continue;
-					}
-
-					if (RulesNamesMatch(*it, *duplicateRuleIterator))
-					{
-						nonDuplicateWithConflictingName = true;
-						// this is a rule with the same name but not part of this set of duplicates
-						wprintf(
-							L"Cannot delete duplicates because found a different rule matching same name but is NOT an exact duplicate\n"
-							L"\tName: %ws\n"
-							L"\tDescription: %ws\n"
-							L"\tDirection: %ws\n"
-							L"\tEnabled: %ws\n",
-							it->ruleName.get(),
-							it->ruleDescription.get(),
-							it->ruleDirection == NET_FW_RULE_DIR_IN ? L"Inbound" : L"Outbound",
-							it->ruleEnabled ? L"Enabled" : L"Disabled");
-						break;
-					}
-				}
-
-				// delete only if there are no other rules that happen to have the same name
-				if (!nonDuplicateWithConflictingName)
-				{
-					// second, track if the final remaining rule should be enabled or disabled after we delete all duplicates
-					const auto ruleShouldBeEnabled = duplicateRuleIterator->ruleEnabled;
-					const auto& ruleNameToDelete = duplicateRuleIterator->ruleName.get();
-					const auto totalDuplicateRuleCount = duplicateRuleEndIterator - duplicateRuleIterator;
-
-					// third, delete all the duplicates
-					// TESTING: should be > 0, but keeping > 1 for testing
-					for (auto count = totalDuplicateRuleCount; count > 1; --count)
-					{
-						THROW_IF_FAILED(rules->Remove(ruleNameToDelete));
-					}
-
-					// fourth, enable the final remaining rule if it's not already set to be enabled
-					if (ruleShouldBeEnabled && !duplicateRuleIterator->ruleEnabled)
-					{
-						const auto hr = duplicateRuleIterator->rule->put_Enabled(VARIANT_TRUE);
-						if (SUCCEEDED(hr))
-						{
-							wprintf(L"\tenabled the final remaining rule for %ws\n", duplicateRuleIterator->ruleName.get());
-						}
-						else
-						{
-							wprintf(L"\tfailed to enable the final remaining rule for %ws (0x%x)\n", duplicateRuleIterator->ruleName.get(), hr);
-						}
-					}
-				}
-
-				// TESTING: setting this back to false, so we only try to delete one duplicate ruleset
-				deleteDuplicates = false;
+				DeleteDuplicateRules(
+					firewallRules.get(),
+					normalizedRules,
+					duplicateRuleBeginIterator,
+					duplicateRuleEndIterator);
 			}
 		}
+		const auto timeToProcess = timer.end();
 
 		if (pass == MatchType::OnlyDetailsMatch)
 		{
-			wprintf(L"\nResults from analyzing Firewall rules that match only rule key fields (e.g. not comparing name and description fields)\n"
-				"\t(count of rule comparisons that required a deep CompareString call: %u)\n", RuleDetailsDeepMatchComparisonCount);
+			wprintf(L"\nResults from analyzing Firewall rules that match only rule key fields (e.g. not comparing name and description fields):\n");
 		}
 		else
 		{
-			wprintf(L"\nResults from analyzing Firewall rules that exactly match all rule fields\n");
+			wprintf(L"\nResults from analyzing Firewall rules that exactly match all rule fields:\n");
 		}
 
 		wprintf(
-			L"\tTotal Firewall rules processed: %llu\n\tFirewall rules with duplicates: %u\n\tTotal of all duplicate Firewall rules: %u\n",
+			L"\tTotal Firewall rules processed: %llu\n"
+			L"\tFirewall rules with duplicates: %llu\n"
+			L"\tTotal of all duplicate Firewall rules: %llu\n",
 			normalizedRules.size(),
-			rulesWithDuplicates,
-			sumOfAllDuplicates);
+			totalRulesWithDuplicates,
+			sumOfAllDuplicateRules);
+
+		if (!deleteDuplicates.value())
+		{
+			wprintf(L"\n... parsing rules took %lld milliseconds\n", timeToProcess);
+		}
+
+		wprintf(L"\n... count of rule comparisons that required a deep CompareString call: %u\n", RuleDetailsDeepMatchComparisonCount);
 	}
-	wprintf(L"\n... parsing rules took %lld milliseconds\n", timer.end());
 }
 CATCH_RETURN()
