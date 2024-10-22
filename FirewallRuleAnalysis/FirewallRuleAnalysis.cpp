@@ -90,17 +90,13 @@ void DeleteDuplicateRules(
 	const std::vector<NormalizedRuleInfo>::iterator& duplicate_rule_begin,
 	const std::vector<NormalizedRuleInfo>::iterator& duplicate_rule_end)
 {
-	wprintf(
-		L"\nDeleting %lld duplicates for the rule:\n"
-		L"\tName: %ws\n"
-		L"\tDescription: %ws\n"
-		L"\tDirection: %ws\n"
-		L"\tEnabled: %ws\n",
+	wprintf(L"\nDeleting %lld duplicates for the rule:\n"
+		L"\t[%ws %ws] [name]: %ws\n"
+		L"\t [description]: %ws\n",
 		duplicate_rule_end - duplicate_rule_begin - 1,
-		duplicate_rule_begin->ruleName.get(),
-		duplicate_rule_begin->ruleDescription.get(),
-		duplicate_rule_begin->ruleDirection == NET_FW_RULE_DIR_IN ? L"Inbound" : L"Outbound",
-		duplicate_rule_begin->ruleEnabled ? L"Enabled" : L"Disabled");
+		duplicate_rule_begin->ruleDirection == NET_FW_RULE_DIR_IN ? L"INBOUND" : L"OUTBOUND",
+		duplicate_rule_begin->ruleEnabled ? L"ENABLED" : L"DISABLED",
+		duplicate_rule_begin->ruleName.get(), duplicate_rule_begin->ruleDescription.get());
 
 	wprintf(L">> Press Y key to continue to delete duplicates of this rule - else any other key to skip this rule <<\n");
 	std::wstring input;
@@ -197,7 +193,14 @@ void DeleteDuplicateRules(
 		}
 	}
 
-	wprintf(L"-- Deleted %u rules that were duplicates\n", deletedRules);
+	if (deletedRules == 1)
+	{
+		wprintf(L"-- Deleted 1 rule that was a duplicate\n");
+	}
+	else
+	{
+		wprintf(L"-- Deleted %u rules that were duplicates\n", deletedRules);
+	}
 
 	// rename all temp rules back before we exit
 	uint32_t restoredRuleNames = 0;
@@ -224,29 +227,30 @@ void DeleteDuplicateRules(
 void PrintHelp() noexcept
 {
 	wprintf(
-		L"Usage (optional): [-includeDetails] [-deleteDuplicates] [-exactMatches]\n");
-	wprintf(
-		L"  -includeDetails: Print detailed information about the duplicates found\n");
-	wprintf(
-		L"  -exactMatches: Only find exact matches (all fields except 'Enabled' must match)\n");
-	wprintf(
-		L"  -deleteDuplicates: deletes duplicate rules that are exact matches (all fields except 'Enabled' must match)\n"
-		L"                     currently requires also setting -exactMatches\n"
-		L"                     if any duplicate rule is Enabled, will keep an Enabled version of that rule\n");
+		L"Usage (optional): [-includeDetails] [-deleteDuplicates] [-exactMatches]\n"
+		L"  [default] prints all duplicate rules (both exact matches and loose matches)\n"
+		L"    Exact matches are duplicate rules matching all rule properties except 'Enabled'\n"
+		L"    Loose matches are duplicate rules matching all rule properties except 'Enabled', 'Name', and 'Description'\n"
+		L"\n"
+		L"  -includeDetails: print detailed information about the duplicate rules found\n"
+		L"  -printExactMatches: prints only duplicate rules that are exact matches \n"
+		L"  -deleteDuplicates: if -exactMatches is specified, automatically deletes exact duplicate rules\n"
+		L"                   : if -exactMatches is not specified, will prompt for deleting all duplicate rules\n"
+		L"\n"
+	);
 }
 
 int wmain(int argc, wchar_t** argv)
 try
 {
 	/*
-	 *  support cleaning all rules that match exactly (every field)
-	 *  support finding near-matches
+	 *  consider supporting finding near-matches
 	 *   - e.g. the first X characters in a rule match
 	 */
 	enum class MatchType
 	{
-		ExactMatch,
-		OnlyDetailsMatch
+		ExactMatch, // all fields except Enabled match
+		LooseMatch  // all fields except Enabled, Name, and Description match
 	};
 
 	std::optional<bool> printDetails;
@@ -257,13 +261,13 @@ try
 		const std::vector<const wchar_t*> args(argv + 1, argv + argc);
 		for (const auto& arg : args)
 		{
-			if (0 == _wcsicmp(arg, L"-help") || 0 == _wcsicmp(arg, L"-?"))
+			if (0 == _wcsicmp(arg, L"-help") || 0 == _wcsicmp(arg, L"-?") || 0 == _wcsicmp(arg, L"/help") || 0 == _wcsicmp(arg, L"/?"))
 			{
 				PrintHelp();
 				return 0;
 			}
 
-			if (0 == _wcsicmp(arg, L"-includeDetails"))
+			if (0 == _wcsicmp(arg, L"-includeDetails") || 0 == _wcsicmp(arg, L"/includeDetails"))
 			{
 				if (printDetails.has_value())
 				{
@@ -274,7 +278,7 @@ try
 
 				printDetails = true;
 			}
-			else if (0 == _wcsicmp(arg, L"-deleteDuplicates"))
+			else if (0 == _wcsicmp(arg, L"-deleteDuplicates") || 0 == _wcsicmp(arg, L"/deleteDuplicates"))
 			{
 				if (deleteDuplicates.has_value())
 				{
@@ -285,7 +289,7 @@ try
 
 				deleteDuplicates = true;
 			}
-			else if (0 == _wcsicmp(arg, L"-exactMatches"))
+			else if (0 == _wcsicmp(arg, L"-exactMatches") || 0 == _wcsicmp(arg, L"/exactMatches"))
 			{
 				if (matchType.has_value())
 				{
@@ -305,13 +309,6 @@ try
 		}
 	}
 
-	if (deleteDuplicates.has_value() && !matchType.has_value())
-	{
-		wprintf(L"Error: -deleteDuplicates requires -exactMatches\n\n");
-		PrintHelp();
-		return 1;
-	}
-
 	if (!printDetails.has_value())
 	{
 		printDetails = false;
@@ -322,7 +319,7 @@ try
 	}
 	if (!matchType.has_value())
 	{
-		matchType = MatchType::OnlyDetailsMatch;
+		matchType = MatchType::LooseMatch;
 	}
 
 	const auto unInit = wil::CoInitializeEx();
@@ -346,25 +343,25 @@ try
 	 */
 
 	 // find duplicates - excluding the name and if they are enabled or not
-	for (const auto pass : { MatchType::ExactMatch, MatchType::OnlyDetailsMatch })
+	for (const auto pass : { MatchType::ExactMatch, MatchType::LooseMatch })
 	{
 		if (matchType.value() == MatchType::ExactMatch && pass != MatchType::ExactMatch)
 		{
 			continue;
 		}
-		if (matchType.value() == MatchType::OnlyDetailsMatch && pass != MatchType::OnlyDetailsMatch)
+		if (matchType.value() == MatchType::LooseMatch && pass != MatchType::LooseMatch)
 		{
 			continue;
 		}
 
 		wprintf(L"\n----------------------------------------------------------------------------------------------------\n");
-		if (pass == MatchType::OnlyDetailsMatch)
+		if (pass == MatchType::LooseMatch)
 		{
-			wprintf(L"Processing Firewall rules - looking for rules that are duplicated, only matching key fields\n (not comparing the 'Name', 'Description', and 'Enabled' fields)");
+			wprintf(L"Processing Firewall rules : looking for rules that are duplicated, only matching key fields\n (not comparing the 'Name', 'Description', and 'Enabled' fields)");
 		}
 		else
 		{
-			wprintf(L"Processing Firewall rules - looking for rules that are duplicated, exactly matching all fields\n (except the field 'Enabled' - will match identical rules Enabled and Disabled)");
+			wprintf(L"Processing Firewall rules : looking for rules that are duplicated, exactly matching all fields except 'Enabled'");
 		}
 		wprintf(L"\n----------------------------------------------------------------------------------------------------\n");
 
@@ -373,7 +370,7 @@ try
 
 		timer.begin();
 		// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
-		std::ranges::sort(normalizedRules, pass == MatchType::OnlyDetailsMatch ? SortOnlyMatchingDetails : SortExactMatches);
+		std::ranges::sort(normalizedRules, pass == MatchType::LooseMatch ? SortOnlyMatchingDetails : SortExactMatches);
 
 		for (auto currentIterator = normalizedRules.begin();;)
 		{
@@ -382,7 +379,7 @@ try
 				std::adjacent_find(
 					currentIterator,
 					normalizedRules.end(),
-					pass == MatchType::OnlyDetailsMatch ? RuleDetailsMatch : RulesMatchExactly) };
+					pass == MatchType::LooseMatch ? RuleDetailsMatch : RulesMatchExactly) };
 			if (duplicateRuleBeginIterator == normalizedRules.cend())
 			{
 				// if adjacent_find returns the end iterator, there are no more adjacent entries that match
@@ -423,7 +420,9 @@ try
 				wprintf(L"\nDuplicate rule found! Count of duplicates of this rule (%lld)\n", duplicateRuleCount);
 				for (auto printIterator = duplicateRuleBeginIterator; printIterator != duplicateRuleEndIterator; ++printIterator)
 				{
-					wprintf(L"\t[%ws %ws] name: %ws, description: %ws\n",
+					wprintf(
+						L"\t[%ws %ws] [name]: %ws\n"
+						L"\t [description]: %ws\n",
 						printIterator->ruleDirection == NET_FW_RULE_DIR_IN ? L"INBOUND" : L"OUTBOUND",
 						printIterator->ruleEnabled ? L"ENABLED" : L"DISABLED",
 						printIterator->ruleName.get(), printIterator->ruleDescription.get());
@@ -441,7 +440,7 @@ try
 		}
 		const auto timeToProcess = timer.end();
 
-		if (pass == MatchType::OnlyDetailsMatch)
+		if (pass == MatchType::LooseMatch)
 		{
 			wprintf(L"\nResults from analyzing Firewall rules that match only rule key fields (e.g. not comparing name and description fields):\n");
 		}

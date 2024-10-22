@@ -19,3 +19,8 @@
 /MultipathLatencyAnalyzer/ARM64
 
 /packages
+/FirewallRuleAnalysis/.vs
+/FirewallRuleAnalysis/packages
+/FirewallRuleAnalysis/Win32
+/FirewallRuleAnalysis/x64
+/FirewallRuleAnalysis/ARM64

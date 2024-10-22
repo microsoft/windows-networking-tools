@@ -11,7 +11,7 @@
     <ProjectGuid>{85164da8-ec9c-41da-a26f-8b7c0695b810}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>DualSTA_SampleTool</RootNamespace>
-    <WindowsTargetPlatformVersion Condition=" '$(WindowsTargetPlatformVersion)' == '' ">10.0.22000.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition=" '$(WindowsTargetPlatformVersion)' == '' ">10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion>10.0.17134.0</WindowsTargetPlatformMinVersion>
     <ProjectName>MultipathLatencyAnalyzer</ProjectName>
   </PropertyGroup>
