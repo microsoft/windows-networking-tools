@@ -3,6 +3,7 @@
 
 #include <Windows.h>
 #include <netfw.h>
+#include <sddl.h>
 
 #include <wil/com.h>
 #include <wil/resource.h>
@@ -14,10 +15,14 @@ struct NormalizedRuleInfo
 	wil::unique_bstr ruleDescription;
 	NET_FW_RULE_DIRECTION ruleDirection;
 
-    std::wstring normalizedRuleDetails;
+	std::wstring ruleOwnerUsername;
+	bool ruleOwnerUsernameInRule = false;
+	DWORD errorRetrievingOwnerUsername{};
+
+	std::wstring normalizedRuleDetails;
 	bool normalizedRuleDetailsContainsNonAsciiString = false;
 
-    bool temporarilyRenamed = false;
+	bool temporarilyRenamed = false;
 	bool ruleEnabled = false;
 
 	// guarantee this object is never copied, only moved
@@ -385,10 +390,9 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		// ruleInfo.AppendValue(enabled);
 		ruleInfo.ruleEnabled = !!enabled;
 
-		// Grouping is technically not a field that creates unique filter
-		// but keeping as part of what makes rules unique
-		// i.e., if there are 2 rules with the same names, but different groups
+		// if there are 2 rules with the same names, but different groups
 		// then we want to keep them both - since presumably that have different sources
+		// and thus should not be considered duplicates
 		wil::unique_bstr grouping{};
 		THROW_IF_FAILED(rule->get_Grouping(&grouping));
 		ruleInfo.AppendValue(grouping.get());
@@ -416,6 +420,83 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		wil::unique_bstr localUserOwner{};
 		THROW_IF_FAILED(rule->get_LocalUserOwner(&localUserOwner));
 		ruleInfo.AppendValue(localUserOwner.get());
+
+		if (localUserOwner)
+		{
+			ruleInfo.ruleOwnerUsernameInRule = true;
+			ruleInfo.errorRetrievingOwnerUsername = NO_ERROR;
+
+			wil::unique_any_psid convertedSid;
+			if (ConvertStringSidToSidW(localUserOwner.get(), &convertedSid))
+			{
+				DWORD nameLength{};
+				DWORD referencedDomainNameLength{};
+				SID_NAME_USE sidNameUse{};
+				LookupAccountSidW(
+					nullptr, // lookup on the local system
+					convertedSid.get(),
+					nullptr,
+					&nameLength,
+					nullptr,
+					&referencedDomainNameLength,
+					&sidNameUse);
+				if (nameLength == 0)
+				{
+					ruleInfo.errorRetrievingOwnerUsername = GetLastError();
+				}
+				else
+				{
+					ruleInfo.ruleOwnerUsername.resize(nameLength);
+
+					std::wstring referencedDomainNameString;
+					if (referencedDomainNameLength > 0)
+					{
+						referencedDomainNameString.resize(referencedDomainNameLength);
+					}
+					if (!LookupAccountSidW(
+						nullptr, // lookup on the local system
+						convertedSid.get(),
+						ruleInfo.ruleOwnerUsername.data(),
+						&nameLength,
+						referencedDomainNameLength > 0 ? referencedDomainNameString.data() : nullptr,
+						&referencedDomainNameLength,
+						&sidNameUse))
+					{
+						ruleInfo.errorRetrievingOwnerUsername = GetLastError();
+					}
+					else
+					{
+						// remove the embedded null-terminators from the std::wstring objects
+						ruleInfo.ruleOwnerUsername.resize(ruleInfo.ruleOwnerUsername.size() - 1);
+						if (referencedDomainNameLength > 0)
+						{
+							referencedDomainNameString.resize(referencedDomainNameString.size() - 1);
+						}
+
+						if (!referencedDomainNameString.empty())
+						{
+							std::wstring fullOwnerName{ std::move(referencedDomainNameString) };
+							fullOwnerName.append(L"\\");
+							fullOwnerName.append(ruleInfo.ruleOwnerUsername);
+							ruleInfo.ruleOwnerUsername = std::move(fullOwnerName);
+						}
+					}
+				}
+			}
+			else
+			{
+				ruleInfo.errorRetrievingOwnerUsername = GetLastError();
+			}
+
+			if (ruleInfo.errorRetrievingOwnerUsername != NO_ERROR)
+			{
+				wprintf(L"[rule %ws] %ws(%ws) failed with error 0x%x\n",
+					ruleInfo.ruleName.get(),
+					convertedSid.is_valid() ? L"LookupAccountSid" : L"ConvertStringSidToSidW",
+					localUserOwner.get(),
+					ruleInfo.errorRetrievingOwnerUsername);
+			}
+		}
 
 		wil::unique_bstr localUserAuthorizedList{};
 		THROW_IF_FAILED(rule->get_LocalUserAuthorizedList(&localUserAuthorizedList));
