@@ -16,12 +16,10 @@ struct NormalizedRuleInfo
 	NET_FW_RULE_DIRECTION ruleDirection;
 
 	std::wstring ruleOwnerUsername;
-	bool ruleOwnerUsernameInRule = false;
 	DWORD errorRetrievingOwnerUsername{};
 
 	std::wstring normalizedRuleDetails;
 	bool normalizedRuleDetailsContainsNonAsciiString = false;
-
 	bool temporarilyRenamed = false;
 	bool ruleEnabled = false;
 
@@ -423,7 +421,6 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 
 		if (localUserOwner)
 		{
-			ruleInfo.ruleOwnerUsernameInRule = true;
 			ruleInfo.errorRetrievingOwnerUsername = NO_ERROR;
 
 			wil::unique_any_psid convertedSid;

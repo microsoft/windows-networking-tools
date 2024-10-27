@@ -36,11 +36,15 @@ private:
 	decltype(std::chrono::high_resolution_clock::now()) m_startTime_ns;
 };
 
-std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRules)
+std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRules, bool printDebugInfo)
 {
 	std::vector<NormalizedRuleInfo> returnInfo;
 	uint32_t enum_count{ 0 };
 
+	if (printDebugInfo)
+	{
+		wprintf(L"\t[[INetFwRules::get__NewEnum]]\n");
+	}
 	wil::com_ptr<IEnumVARIANT> enumRules;
 	THROW_IF_FAILED(firewallRules->get__NewEnum(enumRules.put_unknown()));
 
@@ -48,21 +52,31 @@ std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRul
 	for (HRESULT nextResult = S_OK; nextResult == S_OK;)
 	{
 		// show progress by a . for every 100 rules
-		if (enum_count % 100 == 0)
+		if (!printDebugInfo)
 		{
-			wprintf(L".");
+			if (enum_count % 100 == 0)
+			{
+				wprintf(L".");
+			}
 		}
-		++enum_count;
 
-		wil::unique_variant nextInstance;
+		// ensuring an array of wil::unique_variant is functionally equivalent to an array of VARIANT
+		static_assert(sizeof(wil::unique_variant) == sizeof(VARIANT));
 		ULONG fetched{};
-		nextResult = enumRules->Next(1, nextInstance.addressof(), &fetched);
+		wil::unique_variant retrievedInstances[500];
+		nextResult = enumRules->Next(500, retrievedInstances, &fetched);
 		THROW_IF_FAILED(nextResult);
-		if (nextResult == S_OK)
+
+		if (printDebugInfo)
+		{
+			wprintf(L"\t[[IEnumVARIANT::Next >> read the next %lu rules]]\n", fetched);
+		}
+
+		for (ULONG fetched_count = 0; fetched_count < fetched; ++fetched_count)
 		{
 			// QI the rule to the latest version INetFwRule
 			wil::com_ptr<INetFwRule3> nextRule;
-			THROW_IF_FAILED(nextInstance.punkVal->QueryInterface<INetFwRule3>(&nextRule));
+			THROW_IF_FAILED(retrievedInstances[fetched_count].punkVal->QueryInterface<INetFwRule3>(&nextRule));
 
 			auto ruleInfo = BuildFirewallRuleInfo(nextRule.get());
 			// add if successfully read the entire rule
@@ -71,6 +85,8 @@ std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRul
 				returnInfo.emplace_back(std::move(ruleInfo));
 			}
 		}
+
+		enum_count += fetched;
 	}
 
 	return returnInfo;
@@ -151,7 +167,7 @@ void DeleteDuplicateRules(
 			const auto hr = it->rule->put_Name(tempRuleName.get());
 			if (FAILED(hr))
 			{
-				wprintf(L"FAILED TO RENAME ORIGINAL RULE: %ws (0x%x)\n", it->ruleName.get(), hr);
+				wprintf(L">> FAILED TO RENAME ORIGINAL RULE: %ws (0x%x) <<\n", it->ruleName.get(), hr);
 				break;
 			}
 
@@ -179,7 +195,7 @@ void DeleteDuplicateRules(
 		const auto hr = it->rule->put_Name(tempRuleName.get());
 		if (FAILED(hr))
 		{
-			wprintf(L"\tFAILED TO RENAME EXTRA RULE: %ws (0x%x)\n", it->ruleName.get(), hr);
+			wprintf(L">> FAILED TO RENAME EXTRA RULE: %ws (0x%x) <<\n", it->ruleName.get(), hr);
 			THROW_HR(hr);
 		}
 
@@ -192,7 +208,7 @@ void DeleteDuplicateRules(
 		const auto hr = firewallRules->Remove(it->ruleName.get());
 		if (FAILED(hr))
 		{
-			wprintf(L"\tFAILED TO REMOVE RULE: %ws (0x%x)\n", it->ruleName.get(), hr);
+			wprintf(L">> FAILED TO REMOVE RULE: %ws (0x%x) <<\n", it->ruleName.get(), hr);
 		}
 		else
 		{
@@ -219,7 +235,7 @@ void DeleteDuplicateRules(
 			const auto hr = normalized_rule.rule->put_Name(ruleNameToKeep.get());
 			if (FAILED(hr))
 			{
-				wprintf(L"\tFAILED TO RENAME RULE BACK TO ITS ORIGINAL NAME: %ws (0x%x)\n", normalized_rule.ruleName.get(), hr);
+				wprintf(L">> FAILED TO RENAME RULE BACK TO ITS ORIGINAL NAME: %ws (0x%x) <<\n", normalized_rule.ruleName.get(), hr);
 			}
 			normalized_rule.temporarilyRenamed = false;
 		}
@@ -257,6 +273,7 @@ try
 
 	std::optional<bool> deleteDuplicates;
 	std::optional<MatchType> matchType;
+	std::optional<bool> printDebugInfo;
 	if (argc > 1)
 	{
 		const std::vector<const wchar_t*> args(argv + 1, argv + argc);
@@ -290,6 +307,17 @@ try
 
 				matchType = MatchType::ExactMatch;
 			}
+			else if (0 == _wcsicmp(arg, L"-debug") || 0 == _wcsicmp(arg, L"/debug"))
+			{
+				if (printDebugInfo.has_value())
+				{
+					// they specified the same arg twice!
+					PrintHelp();
+					return 1;
+				}
+
+				printDebugInfo = true;
+			}
 			else
 			{
 				wprintf(L"Unknown argument: %ws\n\n", arg);
@@ -307,17 +335,27 @@ try
 	{
 		matchType = MatchType::LooseMatch;
 	}
+	if (!printDebugInfo.has_value())
+	{
+		printDebugInfo = false;
+	}
 
 	ChronoTimer timer;
 	const auto unInit = wil::CoInitializeEx();
 
-    timer.begin();
-	wprintf(L".");
-    const auto firewallPolicy = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
+	timer.begin();
+	if (printDebugInfo.value())
+	{
+		wprintf(L"\t[[CoCreateInstance(INetFwPolicy2)]]\n");
+	}
+	const auto firewallPolicy = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
+	if (printDebugInfo.value())
+	{
+		wprintf(L"\t[[INetFwPolicy2::get_Rules]]\n");
+	}
 	wil::com_ptr<INetFwRules> firewallRules{};
-	wprintf(L".");
 	THROW_IF_FAILED(firewallPolicy->get_Rules(&firewallRules));
-	std::vector<NormalizedRuleInfo> normalizedRules = BuildFirewallRules(firewallRules.get());
+	std::vector<NormalizedRuleInfo> normalizedRules = BuildFirewallRules(firewallRules.get(), printDebugInfo.value());
 	wprintf(L"\n>> Querying for rules took %lld milliseconds to read %lld rules <<\n", timer.end(), normalizedRules.size());
 
 	/*
@@ -442,19 +480,22 @@ try
 			totalRulesWithDuplicates,
 			sumOfAllDuplicateRules);
 
-		wprintf(L"\n\n... <internal statistics> ...");
-		if (!deleteDuplicates.value())
+		if (printDebugInfo.value())
 		{
-			if (timeToProcess > 0)
+			wprintf(L"\n");
+			if (!deleteDuplicates.value())
 			{
-				wprintf(L"\n... <parsing rules took %lld milliseconds>", timeToProcess);
+				if (timeToProcess > 0)
+				{
+					wprintf(L"\t[[sorting and parsing rules took %lld milliseconds]]\n", timeToProcess);
+				}
+				else
+				{
+					wprintf(L"\t[[sorting and parsing rules took less than 1 millisecond]]\n");
+				}
 			}
-			else
-			{
-				wprintf(L"\n... <parsing rules took less than 1 millisecond>");
-			}
+			wprintf(L"\t[[count of rule comparisons that required a deep CompareString call: %u]]\n", RuleDetailsDeepMatchComparisonCount);
 		}
-		wprintf(L"\n... <count of rule comparisons that required a deep CompareString call: %u>\n", RuleDetailsDeepMatchComparisonCount);
 	}
 }
 CATCH_RETURN()
