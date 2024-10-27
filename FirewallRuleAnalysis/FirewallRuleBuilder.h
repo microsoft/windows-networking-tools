@@ -337,6 +337,11 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		THROW_IF_FAILED(rule->get_Name(&ruleInfo.ruleName));
 		THROW_IF_FAILED(rule->get_Description(&ruleInfo.ruleDescription));
 
+		if (std::wstring{ruleInfo.ruleName.get()}.contains(L'@'))
+		{
+		    wprintf(L"\t\t%ws\n", ruleInfo.ruleName.get());
+		}
+
 		wil::unique_bstr applicationName{};
 		THROW_IF_FAILED(rule->get_ApplicationName(&applicationName));
 		ruleInfo.AppendValue(applicationName.get());

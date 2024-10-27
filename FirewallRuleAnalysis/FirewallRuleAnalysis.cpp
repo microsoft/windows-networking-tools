@@ -202,6 +202,9 @@ void DeleteDuplicateRules(
 		it->temporarilyRenamed = true;
 	}
 
+	long initialCount = 0;
+	firewallRules->get_Count(&initialCount);
+
 	uint32_t deletedRules = 0;
 	for (auto it = duplicate_rule_begin + 1; it != duplicate_rule_end; ++it)
 	{
@@ -217,14 +220,23 @@ void DeleteDuplicateRules(
 			++deletedRules;
 		}
 	}
+	long finalCount = 0;
+	firewallRules->get_Count(&finalCount);
 
-	if (deletedRules == 1)
+	if (initialCount == finalCount)
 	{
-		wprintf(L">> Successfully deleted 1 duplicate <<\n");
+		wprintf(L">> INetFwRules::Remove(%ws) succeeded - but the current rule count is the same! Firewall did not delete the rules!", ruleNameToKeep.get());
 	}
 	else
 	{
-		wprintf(L">> Successfully deleted %u duplicates <<\n", deletedRules);
+		if (deletedRules == 1)
+		{
+			wprintf(L">> Successfully deleted 1 duplicate <<\n");
+		}
+		else
+		{
+			wprintf(L">> Successfully deleted %u duplicates <<\n", deletedRules);
+		}
 	}
 
 	// rename all temp rules back before we exit
@@ -261,6 +273,8 @@ void PrintHelp() noexcept
 int wmain(int argc, wchar_t** argv)
 try
 {
+	const auto comInit = wil::CoInitializeEx();
+
 	/*
 	 *  consider supporting finding near-matches
 	 *   - e.g. the first X characters in a rule match
@@ -341,8 +355,6 @@ try
 	}
 
 	ChronoTimer timer;
-	const auto unInit = wil::CoInitializeEx();
-
 	timer.begin();
 	if (printDebugInfo.value())
 	{
