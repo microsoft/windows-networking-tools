@@ -36,6 +36,34 @@ private:
 	decltype(std::chrono::high_resolution_clock::now()) m_startTime_ns;
 };
 
+// appx-created rules start with:
+// @{
+// and contain the resource id string:
+// ms-resource://
+// these are not managed by the public COM API, unfortunately
+bool IsRuleAnAppxRule(const NormalizedRuleInfo& ruleInfo)
+{
+	if (!ruleInfo.ruleName.is_valid())
+	{
+		return false;
+	}
+
+	const auto bstrString = ruleInfo.ruleName.get();
+	const auto stringLength = SysStringLen(bstrString);
+	//18 == length of '@{' (2) + length of 'ms-resource://' (14)
+	if (stringLength < 16)
+	{
+		return false;
+	}
+	if (bstrString[0] != L'@' || bstrString[1] != '{')
+	{
+		return false;
+	}
+
+	// now search for ms-resource://  --- this is case-sensitive, but that seems correct for APPX rules
+	return std::wstring(bstrString).find(L"ms-resource://") != std::wstring::npos;
+}
+
 std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRules, bool printDebugInfo)
 {
 	std::vector<NormalizedRuleInfo> returnInfo;
@@ -265,7 +293,7 @@ void PrintHelp() noexcept
 		L"\n"
 		L"  -exactMatches: prints rules (or deletes rules if -deleteDuplicates) that are exact matches \n"
 		L"  -deleteDuplicates: if -exactMatches is specified, automatically deletes all exact duplicate rules\n"
-		L"                   : if -exactMatches is not specified, will prompt for deleting any duplicate rules\n"
+		L"                   : if -exactMatches is not specified, will prompt for deleting any/all duplicate rules\n"
 		L"\n"
 	);
 }
@@ -459,18 +487,29 @@ try
 			const auto duplicateRuleCount{ duplicateRuleEndIterator - duplicateRuleBeginIterator };
 			sumOfAllDuplicateRules += duplicateRuleCount;
 
-			wprintf(L"\nFound (%lld) copies of this rule:\n", duplicateRuleCount);
+			const auto appxRule = IsRuleAnAppxRule(*duplicateRuleBeginIterator);
+			wprintf(
+				L"\nFound (%lld) copies of this %ws:\n",
+				duplicateRuleCount,
+				appxRule ? L"APPX rule" : L"local rule");
 			PrintRuleInformation(*duplicateRuleBeginIterator);
 
 			if (deleteDuplicates.value())
 			{
-				const auto promptBeforeDeleting = matchType.value() == MatchType::LooseMatch;
-				DeleteDuplicateRules(
-					promptBeforeDeleting,
-					firewallRules.get(),
-					normalizedRules,
-					duplicateRuleBeginIterator,
-					duplicateRuleEndIterator);
+				if (appxRule)
+				{
+					wprintf(L">> Cannot directly delete APPX rules - must analyze directly in the registry <<\n");
+				}
+				else
+				{
+					const auto promptBeforeDeleting = matchType.value() == MatchType::LooseMatch;
+					DeleteDuplicateRules(
+						promptBeforeDeleting,
+						firewallRules.get(),
+						normalizedRules,
+						duplicateRuleBeginIterator,
+						duplicateRuleEndIterator);
+				}
 			}
 		}
 		const auto timeToProcess = timer.end();
