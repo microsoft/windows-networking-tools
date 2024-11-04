@@ -1,4 +1,6 @@
 #pragma once
+#include <optional>
+#include <regex>
 #include <string>
 
 #include <Windows.h>
@@ -113,10 +115,244 @@ struct NormalizedRuleInfo
 
 inline uint32_t RuleDetailsDeepMatchComparisonCount = 0;
 
+// appx-created rules start with:
+// @{
+// and contain the resource id string:
+// ms-resource://
+// these are not managed by the public COM API, unfortunately
+inline bool IsRuleAnAppxRule(const std::wstring& ruleName)
+{
+	//18 == length of '@{' (2) + length of 'ms-resource://' (14)
+	if (ruleName.length() < 16)
+	{
+		return false;
+	}
+	if (ruleName[0] != L'@' || ruleName[1] != '{')
+	{
+		return false;
+	}
+
+	// now search for ms-resource://  --- this is case-sensitive, but that seems correct for APPX rules
+	constexpr auto* appxResourceStringId = L"ms-resource://";
+	return ruleName.find(appxResourceStringId) != std::wstring::npos;
+}
+inline bool IsRuleAnAppxRule(const NormalizedRuleInfo& ruleInfo)
+{
+	if (!ruleInfo.ruleName.is_valid())
+	{
+		return false;
+	}
+
+	const auto bstrString = ruleInfo.ruleName.get();
+	return IsRuleAnAppxRule(bstrString);
+}
+
+inline std::tuple<DWORD, std::wstring> ConvertSidStringToUserName(_In_ PCWSTR localUserOwner)
+{
+	DWORD errorRetrievingOwnerUsername{};
+	std::wstring ruleOwnerUsername{};
+
+	wil::unique_any_psid convertedSid;
+	if (ConvertStringSidToSidW(localUserOwner, &convertedSid))
+	{
+		DWORD nameLength{};
+		DWORD referencedDomainNameLength{};
+		SID_NAME_USE sidNameUse{};
+		LookupAccountSidW(
+			nullptr, // lookup on the local system
+			convertedSid.get(),
+			nullptr,
+			&nameLength,
+			nullptr,
+			&referencedDomainNameLength,
+			&sidNameUse);
+		if (nameLength == 0)
+		{
+			errorRetrievingOwnerUsername = GetLastError();
+		}
+		else
+		{
+			ruleOwnerUsername.resize(nameLength);
+
+			std::wstring referencedDomainNameString;
+			if (referencedDomainNameLength > 0)
+			{
+				referencedDomainNameString.resize(referencedDomainNameLength);
+			}
+			if (!LookupAccountSidW(
+				nullptr, // lookup on the local system
+				convertedSid.get(),
+				ruleOwnerUsername.data(),
+				&nameLength,
+				referencedDomainNameLength > 0 ? referencedDomainNameString.data() : nullptr,
+				&referencedDomainNameLength,
+				&sidNameUse))
+			{
+				errorRetrievingOwnerUsername = GetLastError();
+			}
+			else
+			{
+				// remove the embedded null-terminators from the std::wstring objects
+				ruleOwnerUsername.resize(ruleOwnerUsername.size() - 1);
+				if (referencedDomainNameLength > 0)
+				{
+					referencedDomainNameString.resize(referencedDomainNameString.size() - 1);
+				}
+
+				if (!referencedDomainNameString.empty())
+				{
+					std::wstring fullOwnerName{ std::move(referencedDomainNameString) };
+					fullOwnerName.append(L"\\");
+					fullOwnerName.append(ruleOwnerUsername);
+					ruleOwnerUsername = std::move(fullOwnerName);
+				}
+			}
+		}
+	}
+
+	return { errorRetrievingOwnerUsername, ruleOwnerUsername };
+}
+
+enum class FirewallRuleStore
+{
+	Local,
+	AppIso
+};
+constexpr auto* LocalFirewallRulePath = L"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules";
+constexpr auto* AppIsoFirewallRulePath = L"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\RestrictedServices\\AppIso\\FirewallRules";
+
+// returns the [registry value name],[parsed rule name]
+inline std::vector<std::tuple<std::wstring, NormalizedRuleInfo>> ReadRegistryRules(FirewallRuleStore store)
+{
+	// the regex to read the name field out of the registry where rules are written. e.g.
+	// v2.33|Action=Allow|Active=TRUE|Dir=Out|Profile=Domain|Profile=Private|Profile=Public|Name=@{Microsoft.WindowsCalculator_11.2409.0.0_x64__8wekyb3d8bbwe?ms-resource://Microsoft.WindowsCalculator/Resources/AppStoreName}|Desc=@{Microsoft.WindowsCalculator_11.2409.0.0_x64__8wekyb3d8bbwe?ms-resource://Microsoft.WindowsCalculator/Resources/AppStoreName}|PFN=Microsoft.WindowsCalculator_8wekyb3d8bbwe|LUOwn=S-1-12-1-910410835-1306523740-2996082354-1245529378|EmbedCtxt=@{Microsoft.WindowsCalculator_11.2409.0.0_x64__8wekyb3d8bbwe?ms-resource://Microsoft.WindowsCalculator/Resources/AppStoreName}|Platform=2:6:2|Platform2=GTEQ|
+	const std::wregex findNameInRegistryValue(L".*?\\|Name=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
+	const std::wregex findDescriptionInRegistryValue(L".*?\\|Desc=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
+	const std::wregex findDirectionInRegistryValue(L".*?\\|Dir=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
+	const std::wregex findEnabledInRegistryValue(L".*?\\|Active=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
+	const std::wregex findUserOwnerInRegistryValue(L".*?\\|LUOwn=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
+
+	std::vector<std::tuple<std::wstring, NormalizedRuleInfo>> returnValues;
+	wil::unique_hkey localRuleKey;
+	switch (store)
+	{
+	case FirewallRuleStore::Local:
+	{
+		localRuleKey = wil::reg::open_unique_key(HKEY_LOCAL_MACHINE, LocalFirewallRulePath);
+		break;
+	}
+	case FirewallRuleStore::AppIso:
+	{
+		localRuleKey = wil::reg::open_unique_key(HKEY_LOCAL_MACHINE, AppIsoFirewallRulePath);
+		break;
+	}
+	}
+	for (const auto& value_data : wil::make_range(wil::reg::value_iterator{ localRuleKey.get() }, wil::reg::value_iterator{}))
+	{
+		if (value_data.type != REG_SZ)
+		{
+			DebugBreak();
+		}
+
+		NormalizedRuleInfo ruleInfo{};
+		const auto ruleValue = wil::reg::get_value_string(localRuleKey.get(), value_data.name.c_str());
+
+		// ruleName
+		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findNameInRegistryValue))
+		{
+			/*
+			 * For debugging the regex:
+			wprintf(L"\t REGEX RESULTS (%lld):\n", matchResults.size());
+			wprintf(L"\t\t[0] %ws\n", matchResults[0].str().c_str());
+			wprintf(L"\t\t[1] %ws\n", matchResults[1].str().c_str());
+			*/
+			ruleInfo.ruleName = wil::make_bstr(matchResults[1].str().c_str());
+		}
+		else
+		{
+			DebugBreak();
+		}
+
+		// ruleDescription
+		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findDescriptionInRegistryValue))
+		{
+			ruleInfo.ruleDescription = wil::make_bstr(matchResults[1].str().c_str());
+		}
+
+		// ruleDirection
+		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findDirectionInRegistryValue))
+		{
+			if (matchResults[1].str() == L"In")
+			{
+				ruleInfo.ruleDirection = NET_FW_RULE_DIR_IN;
+			}
+			else if (matchResults[1].str() == L"Out")
+			{
+				ruleInfo.ruleDirection = NET_FW_RULE_DIR_OUT;
+			}
+			else
+			{
+				DebugBreak();
+			}
+		}
+		else
+		{
+			DebugBreak();
+		}
+
+		// ruleEnabled
+		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findEnabledInRegistryValue))
+		{
+			if (matchResults[1].str() == L"TRUE")
+			{
+				ruleInfo.ruleEnabled = true;
+			}
+			else if (matchResults[1].str() == L"FALSE")
+			{
+				ruleInfo.ruleEnabled = false;
+			}
+			else
+			{
+				DebugBreak();
+			}
+		}
+		else
+		{
+			DebugBreak();
+		}
+
+		// ruleEnabled
+		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findUserOwnerInRegistryValue))
+		{
+			const auto localUserOwner = matchResults[1].str();
+			const auto userConversion = ConvertSidStringToUserName(localUserOwner.c_str());
+			ruleInfo.errorRetrievingOwnerUsername = std::get<0>(userConversion);
+			ruleInfo.ruleOwnerUsername = std::get<1>(userConversion);
+			/*
+			if (ruleInfo.errorRetrievingOwnerUsername != NO_ERROR)
+			{
+				wprintf(L"[rule %ws] (%ws) failed with error 0x%x\n",
+					ruleInfo.ruleName.get(),
+					localUserOwner.c_str(),
+					ruleInfo.errorRetrievingOwnerUsername);
+			}
+			else
+			{
+				wprintf(L"[rule %ws] (%ws) successfully resolved to %ws\n",
+					ruleInfo.ruleName.get(),
+					localUserOwner.c_str(),
+					ruleInfo.ruleOwnerUsername.c_str());
+			}
+            */
+		}
+
+		returnValues.emplace_back(ruleValue, std::move(ruleInfo));
+	}
+	return returnValues;
+}
+
 inline bool RuleNamesMatch(const wil::unique_bstr& lhs, const wil::unique_bstr& rhs) noexcept
 {
-	constexpr BOOL bIgnoreCase = TRUE;
-
 	// checking the string length of a BSTR is very cheap - it just reads the length field in the bstr
 	// (the 32 bits allocated right before the start of the string)
 	const auto lhs_length = SysStringLen(lhs.get());
@@ -126,6 +362,7 @@ inline bool RuleNamesMatch(const wil::unique_bstr& lhs, const wil::unique_bstr& 
 		return false;
 	}
 
+	constexpr BOOL bIgnoreCase = TRUE;
 	const auto ruleNamesMatch = CompareStringOrdinal(
 		lhs.get(),
 		static_cast<int>(lhs_length),
@@ -421,78 +658,25 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 
 		if (localUserOwner)
 		{
-			ruleInfo.errorRetrievingOwnerUsername = NO_ERROR;
-
-			wil::unique_any_psid convertedSid;
-			if (ConvertStringSidToSidW(localUserOwner.get(), &convertedSid))
-			{
-				DWORD nameLength{};
-				DWORD referencedDomainNameLength{};
-				SID_NAME_USE sidNameUse{};
-				LookupAccountSidW(
-					nullptr, // lookup on the local system
-					convertedSid.get(),
-					nullptr,
-					&nameLength,
-					nullptr,
-					&referencedDomainNameLength,
-					&sidNameUse);
-				if (nameLength == 0)
-				{
-					ruleInfo.errorRetrievingOwnerUsername = GetLastError();
-				}
-				else
-				{
-					ruleInfo.ruleOwnerUsername.resize(nameLength);
-
-					std::wstring referencedDomainNameString;
-					if (referencedDomainNameLength > 0)
-					{
-						referencedDomainNameString.resize(referencedDomainNameLength);
-					}
-					if (!LookupAccountSidW(
-						nullptr, // lookup on the local system
-						convertedSid.get(),
-						ruleInfo.ruleOwnerUsername.data(),
-						&nameLength,
-						referencedDomainNameLength > 0 ? referencedDomainNameString.data() : nullptr,
-						&referencedDomainNameLength,
-						&sidNameUse))
-					{
-						ruleInfo.errorRetrievingOwnerUsername = GetLastError();
-					}
-					else
-					{
-						// remove the embedded null-terminators from the std::wstring objects
-						ruleInfo.ruleOwnerUsername.resize(ruleInfo.ruleOwnerUsername.size() - 1);
-						if (referencedDomainNameLength > 0)
-						{
-							referencedDomainNameString.resize(referencedDomainNameString.size() - 1);
-						}
-
-						if (!referencedDomainNameString.empty())
-						{
-							std::wstring fullOwnerName{ std::move(referencedDomainNameString) };
-							fullOwnerName.append(L"\\");
-							fullOwnerName.append(ruleInfo.ruleOwnerUsername);
-							ruleInfo.ruleOwnerUsername = std::move(fullOwnerName);
-						}
-					}
-				}
-			}
-			else
-			{
-				ruleInfo.errorRetrievingOwnerUsername = GetLastError();
-			}
-
+			const auto userConversion = ConvertSidStringToUserName(localUserOwner.get());
+			ruleInfo.errorRetrievingOwnerUsername = std::get<0>(userConversion);
+			ruleInfo.ruleOwnerUsername = std::get<1>(userConversion);
+			/*
 			if (ruleInfo.errorRetrievingOwnerUsername != NO_ERROR)
 			{
-				wprintf(L"[rule %ws] %ws(%ws) failed with error 0x%x\n",
+				wprintf(L"[rule %ws] (%ws) failed with error 0x%x\n",
 					ruleInfo.ruleName.get(),
-					convertedSid.is_valid() ? L"LookupAccountSid" : L"ConvertStringSidToSidW",
 					localUserOwner.get(),
 					ruleInfo.errorRetrievingOwnerUsername);
 			}
+			else
+			{
+				wprintf(L"[rule %ws] (%ws) successfully resolved to %ws\n",
+					ruleInfo.ruleName.get(),
+					localUserOwner.get(),
+					ruleInfo.ruleOwnerUsername.c_str());
+			}
+            */
 		}
 
 		wil::unique_bstr localUserAuthorizedList{};

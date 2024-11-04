@@ -7,12 +7,14 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include <Windows.h>
 #include <netfw.h>
 
 #include <wil/com.h>
+#include <wil/registry.h>
 #include <wil/resource.h>
 
 #include "FirewallRuleBuilder.h"
@@ -36,33 +38,6 @@ private:
 	decltype(std::chrono::high_resolution_clock::now()) m_startTime_ns;
 };
 
-// appx-created rules start with:
-// @{
-// and contain the resource id string:
-// ms-resource://
-// these are not managed by the public COM API, unfortunately
-bool IsRuleAnAppxRule(const NormalizedRuleInfo& ruleInfo)
-{
-	if (!ruleInfo.ruleName.is_valid())
-	{
-		return false;
-	}
-
-	const auto bstrString = ruleInfo.ruleName.get();
-	const auto stringLength = SysStringLen(bstrString);
-	//18 == length of '@{' (2) + length of 'ms-resource://' (14)
-	if (stringLength < 16)
-	{
-		return false;
-	}
-	if (bstrString[0] != L'@' || bstrString[1] != '{')
-	{
-		return false;
-	}
-
-	// now search for ms-resource://  --- this is case-sensitive, but that seems correct for APPX rules
-	return std::wstring(bstrString).find(L"ms-resource://") != std::wstring::npos;
-}
 
 std::vector<NormalizedRuleInfo> BuildFirewallRules(_In_ INetFwRules* firewallRules, bool printDebugInfo)
 {
@@ -440,6 +415,18 @@ try
 		size_t totalRulesWithDuplicates{ 0 };
 		size_t sumOfAllDuplicateRules{ 0 };
 
+		wprintf(L">> Local Firewall rules from the registry <<\n");
+		timer.begin();
+		const auto localRegistryFirewallRules(ReadRegistryRules(FirewallRuleStore::Local));
+		wprintf(L">> Reading registry rules took %lld milliseconds to read %lld rules <<\n", timer.end(), localRegistryFirewallRules.size());
+
+		wprintf(L"\n");
+
+		wprintf(L">> AppIso Firewall rules from the registry <<\n");
+		timer.begin();
+		const auto appIsoRegistryFirewallRules(ReadRegistryRules(FirewallRuleStore::AppIso));
+		wprintf(L">> Reading registry rules took %lld milliseconds to read %lld rules <<\n", timer.end(), appIsoRegistryFirewallRules.size());
+
 		timer.begin();
 		// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
 		std::ranges::sort(normalizedRules, pass == MatchType::LooseMatch ? SortOnlyMatchingDetails : SortExactMatches);
@@ -498,7 +485,58 @@ try
 			{
 				if (appxRule)
 				{
-					wprintf(L">> Cannot directly delete APPX rules - must analyze directly in the registry <<\n");
+					wprintf(L"\n");
+					wprintf(L"\t>> Cannot directly delete APPX rules - must analyze directly in the local registry <<\n");
+					uint32_t localRegistryMatches = 0;
+					for (const auto& [valueName, ruleInfo] : localRegistryFirewallRules)
+					{
+						if (ruleInfo.ruleEnabled != duplicateRuleBeginIterator->ruleEnabled)
+						{
+							continue;
+						}
+						if (ruleInfo.ruleDirection != duplicateRuleBeginIterator->ruleDirection)
+						{
+							continue;
+						}
+						if (!RuleNamesMatch(ruleInfo.ruleName, duplicateRuleBeginIterator->ruleName))
+						{
+							continue;
+						}
+						if (!RuleNamesMatch(ruleInfo.ruleDescription, duplicateRuleBeginIterator->ruleDescription))
+						{
+							continue;
+						}
+						// PrintRuleInformation(ruleInfo);
+						++localRegistryMatches;
+					}
+					wprintf(L"\t>> total local registry matches: %u\n", localRegistryMatches);
+					wprintf(L"\n");
+
+					wprintf(L"\t>> Cannot directly delete APPX rules - must analyze directly in the App-Isolation registry <<\n");
+					uint32_t appIsoRegistryMatches = 0;
+					for (const auto& [valueName, ruleInfo] : appIsoRegistryFirewallRules)
+					{
+						if (ruleInfo.ruleEnabled != duplicateRuleBeginIterator->ruleEnabled)
+						{
+							continue;
+						}
+						if (ruleInfo.ruleDirection != duplicateRuleBeginIterator->ruleDirection)
+						{
+							continue;
+						}
+						if (!RuleNamesMatch(ruleInfo.ruleName, duplicateRuleBeginIterator->ruleName))
+						{
+							continue;
+						}
+						if (!RuleNamesMatch(ruleInfo.ruleDescription, duplicateRuleBeginIterator->ruleDescription))
+						{
+							continue;
+						}
+						// PrintRuleInformation(ruleInfo);
+						++appIsoRegistryMatches;
+					}
+					wprintf(L"\t>> total App-Isolation registry matches: %u\n", appIsoRegistryMatches);
+					wprintf(L"\n");
 				}
 				else
 				{
@@ -549,4 +587,8 @@ try
 		}
 	}
 }
-CATCH_RETURN()
+catch (const std::exception& e)
+{
+	wprintf(L"\nERROR: %hs\n", e.what());
+	return -1;
+}
