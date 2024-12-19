@@ -398,18 +398,18 @@ try
 		if (pass == MatchType::LooseMatch)
 		{
 			wprintf(L"\n");
-			wprintf(L"--------------------------------------------------------------------------------------------------\n");
+			wprintf(L"----------------------------------------------------------------------------------------------------\n");
 			wprintf(L"  Processing Firewall rules : looking for rules that are duplicated - not requiring an exact match\n");
 			wprintf(L"  Ignoring the rule properties 'Name', 'Description', and 'Enabled' when matching rules\n");
-			wprintf(L"--------------------------------------------------------------------------------------------------\n");
+			wprintf(L"----------------------------------------------------------------------------------------------------\n");
 		}
 		else
 		{
 			wprintf(L"\n");
-			wprintf(L"----------------------------------------------------------------------------------------------\n");
+			wprintf(L"------------------------------------------------------------------------------------------------\n");
 			wprintf(L"  Processing Firewall rules : looking for rules that are duplicated - requiring an exact match\n");
 			wprintf(L"  Ignoring the rule property 'Enabled' when matching rules\n");
-			wprintf(L"----------------------------------------------------------------------------------------------\n");
+			wprintf(L"------------------------------------------------------------------------------------------------\n");
 		}
 
 		size_t totalRulesWithDuplicates{ 0 };
@@ -419,19 +419,122 @@ try
 		timer.begin();
 		const auto localRegistryFirewallRules(ReadRegistryRules(FirewallRuleStore::Local));
 		wprintf(L">> Reading registry rules took %lld milliseconds to read %lld rules <<\n", timer.end(), localRegistryFirewallRules.size());
+		for (auto currentIterator = localRegistryFirewallRules.begin();;)
+		{
+			// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
+			const auto duplicateRuleBeginIterator{
+				std::adjacent_find(
+					currentIterator,
+					localRegistryFirewallRules.end(),
+					[](const std::tuple<std::wstring,NormalizedRuleInfo>& lhs, const std::tuple<std::wstring,NormalizedRuleInfo>& rhs)
+					{
+					    return std::get<0>(lhs) == std::get<0>(rhs);
+					})};
+			if (duplicateRuleBeginIterator == localRegistryFirewallRules.cend())
+			{
+				// if adjacent_find returns the end iterator, there are no more adjacent entries that match
+				// in which case we should break out of the for loop
+				break;
+			}
+
+			++totalRulesWithDuplicates;
+
+			// duplicateRuleIterator is currently pointing to the first of x number of duplicate rules
+			// start from duplicateRuleIterator and walk forward until the rule doesn't match
+			// i.e., currentIterator will be pointing one-past-the-last-matching-rule
+			currentIterator = duplicateRuleBeginIterator;
+			while (currentIterator != localRegistryFirewallRules.end())
+			{
+				if (currentIterator + 1 == localRegistryFirewallRules.end())
+				{
+				    break;
+				}
+				// iterate through localRegistryFirewallRules until we hit the end of the vector or until the strings comparison returns false
+				// i.e., we found the iterator past the last duplicate
+				if (std::get<0>(*currentIterator) != std::get<0>(*(currentIterator + 1)))
+				{
+					break;
+				}
+				++currentIterator;
+			}
+			// the loop breaks when currentIterator matches currentIterator + 1, or when hitting the end
+			// incrementing currentIterator so it points to next-rule-past the one that matched
+			if (currentIterator != localRegistryFirewallRules.end())
+			{
+				++currentIterator;
+			}
+
+			// this should never happen since adjacent_find identified at least 2 rules that match
+			FAIL_FAST_IF(currentIterator == duplicateRuleBeginIterator);
+			wprintf(L"    (%llu duplicates) %ws\n", currentIterator - duplicateRuleBeginIterator, std::get<0>(*duplicateRuleBeginIterator).c_str());
+		}
+		wprintf(L">> %llu duplicate local rules\n", totalRulesWithDuplicates);
+
+		totalRulesWithDuplicates = 0;
 
 		wprintf(L"\n");
 
-		wprintf(L">> AppIso Firewall rules from the registry <<\n");
+		wprintf(L">> App-Isolation Firewall rules from the registry <<\n");
 		timer.begin();
-		const auto appIsoRegistryFirewallRules(ReadRegistryRules(FirewallRuleStore::AppIso));
-		wprintf(L">> Reading registry rules took %lld milliseconds to read %lld rules <<\n", timer.end(), appIsoRegistryFirewallRules.size());
+		const auto appIsolationRegistryFirewallRules(ReadRegistryRules(FirewallRuleStore::AppIsolation));
+		wprintf(L">> Reading registry rules took %lld milliseconds to read %lld rules <<\n", timer.end(), appIsolationRegistryFirewallRules.size());
+		for (auto currentIterator = appIsolationRegistryFirewallRules.begin();;)
+		{
+			// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
+			const auto duplicateRuleBeginIterator{
+				std::adjacent_find(
+					currentIterator,
+					appIsolationRegistryFirewallRules.end(),
+					[](const std::tuple<std::wstring,NormalizedRuleInfo>& lhs, const std::tuple<std::wstring,NormalizedRuleInfo>& rhs)
+					{
+					    return std::get<0>(lhs) == std::get<0>(rhs);
+					})};
+			if (duplicateRuleBeginIterator == appIsolationRegistryFirewallRules.cend())
+			{
+				// if adjacent_find returns the end iterator, there are no more adjacent entries that match
+				// in which case we should break out of the for loop
+				break;
+			}
 
+			++totalRulesWithDuplicates;
+
+			// duplicateRuleIterator is currently pointing to the first of x number of duplicate rules
+			// start from duplicateRuleIterator and walk forward until the rule doesn't match
+			// i.e., currentIterator will be pointing one-past-the-last-matching-rule
+			currentIterator = duplicateRuleBeginIterator;
+			while (currentIterator != appIsolationRegistryFirewallRules.end())
+			{
+				if (currentIterator + 1 == appIsolationRegistryFirewallRules.end())
+				{
+				    break;
+				}
+				// iterate through appIsolationRegistryFirewallRules until we hit the end of the vector or until the strings comparison returns false
+				// i.e., we found the iterator past the last duplicate
+				if (std::get<0>(*currentIterator) != std::get<0>(*(currentIterator + 1)))
+				{
+					break;
+				}
+				++currentIterator;
+			}
+			// the loop breaks when currentIterator matches currentIterator + 1, or when hitting the end
+			// incrementing currentIterator so it points to next-rule-past the one that matched
+			if (currentIterator != appIsolationRegistryFirewallRules.end())
+			{
+				++currentIterator;
+			}
+
+			// this should never happen since adjacent_find identified at least 2 rules that match
+			FAIL_FAST_IF(currentIterator == duplicateRuleBeginIterator);
+			wprintf(L"    (%llu duplicates) %ws\n", currentIterator - duplicateRuleBeginIterator, std::get<0>(*duplicateRuleBeginIterator).c_str());
+		}
+		wprintf(L">> %llu duplicate app-isolation rules\n", totalRulesWithDuplicates);
+
+		totalRulesWithDuplicates = 0;
 		timer.begin();
 		// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
 		std::ranges::sort(normalizedRules, pass == MatchType::LooseMatch ? SortOnlyMatchingDetails : SortExactMatches);
 
-		for (auto currentIterator = normalizedRules.begin();;)
+		for (auto currentIterator = normalizedRules.begin(); currentIterator != normalizedRules.end();)
 		{
 			// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
 			const auto duplicateRuleBeginIterator{
@@ -454,6 +557,10 @@ try
 			currentIterator = duplicateRuleBeginIterator;
 			while (currentIterator != normalizedRules.end())
 			{
+				if (currentIterator + 1 == normalizedRules.end())
+				{
+				    break;
+				}
 				// iterate through normalizedRules until we hit the end of the vector or until RuleDetailsMatch returns false
 				// i.e., we found the iterator past the last duplicate
 				if (!RuleDetailsMatch(*currentIterator, *(currentIterator + 1)))
@@ -462,9 +569,12 @@ try
 				}
 				++currentIterator;
 			}
-			// the loop breaks when currentIterator matches currentIterator + 1
+			// the loop breaks when currentIterator matches currentIterator + 1, or when hitting the end
 			// incrementing currentIterator so it points to next-rule-past the one that matched
-			++currentIterator;
+			if (currentIterator != normalizedRules.end())
+			{
+				++currentIterator;
+			}
 
 			// this should never happen since adjacent_find identified at least 2 rules that match
 			FAIL_FAST_IF(currentIterator == duplicateRuleBeginIterator);
@@ -481,64 +591,79 @@ try
 				appxRule ? L"APPX rule" : L"local rule");
 			PrintRuleInformation(*duplicateRuleBeginIterator);
 
+			if (appxRule)
+			{
+				std::vector<std::wstring> matchingLocalValues;
+				std::vector<std::wstring> matchingAppIsolationValues;
+
+				wprintf(L"\n");
+				wprintf(L"\t>> Cannot directly delete APPX rules - must analyze directly in the local registry <<\n");
+				uint32_t localRegistryMatches = 0;
+				for (const auto& [registryValue, ruleInfo] : localRegistryFirewallRules)
+				{
+					if (ruleInfo.ruleEnabled != duplicateRuleBeginIterator->ruleEnabled)
+					{
+						continue;
+					}
+					if (ruleInfo.ruleDirection != duplicateRuleBeginIterator->ruleDirection)
+					{
+						continue;
+					}
+					if (!RuleNamesMatch(ruleInfo.ruleName, duplicateRuleBeginIterator->ruleName))
+					{
+						continue;
+					}
+					if (!RuleNamesMatch(ruleInfo.ruleDescription, duplicateRuleBeginIterator->ruleDescription))
+					{
+						continue;
+					}
+					// PrintRuleInformation(ruleInfo);
+
+					matchingLocalValues.emplace_back(registryValue);
+					++localRegistryMatches;
+				}
+				wprintf(L"\t>> total local registry matches: %u\n", localRegistryMatches);
+				for (const auto& value : matchingLocalValues)
+				{
+					wprintf(L"\t     %ws\n", value.c_str());
+				}
+				wprintf(L"\n");
+
+				wprintf(L"\t>> Cannot directly delete APPX rules - must analyze directly in the App-Isolation registry <<\n");
+				uint32_t appIsolationRegistryMatches = 0;
+				for (const auto& [registryValue, ruleInfo] : appIsolationRegistryFirewallRules)
+				{
+					if (ruleInfo.ruleEnabled != duplicateRuleBeginIterator->ruleEnabled)
+					{
+						continue;
+					}
+					if (ruleInfo.ruleDirection != duplicateRuleBeginIterator->ruleDirection)
+					{
+						continue;
+					}
+					if (!RuleNamesMatch(ruleInfo.ruleName, duplicateRuleBeginIterator->ruleName))
+					{
+						continue;
+					}
+					if (!RuleNamesMatch(ruleInfo.ruleDescription, duplicateRuleBeginIterator->ruleDescription))
+					{
+						continue;
+					}
+					// PrintRuleInformation(ruleInfo);
+
+					matchingAppIsolationValues.emplace_back(registryValue);
+					++appIsolationRegistryMatches;
+				}
+				wprintf(L"\t>> total App-Isolation registry matches: %u\n", appIsolationRegistryMatches);
+				for (const auto& value : matchingAppIsolationValues)
+				{
+					wprintf(L"\t     %ws\n", value.c_str());
+				}
+				wprintf(L"\n");
+			}
+
 			if (deleteDuplicates.value())
 			{
-				if (appxRule)
-				{
-					wprintf(L"\n");
-					wprintf(L"\t>> Cannot directly delete APPX rules - must analyze directly in the local registry <<\n");
-					uint32_t localRegistryMatches = 0;
-					for (const auto& [valueName, ruleInfo] : localRegistryFirewallRules)
-					{
-						if (ruleInfo.ruleEnabled != duplicateRuleBeginIterator->ruleEnabled)
-						{
-							continue;
-						}
-						if (ruleInfo.ruleDirection != duplicateRuleBeginIterator->ruleDirection)
-						{
-							continue;
-						}
-						if (!RuleNamesMatch(ruleInfo.ruleName, duplicateRuleBeginIterator->ruleName))
-						{
-							continue;
-						}
-						if (!RuleNamesMatch(ruleInfo.ruleDescription, duplicateRuleBeginIterator->ruleDescription))
-						{
-							continue;
-						}
-						// PrintRuleInformation(ruleInfo);
-						++localRegistryMatches;
-					}
-					wprintf(L"\t>> total local registry matches: %u\n", localRegistryMatches);
-					wprintf(L"\n");
-
-					wprintf(L"\t>> Cannot directly delete APPX rules - must analyze directly in the App-Isolation registry <<\n");
-					uint32_t appIsoRegistryMatches = 0;
-					for (const auto& [valueName, ruleInfo] : appIsoRegistryFirewallRules)
-					{
-						if (ruleInfo.ruleEnabled != duplicateRuleBeginIterator->ruleEnabled)
-						{
-							continue;
-						}
-						if (ruleInfo.ruleDirection != duplicateRuleBeginIterator->ruleDirection)
-						{
-							continue;
-						}
-						if (!RuleNamesMatch(ruleInfo.ruleName, duplicateRuleBeginIterator->ruleName))
-						{
-							continue;
-						}
-						if (!RuleNamesMatch(ruleInfo.ruleDescription, duplicateRuleBeginIterator->ruleDescription))
-						{
-							continue;
-						}
-						// PrintRuleInformation(ruleInfo);
-						++appIsoRegistryMatches;
-					}
-					wprintf(L"\t>> total App-Isolation registry matches: %u\n", appIsoRegistryMatches);
-					wprintf(L"\n");
-				}
-				else
 				{
 					const auto promptBeforeDeleting = matchType.value() == MatchType::LooseMatch;
 					DeleteDuplicateRules(

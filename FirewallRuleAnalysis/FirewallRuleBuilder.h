@@ -2,6 +2,7 @@
 #include <optional>
 #include <regex>
 #include <string>
+#include <cwctype>
 
 #include <Windows.h>
 #include <netfw.h>
@@ -15,7 +16,10 @@ struct NormalizedRuleInfo
 	wil::com_ptr<INetFwRule3> rule;
 	wil::unique_bstr ruleName;
 	wil::unique_bstr ruleDescription;
-	NET_FW_RULE_DIRECTION ruleDirection;
+	wil::unique_bstr ruleGrouping;
+	NET_FW_RULE_DIRECTION ruleDirection{};
+	NET_FW_ACTION ruleAction{};
+	LONG ruleProfiles{};
 
 	std::wstring ruleOwnerUsername;
 	DWORD errorRetrievingOwnerUsername{};
@@ -34,6 +38,12 @@ struct NormalizedRuleInfo
 
 	NormalizedRuleInfo() = default;
 	~NormalizedRuleInfo() = default;
+
+	// the wstring is required to already be lower-cased
+	void AppendValueLowerCase(const std::wstring& value)
+	{
+	    normalizedRuleDetails.append(value);
+	}
 
 	void AppendValue(const BSTR value)
 	{
@@ -216,22 +226,23 @@ inline std::tuple<DWORD, std::wstring> ConvertSidStringToUserName(_In_ PCWSTR lo
 enum class FirewallRuleStore
 {
 	Local,
-	AppIso
+	AppIsolation
 };
 constexpr auto* LocalFirewallRulePath = L"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules";
 constexpr auto* AppIsoFirewallRulePath = L"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\RestrictedServices\\AppIso\\FirewallRules";
 
+struct RegistryToComMapping
+{
+	const std::vector<const wchar_t*> registryKeywords;
+	const wchar_t* matchingComMethod = nullptr;
+	const uint32_t maxOccurrences = 0;
+	const std::function<void(const std::wstring&, NormalizedRuleInfo&)> valueToRuleInfoFn = nullptr;
+	uint32_t numOccurrences{ 0 };
+};
+
 // returns the [registry value name],[parsed rule name]
 inline std::vector<std::tuple<std::wstring, NormalizedRuleInfo>> ReadRegistryRules(FirewallRuleStore store)
 {
-	// the regex to read the name field out of the registry where rules are written. e.g.
-	// v2.33|Action=Allow|Active=TRUE|Dir=Out|Profile=Domain|Profile=Private|Profile=Public|Name=@{Microsoft.WindowsCalculator_11.2409.0.0_x64__8wekyb3d8bbwe?ms-resource://Microsoft.WindowsCalculator/Resources/AppStoreName}|Desc=@{Microsoft.WindowsCalculator_11.2409.0.0_x64__8wekyb3d8bbwe?ms-resource://Microsoft.WindowsCalculator/Resources/AppStoreName}|PFN=Microsoft.WindowsCalculator_8wekyb3d8bbwe|LUOwn=S-1-12-1-910410835-1306523740-2996082354-1245529378|EmbedCtxt=@{Microsoft.WindowsCalculator_11.2409.0.0_x64__8wekyb3d8bbwe?ms-resource://Microsoft.WindowsCalculator/Resources/AppStoreName}|Platform=2:6:2|Platform2=GTEQ|
-	const std::wregex findNameInRegistryValue(L".*?\\|Name=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
-	const std::wregex findDescriptionInRegistryValue(L".*?\\|Desc=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
-	const std::wregex findDirectionInRegistryValue(L".*?\\|Dir=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
-	const std::wregex findEnabledInRegistryValue(L".*?\\|Active=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
-	const std::wregex findUserOwnerInRegistryValue(L".*?\\|LUOwn=(.*?)\\|", std::regex_constants::ECMAScript | std::regex_constants::optimize);
-
 	std::vector<std::tuple<std::wstring, NormalizedRuleInfo>> returnValues;
 	wil::unique_hkey localRuleKey;
 	switch (store)
@@ -241,7 +252,7 @@ inline std::vector<std::tuple<std::wstring, NormalizedRuleInfo>> ReadRegistryRul
 		localRuleKey = wil::reg::open_unique_key(HKEY_LOCAL_MACHINE, LocalFirewallRulePath);
 		break;
 	}
-	case FirewallRuleStore::AppIso:
+	case FirewallRuleStore::AppIsolation:
 	{
 		localRuleKey = wil::reg::open_unique_key(HKEY_LOCAL_MACHINE, AppIsoFirewallRulePath);
 		break;
@@ -251,103 +262,417 @@ inline std::vector<std::tuple<std::wstring, NormalizedRuleInfo>> ReadRegistryRul
 	{
 		if (value_data.type != REG_SZ)
 		{
+			wprintf(L"***** Broken registry value -- type is not REG_SZ : %d *****\n", value_data.type);
 			DebugBreak();
+			return {};
 		}
+
+		// ruleValue cannot be const since we will eventually need modify-able iterators into this string
+		auto ruleValue = wil::reg::get_value_string(localRuleKey.get(), value_data.name.c_str());
 
 		NormalizedRuleInfo ruleInfo{};
-		const auto ruleValue = wil::reg::get_value_string(localRuleKey.get(), value_data.name.c_str());
 
-		// ruleName
-		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findNameInRegistryValue))
+		// ReSharper disable StringLiteralTypo
+		RegistryToComMapping registryToComMapping[]
 		{
-			/*
-			 * For debugging the regex:
-			wprintf(L"\t REGEX RESULTS (%lld):\n", matchResults.size());
-			wprintf(L"\t\t[0] %ws\n", matchResults[0].str().c_str());
-			wprintf(L"\t\t[1] %ws\n", matchResults[1].str().c_str());
-			*/
-			ruleInfo.ruleName = wil::make_bstr(matchResults[1].str().c_str());
-		}
-		else
-		{
-			DebugBreak();
-		}
-
-		// ruleDescription
-		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findDescriptionInRegistryValue))
-		{
-			ruleInfo.ruleDescription = wil::make_bstr(matchResults[1].str().c_str());
-		}
-
-		// ruleDirection
-		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findDirectionInRegistryValue))
-		{
-			if (matchResults[1].str() == L"In")
+			{{L"name"}, L"get_Name", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
 			{
-				ruleInfo.ruleDirection = NET_FW_RULE_DIR_IN;
+				ruleInfo.ruleName = wil::make_bstr(value.c_str());
+			}},
+			{{L"desc"}, L"get_Description", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.ruleDescription = wil::make_bstr(value.c_str());
+			}},
+			{{L"embedctxt"}, L"get_Grouping", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.ruleGrouping = wil::make_bstr(value.c_str());
+				ruleInfo.AppendValue(ruleInfo.ruleGrouping.get());
+			}},
+			{{L"active"}, L"get_Enabled", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_Enabled returns a VARIANT_BOOL - must be either TRUE or FALSE
+				bool valid = false;
+				if (value.size() == 4)
+				{
+					if (wmemcmp(value.c_str(), L"true", 4) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(1);
+					}
+				}
+				else if (value.size() == 5)
+				{
+					if (wmemcmp(value.c_str(), L"false", 5) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(0);
+					}
+				}
+				
+				if (!valid)
+				{
+					wprintf(L"***** Broken registry value -- active should be TRUE or FALSE : %ws *****\n", value.c_str());
+					DebugBreak();
+				}
+			}},
+			{{L"action"}, L"get_Action", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_Enabled returns a NET_FW_ACTION - Block is 0, Allow is 1
+				bool valid = false;
+				if (value.size() == 5)
+				{
+					if (wmemcmp(value.c_str(), L"block", 5) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(0);
+					}
+					else if (wmemcmp(value.c_str(), L"allow", 5) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(1);
+					}
+				}
+				
+				if (!valid)
+				{
+					wprintf(L"***** Broken registry value -- action should be ALLOW or BLOCK : %ws *****\n", value.c_str());
+					DebugBreak();
+				}
+			}},
+			{{L"dir"}, L"get_Direction", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_Direction returns NET_FW_RULE_DIRECTION: In is 1, Out is 2
+				bool valid = false;
+				if (value.size() == 2)
+				{
+					if (wmemcmp(value.c_str(), L"in", 2) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(1);
+					}
+				}
+				else if (value.size() == 3)
+				{
+					if (wmemcmp(value.c_str(), L"out", 3) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(2);
+					}
+				}
+				
+				if (!valid)
+				{
+					wprintf(L"***** Broken registry value -- action should be ALLOW or BLOCK : %ws *****\n", value.c_str());
+					DebugBreak();
+				}
+			}},
+			{{L"protocol"}, L"get_Protocol", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_Protocol returns a LONG
+				// throws if not a valid long number
+				ruleInfo.AppendValue(std::stol(value));
+			}},
+			{{L"profile"}, L"get_Profiles", 3, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_Profiles returns a LONG that is the OR combination of NET_FW_PROFILE_TYPE2 enums
+				// must be =Private, =Public, =Domain
+				bool valid = false;
+				if (value.size() == 6 && (0 == wmemcmp(value.c_str(), L"public", 6)))
+				{
+					valid = true;
+				    ruleInfo.ruleProfiles |= NET_FW_PROFILE_TYPE2::NET_FW_PROFILE2_PUBLIC;
+				}
+				else if (value.size() == 7 && (0 == wmemcmp(value.c_str(), L"private", 7)))
+                {
+					valid = true;
+				    ruleInfo.ruleProfiles |= NET_FW_PROFILE_TYPE2::NET_FW_PROFILE2_PRIVATE;
+                }
+				else if (value.size() == 6 && (0 == wmemcmp(value.c_str(), L"domain", 6)))
+                {
+					valid = true;
+				    ruleInfo.ruleProfiles |= NET_FW_PROFILE_TYPE2::NET_FW_PROFILE2_DOMAIN;
+                }
+				
+				if (!valid)
+				{
+					wprintf(L"***** Broken registry value -- profile should be PUBLIC, PRIVATE, or DOMAIN : %ws *****\n", value.c_str());
+					DebugBreak();
+				}
+			}},
+			{{L"luown"}, L"get_LocalUserOwner", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.AppendValueLowerCase(value);
+			}},
+			{{L"luauth", L"luauth2_24"}, L"get_LocalUserAuthorizedList", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.AppendValueLowerCase(value);
+			}},
+			{{L"app"}, L"get_ApplicationName", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.AppendValueLowerCase(value);
+			}},
+			{{L"apppkgid"}, L"get_LocalAppPackageId", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.AppendValueLowerCase(value);
+			}},
+			{{L"svc"}, L"get_ServiceName", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				ruleInfo.AppendValueLowerCase(value);
+			}},
+			{{L"edge"}, L"get_EdgeTraversal", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_EdgeTraversal returns a VARIANT_BOOL - must be either TRUE or FALSE
+				bool valid = false;
+				if (value.size() == 4)
+				{
+					if (wmemcmp(value.c_str(), L"true", 4) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(1);
+					}
+				}
+				else if (value.size() == 5)
+				{
+					if (wmemcmp(value.c_str(), L"false", 5) == 0)
+					{
+						valid = true;
+					    ruleInfo.AppendValue(0);
+					}
+				}
+				
+				if (!valid)
+				{
+					wprintf(L"***** Broken registry value -- edge should be TRUE or FALSE : %ws *****\n", value.c_str());
+					DebugBreak();
+				}
+			}},
+			{{L"defer"}, L"get_EdgeTraversalOptions", 1, [](const std::wstring& value, NormalizedRuleInfo& ruleInfo)
+			{
+				// get_EdgeTraversalOptions returns a LONG 
+				// throws if not a valid long number
+				ruleInfo.AppendValue(std::stol(value));
+			}},
+			{{L"if"}, L"get_Interfaces", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"iftype", L"iftype2_23"}, L"get_InterfaceTypes", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"la4", L"la6"}, L"get_LocalAddresses", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"ra4", L"ra42", L"ra43", L"ra6", L"ra62", L"ra63"}, L"get_RemoteAddresses", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"lport", L"lport2_10", L"lport2_20", L"lport2_24", L"lport2_29"}, L"get_LocalPorts", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"rport", L"rport2_10", L"rport2_25"}, L"get_RemotePorts", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"icmp4", L"icmp6"}, L"get_IcmpTypesAndCodes", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"ruauth"}, L"get_RemoteUserAuthorizedList", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"rmauth"}, L"get_RemoteMachineAuthorizedList", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			{{L"security", L"security2", L"security2_9"}, L"get_SecureFlags", INFINITE, [](const std::wstring&, NormalizedRuleInfo&)
+			{
+				// TODO
+			}},
+			// firewall registry value rule fields that don't map to the public COM API
+			{{L"radynkey"}},
+			{{L"platform"}},
+			{{L"platform2"}},
+			{{L"securityrealmid"}},
+			{{L"autogenipsec"}},
+			{{L"lsm"}},
+			{{L"lom"}},
+			{{L"authbypassout"}},
+			{{L"skipver"}},
+			{{L"pcross"}},
+			{{L"ttk", L"ttk2_22", L"ttk2_27", L"ttk2_28"}},
+			{{L"pfn"}},
+			{{L"nnm"}},
+			{{L"btoif"}},
+			{{L"sytesmosonly"}},
+			{{L"gameosonly"}},
+			{{L"devmode"}},
+			{{L"rsnm"}},
+			{{L"rsnmE"}},
+			{{L"rsnmN"}},
+			{{L"fqbn"}},
+			{{L"comptid"}},
+			{{L"caudit"}},
+			{{L"applb"}},
+		};
+		// ReSharper restore StringLiteralTypo
+
+		// walk the returned string looking for |keyword=value|
+		// wprintf(L"Parsing the registry value : %ws\n", ruleValue.c_str());
+
+		const auto endingIterator = ruleValue.end();
+		auto stringIterator = ruleValue.begin();
+		while (stringIterator != endingIterator)
+		{
+			// find the next keyword
+			stringIterator = std::find(stringIterator, endingIterator, L'|');
+			if (stringIterator == endingIterator)
+			{
+				continue;
 			}
-			else if (matchResults[1].str() == L"Out")
+
+			++stringIterator; // move to the character following the '|'
+			// the registry value string ends in a '|' -- check if we are at the end
+			if (stringIterator == endingIterator)
 			{
-				ruleInfo.ruleDirection = NET_FW_RULE_DIR_OUT;
+				break;
 			}
-			else
+
+			// now we know the begin() of the next keyword
+			const auto startOfKeyword = stringIterator;
+
+			// find the next value
+			stringIterator = std::find(stringIterator, endingIterator, L'=');
+			if (stringIterator == endingIterator)
 			{
+				wprintf(L"***** Broken registry value -- empty Keyword string : %ws *****\n", std::wstring(startOfKeyword, endingIterator).c_str());
 				DebugBreak();
+				return {};
 			}
-		}
-		else
-		{
-			DebugBreak();
-		}
 
-		// ruleEnabled
-		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findEnabledInRegistryValue))
-		{
-			if (matchResults[1].str() == L"TRUE")
+			// now we know the end() of the keyword, at the '='
+			auto endOfKeyword = stringIterator;
+			if (endOfKeyword - startOfKeyword == 1)
 			{
-				ruleInfo.ruleEnabled = true;
-			}
-			else if (matchResults[1].str() == L"FALSE")
-			{
-				ruleInfo.ruleEnabled = false;
-			}
-			else
-			{
+				wprintf(L"***** Broken registry value -- the string length of Value is zero : %ws *****\n", std::wstring(startOfKeyword, endingIterator).c_str());
 				DebugBreak();
+				return {};
 			}
-		}
-		else
-		{
-			DebugBreak();
+
+			++stringIterator; // move to the character following the '='
+
+			// now we know the begin() of the next value
+			const auto startOfValue = stringIterator;
+
+			// verify there's not a | between the start of they keyword and the '=' that we just found
+			// i.e., we expect |keyword=value|, with no | in 'keyword'
+			// that would indicate a busted registry value
+			if (std::find(startOfKeyword, startOfValue, L'|') != startOfValue)
+			{
+				wprintf(L"***** Broken registry value -- invalid Keyword=Value string : %ws *****\n", std::wstring(startOfKeyword, endingIterator).c_str());
+				DebugBreak();
+				return {};
+			}
+
+			stringIterator = std::find(stringIterator, endingIterator, L'|');
+			// now we know the end() of the next keyword
+			auto endOfValue = stringIterator;
+			if (endOfValue - startOfValue == 0)
+			{
+				wprintf(L"***** Broken registry value -- empty Value string : %ws *****\n", std::wstring(startOfKeyword, endingIterator).c_str());
+				DebugBreak();
+				return {};
+			}
+
+			// leave stringIterator referencing the last | character
+			// since that will be the start of the key/value pair for the next loop iteration
+
+			// now find the matching keyword
+			auto compareKeywords = [](const std::wstring::iterator& registryKeywordBegin, const std::wstring::iterator& registryKeywordEnd, PCWSTR keyword) -> bool
+				{
+					const size_t lhs_length = registryKeywordEnd - registryKeywordBegin;
+					const size_t rhs_length = wcslen(keyword);
+					if (lhs_length != rhs_length)
+					{
+						return false;
+					}
+
+					// this may look odd - it's taking the address of the character pointed to by registryKeywordBegin
+					return 0 == wmemcmp(&(registryKeywordBegin.operator*()), keyword, lhs_length);
+				};
+
+			// keywords must be alpha characters -- make them lower-case so we can memcmp
+			for (auto iterateKeyword = startOfKeyword; iterateKeyword != endOfKeyword; ++iterateKeyword)
+			{
+				if (std::iswalpha(*iterateKeyword))
+				{
+					*iterateKeyword = std::towlower(*iterateKeyword);
+				}
+				else if (std::iswdigit(*iterateKeyword) || *iterateKeyword == L'_')
+				{
+					// digits are OK for some keywords
+				}
+				else
+				{
+					wprintf(L"***** Broken registry value -- invalid Keyword string : %ws *****\n", std::wstring(startOfKeyword, endOfKeyword).c_str());
+					DebugBreak();
+					return {};
+				}
+			}
+
+			bool foundMapping = false;
+			for (auto& mapping : registryToComMapping)
+			{
+				for (const auto& keyword : mapping.registryKeywords)
+				{
+					if (compareKeywords(startOfKeyword, endOfKeyword, keyword))
+					{
+						foundMapping = true;
+					}
+
+					if (foundMapping)
+					{
+						break;
+					}
+				}
+
+				if (foundMapping)
+				{
+					if (mapping.matchingComMethod)
+					{
+						++mapping.numOccurrences;
+						if (mapping.numOccurrences > mapping.maxOccurrences)
+						{
+							wprintf(L"***** Broken registry value -- repeated Keyword string : %ws *****\n", std::wstring(startOfKeyword, endOfKeyword).c_str());
+							DebugBreak();
+							return {};
+						}
+					}
+
+					mapping.valueToRuleInfoFn(std::wstring(startOfValue, endOfValue), ruleInfo);
+					break;
+				}
+			}
+
+			if (!foundMapping)
+			{
+				wprintf(L"***** Broken registry value -- unknown Keyword string : %ws *****\n", std::wstring(startOfKeyword, endOfKeyword).c_str());
+				DebugBreak();
+				return {};
+			}
 		}
 
-		// ruleEnabled
-		if (std::wcmatch matchResults; std::regex_search(ruleValue.c_str(), matchResults, findUserOwnerInRegistryValue))
-		{
-			const auto localUserOwner = matchResults[1].str();
-			const auto userConversion = ConvertSidStringToUserName(localUserOwner.c_str());
-			ruleInfo.errorRetrievingOwnerUsername = std::get<0>(userConversion);
-			ruleInfo.ruleOwnerUsername = std::get<1>(userConversion);
-			/*
-			if (ruleInfo.errorRetrievingOwnerUsername != NO_ERROR)
-			{
-				wprintf(L"[rule %ws] (%ws) failed with error 0x%x\n",
-					ruleInfo.ruleName.get(),
-					localUserOwner.c_str(),
-					ruleInfo.errorRetrievingOwnerUsername);
-			}
-			else
-			{
-				wprintf(L"[rule %ws] (%ws) successfully resolved to %ws\n",
-					ruleInfo.ruleName.get(),
-					localUserOwner.c_str(),
-					ruleInfo.ruleOwnerUsername.c_str());
-			}
-            */
-		}
-
-		returnValues.emplace_back(ruleValue, std::move(ruleInfo));
+		returnValues.emplace_back(std::make_tuple(std::move(ruleValue), std::move(ruleInfo)));
 	}
+
+	std::ranges::sort(returnValues, [](const std::tuple<std::wstring, NormalizedRuleInfo>& lhs, const std::tuple<std::wstring, NormalizedRuleInfo>& rhs)
+		{
+			// just sort on the string read from the registry
+			return std::get<0>(lhs) < std::get<0>(rhs);
+		});
 	return returnValues;
 }
 
@@ -631,10 +956,12 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		wil::unique_bstr grouping{};
 		THROW_IF_FAILED(rule->get_Grouping(&grouping));
 		ruleInfo.AppendValue(grouping.get());
+		ruleInfo.ruleGrouping = std::move(grouping);
 
-		long profiles{};
+		LONG profiles{};
 		THROW_IF_FAILED(rule->get_Profiles(&profiles));
 		ruleInfo.AppendValue(profiles);
+		ruleInfo.ruleProfiles = profiles;
 
 		VARIANT_BOOL edgeTraversal{};
 		THROW_IF_FAILED(rule->get_EdgeTraversal(&edgeTraversal));
@@ -643,8 +970,9 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		NET_FW_ACTION action{};
 		THROW_IF_FAILED(rule->get_Action(&action));
 		ruleInfo.AppendValue(action);
+		ruleInfo.ruleAction = action;
 
-		long edgeTraversalOptions{};
+		LONG edgeTraversalOptions{};
 		THROW_IF_FAILED(rule->get_EdgeTraversalOptions(&edgeTraversalOptions));
 		ruleInfo.AppendValue(edgeTraversalOptions);
 
@@ -676,7 +1004,7 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 					localUserOwner.get(),
 					ruleInfo.ruleOwnerUsername.c_str());
 			}
-            */
+			*/
 		}
 
 		wil::unique_bstr localUserAuthorizedList{};
@@ -691,7 +1019,7 @@ inline NormalizedRuleInfo BuildFirewallRuleInfo(const wil::com_ptr<INetFwRule3>&
 		THROW_IF_FAILED(rule->get_RemoteMachineAuthorizedList(&remoteMachineAuthorizedList));
 		ruleInfo.AppendValue(remoteMachineAuthorizedList.get());
 
-		long secureFlags{};
+		LONG secureFlags{};
 		THROW_IF_FAILED(rule->get_SecureFlags(&secureFlags));
 		ruleInfo.AppendValue(secureFlags);
 	}
