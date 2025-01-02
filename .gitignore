@@ -19,3 +19,9 @@
 /MultipathLatencyAnalyzer/ARM64
 
 /packages
+/Debug
+/QueryFirewallProperties/ARM64
+/QueryFirewallProperties/Debug
+/QueryFirewallProperties/Release
+/QueryFirewallProperties/x64
+/Release
