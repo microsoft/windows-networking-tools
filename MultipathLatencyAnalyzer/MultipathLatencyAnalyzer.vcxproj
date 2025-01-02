@@ -98,12 +98,18 @@
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</TreatWarningAsError>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">stdcpplatest</LanguageStandard>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</MultiProcessorCompilation>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</TreatLinkerWarningAsErrors>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
@@ -111,9 +117,12 @@
       <PreprocessorDefinitions>WIN32;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</TreatWarningAsError>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpplatest</LanguageStandard>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -128,6 +137,12 @@
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">stdcpplatest</LanguageStandard>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</MultiProcessorCompilation>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</MultiProcessorCompilation>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -137,6 +152,9 @@
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</TreatLinkerWarningAsErrors>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</TreatLinkerWarningAsErrors>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

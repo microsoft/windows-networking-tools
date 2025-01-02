@@ -110,16 +110,16 @@
       <CallingConvention Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">Cdecl</CallingConvention>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</SDLCheck>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</SDLCheck>
-      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</MultiProcessorCompilation>
-      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</MultiProcessorCompilation>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</MultiProcessorCompilation>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</MultiProcessorCompilation>
       <ControlFlowGuard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       </ControlFlowGuard>
       <ControlFlowGuard Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
       </ControlFlowGuard>
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MultiThreadedDebugDLL</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">MultiThreadedDebugDLL</RuntimeLibrary>
-      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">stdcpp17</LanguageStandard>
-      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">stdcpplatest</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpplatest</LanguageStandard>
       <OmitFramePointers Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" />
       <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">ProgramDatabase</DebugInformationFormat>
       <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ProgramDatabase</DebugInformationFormat>
@@ -131,6 +131,8 @@
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SetChecksum Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SetChecksum>
       <SetChecksum Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</SetChecksum>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</TreatLinkerWarningAsErrors>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
@@ -138,16 +140,17 @@
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</TreatWarningAsError>
       <ConformanceMode Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ConformanceMode>
-      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpplatest</LanguageStandard>
       <OmitFramePointers Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">MultiThreadedDebugDLL</RuntimeLibrary>
       <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</SDLCheck>
-      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</MultiProcessorCompilation>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</MultiProcessorCompilation>
       <CallingConvention Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Cdecl</CallingConvention>
       <DebugInformationFormat Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -162,8 +165,8 @@
       <ConformanceMode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ConformanceMode>
       <ConformanceMode Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ConformanceMode>
       <ConformanceMode Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ConformanceMode>
-      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">stdcpp17</LanguageStandard>
-      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">stdcpplatest</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpplatest</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpplatest</LanguageStandard>
       <CallingConvention Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">Cdecl</CallingConvention>
       <CallingConvention Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Cdecl</CallingConvention>
@@ -173,6 +176,11 @@
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</MultiProcessorCompilation>
       <ControlFlowGuard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ControlFlowGuard>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</MultiProcessorCompilation>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</SDLCheck>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</MultiProcessorCompilation>
+      <SDLCheck Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</SDLCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -183,6 +191,9 @@
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SetChecksum Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</SetChecksum>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</TreatLinkerWarningAsErrors>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</TreatLinkerWarningAsErrors>
+      <TreatLinkerWarningAsErrors Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

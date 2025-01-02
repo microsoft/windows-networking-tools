@@ -5,23 +5,34 @@
 /Win32
 /x64
 /ARM64
+/Debug
+/Release
+/packages
+/mappings.txt
 
+/SetNetworkCategory/.vs
 /SetNetworkCategory/Win32
 /SetNetworkCategory/x64
 /SetNetworkCategory/ARM64
 
+/PrintConnectionProfiles/.vs
 /PrintConnectionProfiles/Win32
 /PrintConnectionProfiles/x64
 /PrintConnectionProfiles/ARM64
 
+/MultipathLatencyAnalyzer/.vs
 /MultipathLatencyAnalyzer/Win32
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
-/packages
 /FirewallRuleAnalysis/.vs
 /FirewallRuleAnalysis/packages
 /FirewallRuleAnalysis/Win32
 /FirewallRuleAnalysis/x64
 /FirewallRuleAnalysis/ARM64
-/mappings.txt
+
+/QueryFirewallProperties/.vs
+/QueryFirewallProperties/ARM64
+/QueryFirewallProperties/Debug
+/QueryFirewallProperties/Release
+/QueryFirewallProperties/x64

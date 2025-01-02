@@ -11,7 +11,13 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PrintConnectionProfiles", "
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MultipathLatencyAnalyzer", "MultipathLatencyAnalyzer\MultipathLatencyAnalyzer.vcxproj", "{85164DA8-EC9C-41DA-A26F-8B7C0695B810}"
 EndProject
+<<<<<<< HEAD
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FirewallRuleAnalysis", "FirewallRuleAnalysis\FirewallRuleAnalysis.vcxproj", "{1713381F-F397-451C-8C50-CC4316AA3843}"
+=======
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "FirewallTools", "FirewallTools", "{AFAF1BA6-2F8A-4A4E-9F56-7BE0E40C2BAC}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "QueryFirewallProperties", "QueryFirewallProperties\QueryFirewallProperties.vcxproj", "{1B5B06BC-43EF-4860-9E5E-C59149F83748}"
+>>>>>>> origin/master
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -47,7 +53,8 @@ Global
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B}.Release|x64.Build.0 = Release|x64
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B}.Release|x86.ActiveCfg = Release|Win32
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B}.Release|x86.Build.0 = Release|Win32
-		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|ARM64.ActiveCfg = Debug|Win32
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|ARM64.Build.0 = Debug|ARM64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x64.ActiveCfg = Debug|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x64.Build.0 = Debug|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Debug|x86.ActiveCfg = Debug|Win32
@@ -58,6 +65,7 @@ Global
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x64.Build.0 = Release|x64
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.ActiveCfg = Release|Win32
 		{85164DA8-EC9C-41DA-A26F-8B7C0695B810}.Release|x86.Build.0 = Release|Win32
+<<<<<<< HEAD
 		{1713381F-F397-451C-8C50-CC4316AA3843}.Debug|ARM64.ActiveCfg = Debug|x64
 		{1713381F-F397-451C-8C50-CC4316AA3843}.Debug|ARM64.Build.0 = Debug|x64
 		{1713381F-F397-451C-8C50-CC4316AA3843}.Debug|x64.ActiveCfg = Debug|x64
@@ -70,6 +78,20 @@ Global
 		{1713381F-F397-451C-8C50-CC4316AA3843}.Release|x64.Build.0 = Release|x64
 		{1713381F-F397-451C-8C50-CC4316AA3843}.Release|x86.ActiveCfg = Release|Win32
 		{1713381F-F397-451C-8C50-CC4316AA3843}.Release|x86.Build.0 = Release|Win32
+=======
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Debug|ARM64.Build.0 = Debug|ARM64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Debug|x64.ActiveCfg = Debug|x64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Debug|x64.Build.0 = Debug|x64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Debug|x86.ActiveCfg = Debug|Win32
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Debug|x86.Build.0 = Debug|Win32
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Release|ARM64.ActiveCfg = Release|ARM64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Release|ARM64.Build.0 = Release|ARM64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Release|x64.ActiveCfg = Release|x64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Release|x64.Build.0 = Release|x64
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Release|x86.ActiveCfg = Release|Win32
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748}.Release|x86.Build.0 = Release|Win32
+>>>>>>> origin/master
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -77,6 +99,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{9C26514A-31FD-43CB-823F-031FC27F1329} = {CF53C627-44D9-4B1C-A92D-32FD9C0BC88C}
 		{66F2F985-3CE5-4343-A25C-B8D8A17F118B} = {CF53C627-44D9-4B1C-A92D-32FD9C0BC88C}
+		{1B5B06BC-43EF-4860-9E5E-C59149F83748} = {AFAF1BA6-2F8A-4A4E-9F56-7BE0E40C2BAC}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F9C3B4B4-C9E3-48D9-B588-A37869E0A0E3}
