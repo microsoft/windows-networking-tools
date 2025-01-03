@@ -1,38 +1,44 @@
 ﻿*.user
 *.filters
 *.log
+/mappings.txt
 /.vs
+/packages
 /Win32
 /x64
 /ARM64
 /Debug
 /Release
-/packages
-/mappings.txt
 
 /SetNetworkCategory/.vs
+/SetNetworkCategory/packages
+>>>>>>> origin/master
 /SetNetworkCategory/Win32
 /SetNetworkCategory/x64
 /SetNetworkCategory/ARM64
 
 /PrintConnectionProfiles/.vs
+/PrintConnectionProfiles/packages
 /PrintConnectionProfiles/Win32
 /PrintConnectionProfiles/x64
 /PrintConnectionProfiles/ARM64
 
 /MultipathLatencyAnalyzer/.vs
+/MultipathLatencyAnalyzer/packages
 /MultipathLatencyAnalyzer/Win32
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
-/FirewallRuleAnalysis/.vs
-/FirewallRuleAnalysis/packages
-/FirewallRuleAnalysis/Win32
-/FirewallRuleAnalysis/x64
-/FirewallRuleAnalysis/ARM64
-
 /QueryFirewallProperties/.vs
+/QueryFirewallProperties/packages
 /QueryFirewallProperties/ARM64
 /QueryFirewallProperties/Debug
 /QueryFirewallProperties/Release
 /QueryFirewallProperties/x64
+
+/FirewallRuleAnalysis/.vs
+/FirewallRuleAnalysis/packages
+/FirewallRuleAnalysis/ARM64
+/FirewallRuleAnalysis/Debug
+/FirewallRuleAnalysis/Release
+/FirewallRuleAnalysis/x64
