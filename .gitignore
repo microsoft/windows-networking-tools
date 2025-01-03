@@ -25,3 +25,5 @@
 /QueryFirewallProperties/Release
 /QueryFirewallProperties/x64
 /Release
+/FirewallRuleAnalysis/.vs/FirewallRuleAnalysis
+/FirewallRuleAnalysis/packages/Microsoft.Windows.ImplementationLibrary.1.0.240803.1
