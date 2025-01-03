@@ -167,13 +167,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BuildFirewallRulesViaRegistry.cpp" />
     <ClCompile Include="FirewallRuleAnalysis.cpp" />
+    <ClCompile Include="BuildFirewallRulesViaCOM.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FirewallRuleBuilder.h" />
+    <ClInclude Include="BuildFirewallRulesViaRegistry.h" />
+    <ClInclude Include="BuildFirewallRulesViaCOM.h" />
+    <ClInclude Include="DeleteDuplicateRulesFromCom.h" />
+    <ClInclude Include="NormalizedFirewallRule.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
