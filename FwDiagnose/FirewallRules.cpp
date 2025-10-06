@@ -4,7 +4,6 @@
 #include <optional>
 #include <tuple>
 #include <ranges>
-#include <cstdio>
 #include <iostream>
 
 #include <Windows.h>
@@ -180,7 +179,7 @@ HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 
 	timer.start("EnumFirewallRules");
 	DWORD num_rules = 0;
-	PFW_RULE rules = nullptr;
+	FW_RULE* rules = nullptr;
 	const auto enumRulesError = g_FWEnumFirewallRules(
 		g_policyStore,
 		static_cast<DWORD>(FW_RULE_STATUS_CLASS_ALL),
@@ -195,10 +194,10 @@ HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 	}
 	timer.end();
 
-	// cannot FWFreeFirewallRules in the return PFW_RULES - since we keep those pointers around to read later
+	// cannot FWFreeFirewallRules - since we keep those pointers around to read later
 
 	timer.start("Normalizing Firewall rules into a vector");
-	PFW_RULE rule_iterator = rules;
+	FW_RULE* rule_iterator = rules;
 	while (rule_iterator)
 	{
 		policy.normalizedRules.emplace_back(NormalizedFirewallRule::BuildFromFWRule(rule_iterator));
@@ -353,7 +352,7 @@ void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rul
 
 		std::printf(
 			"\n"
-			"     %lld duplicates of this rule [%ls:  %ls]\n",
+			"     %zd duplicates of this rule [%ls:  %ls]\n",
 			duplicate_rule_total,
 			duplicate_rule.duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			duplicate_rule.duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule.duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule.duplicate_rule_begin->ruleName.value.c_str());
@@ -490,7 +489,7 @@ void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rul
 			}
 		}
 
-		std::printf("       Deleting %lld duplicates of this rule, keeping 1\n", duplicate_rule_total - 1);
+		std::printf("       Deleting %zd duplicates of this rule, keeping 1\n", duplicate_rule_total - 1);
 
 		uint32_t delete_rule_counter = 0;
 		uint32_t successful_deletion_counter = 0;

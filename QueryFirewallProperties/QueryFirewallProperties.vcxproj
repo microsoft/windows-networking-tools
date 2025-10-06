@@ -109,6 +109,7 @@
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalIncludeDirectories>..\ctl;</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,6 +130,7 @@
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalIncludeDirectories>..\ctl;</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -149,6 +151,7 @@
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalIncludeDirectories>..\ctl;</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -167,6 +170,7 @@
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalIncludeDirectories>..\ctl;</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -187,6 +191,7 @@
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalIncludeDirectories>..\ctl;</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -209,6 +214,7 @@
       <CallingConvention>StdCall</CallingConvention>
       <AdditionalIncludeDirectories>..\ctl;</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

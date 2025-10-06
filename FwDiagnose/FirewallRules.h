@@ -16,7 +16,7 @@ struct FirewallPolicyObjects
 };
 
 void LoadFirewallFunctions();
-HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& firewall_rules);
+HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy);
 bool HasFirewallAdminAccess();
 
 std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules);

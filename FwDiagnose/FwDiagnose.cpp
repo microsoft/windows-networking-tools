@@ -75,7 +75,7 @@ static void PrintUsage() noexcept
 		"\n"
 		"  -wfp and -clean cannot both be specified");
 }
-int main(int argc, char* argv[]) try
+int __cdecl main(int argc, char* argv[]) try
 {
 	const auto coInit = wil::CoInitializeEx();
 	InitializeWfpPerfCounters();
@@ -305,7 +305,7 @@ int main(int argc, char* argv[]) try
 		auto& wfp_callouts = ReadWfpCallouts();
 		std::printf(
 			"  * Total callouts: %zu\n"
-			"  * Total 3rd party callouts: %lld\n",
+			"  * Total 3rd party callouts: %zd\n",
 			wfp_callouts.size(),
 			std::ranges::count_if(
 				wfp_callouts, [](const CalloutDetails& callout)
@@ -343,7 +343,7 @@ int main(int argc, char* argv[]) try
 		const auto& wfp_sublayers = ReadWfpSubLayers();
 		std::printf(
 			"  * Total sublayers: %zu\n"
-			"  * Total 3rd party sublayers: %lld\n",
+			"  * Total 3rd party sublayers: %zd\n",
 			wfp_sublayers.size(),
 			std::ranges::count_if(
 				wfp_sublayers, [](const SubLayerDetails& sublayer)
@@ -375,7 +375,7 @@ int main(int argc, char* argv[]) try
 			"**************************************************************************************\n");
 		const auto& wfp_providers = ReadWfpProviders();
 		std::printf("  * Total Providers: %zu\n"
-			"  * Total 3rd party providers: %lld\n",
+			"  * Total 3rd party providers: %zd\n",
 			wfp_providers.size(),
 			std::ranges::count_if(
 				wfp_providers, [](const ProviderDetails& provider)
@@ -502,7 +502,7 @@ int main(int argc, char* argv[]) try
 				if (callout.referenced_by_filter_count > 0)
 				{
 					const auto internal_string = GetInternalCalloutString(callout);
-					std::printf("    %ls : [%zu] %ls\n",
+					std::printf("    %ls : [%llu] %ls\n",
 						GuidToString(callout.calloutKey).c_str(),
 						callout.referenced_by_filter_count,
 						internal_string.empty() ? callout.name.c_str() : internal_string.c_str()
@@ -653,7 +653,7 @@ int main(int argc, char* argv[]) try
 		{
 			std::printf(
 				"\n"
-				"  ** WARNING: The WMI-based WFP filter count (%llu) does not match the Filter count via the Fwpm* APIs (%llu) : a difference of %llu\n",
+				"  ** WARNING: The WMI-based WFP filter count (%llu) does not match the Filter count via the Fwpm* APIs (%zu) : a difference of %llu\n",
 				final_wfp_filter_count,
 				filter_details.size(),
 				final_wfp_filter_count > filter_details.size() ? final_wfp_filter_count - filter_details.size() : filter_details.size() - final_wfp_filter_count);

@@ -14,7 +14,11 @@
 
 static std::vector<FilterDetails> g_all_filters;
 
+/*
+*  Uncomment when needed for debugging
+* 
 static std::wstring FwpmConditionFieldToString(const GUID& fieldKey) noexcept;
+*/
 
 const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 {

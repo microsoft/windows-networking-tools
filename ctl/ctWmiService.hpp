@@ -39,7 +39,7 @@ public:
 
         THROW_IF_FAILED(m_wbemLocator->ConnectServer(
             wil::make_bstr(path).get(), // Object path of WMI namespace
-            nullptr, // User name. NULL = current user
+            nullptr, // Username. NULL = current user
             nullptr, // User password. NULL = current
             nullptr, // Locale. NULL indicates current
             0, // Security flags.

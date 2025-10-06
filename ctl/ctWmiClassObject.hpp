@@ -37,10 +37,6 @@ namespace ctl
 // Exposes enumerating properties of a WMI Provider through a property_iterator interface.
 class ctWmiClassObject
 {
-private:
-    ctWmiService m_wbemServices;
-    wil::com_ptr<IWbemClassObject> m_wbemClassObject;
-
 public:
     //
     // forward declare iterator classes
@@ -108,14 +104,6 @@ public:
     // A forward property_iterator class type to enable forward-traversing instances of the queried WMI provider
     class property_iterator
     {
-    private:
-        static constexpr uint32_t c_endIteratorIndex = ULONG_MAX;
-
-        wil::com_ptr<IWbemClassObject> m_wbemClassObj;
-        wil::shared_bstr m_propertyName;
-        CIMTYPE m_propertyType = 0;
-        uint32_t m_index = c_endIteratorIndex;
-
     public:
         property_iterator() = default;
 

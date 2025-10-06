@@ -666,93 +666,6 @@ namespace ctl
             // not movable
             ctWmiPerformanceCounterData(ctWmiPerformanceCounterData&&) = delete;
             ctWmiPerformanceCounterData& operator=(ctWmiPerformanceCounterData&&) = delete;
-
-		private:
-			mutable wil::critical_section m_guardData{ 500 };
-			const ctWmiPerformanceCollectionType m_collectionType = ctWmiPerformanceCollectionType::Detailed;
-			const std::wstring m_instanceName;
-			const std::wstring m_counterName;
-			std::vector<T> m_counterData;
-			uint64_t m_counterSum = 0;
-
-			void add_data(const T& instanceData)
-			{
-				const auto lock = m_guardData.lock();
-				switch (m_collectionType)
-				{
-				case ctWmiPerformanceCollectionType::Detailed:
-					m_counterData.push_back(instanceData);
-					break;
-
-				case ctWmiPerformanceCollectionType::MeanOnly:
-					// vector is formatted as:
-					// [0] == count
-					// [1] == min
-					// [2] == max
-					// [3] == mean
-					if (m_counterData.empty())
-					{
-						m_counterData.push_back(1);
-						m_counterData.push_back(instanceData);
-						m_counterData.push_back(instanceData);
-						m_counterData.push_back(0);
-					}
-					else
-					{
-						++m_counterData[0];
-						if (instanceData < m_counterData[1])
-						{
-							m_counterData[1] = instanceData;
-						}
-						if (instanceData > m_counterData[2])
-						{
-							m_counterData[2] = instanceData;
-						}
-					}
-
-					m_counterSum += instanceData;
-					break;
-
-				case ctWmiPerformanceCollectionType::FirstLast:
-					// the first data point write both min and max
-					// [0] == count
-					// [1] == first
-					// [2] == last
-					if (m_counterData.empty())
-					{
-						m_counterData.push_back(1);
-						m_counterData.push_back(instanceData);
-						m_counterData.push_back(instanceData);
-					}
-					else
-					{
-						++m_counterData[0];
-						m_counterData[2] = instanceData;
-					}
-					break;
-
-				default:
-					FAIL_FAST_MSG(
-						"Unknown ctWmiPerformanceCollectionType (%d)", m_collectionType);
-				}
-			}
-
-			typename std::vector<T>::const_iterator access_begin() noexcept
-			{
-				const auto lock = m_guardData.lock();
-				// when accessing data, calculate the mean
-				if (ctWmiPerformanceCollectionType::MeanOnly == m_collectionType)
-				{
-					m_counterData[3] = static_cast<T>(m_counterSum / m_counterData[0]);
-				}
-				return m_counterData.cbegin();
-			}
-
-			typename std::vector<T>::const_iterator access_end() const noexcept
-			{
-				const auto lock = m_guardData.lock();
-				return m_counterData.cend();
-			}
         };
 
         inline wil::unique_variant ctQueryInstanceName(_In_ IWbemObjectAccess* instance)
@@ -800,10 +713,6 @@ namespace ctl
         // iterates across *time-slices* captured over from ctWmiPerformance
         class iterator
         {
-        private:
-            typename std::vector<T>::const_iterator m_current;
-            bool m_isEmpty = true;
-
         public:
             // iterator_traits - allows <algorithm> functions to be used
             using iterator_category = std::forward_iterator_tag;

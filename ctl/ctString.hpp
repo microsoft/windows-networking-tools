@@ -244,7 +244,7 @@ namespace Detail
 }
 
 template <typename LeftStringT, typename RightStringT>
-bool ordinal_equals(LeftStringT lhs, RightStringT rhs)
+bool ordinal_equals(const LeftStringT& lhs, const RightStringT& rhs)
 {
 #pragma prefast(suppress:26018, "SAL doesn't offer a way to annotate the requirement that wcslen(convert_to_ptr(x)) == get_string_length(x)")
     return Detail::OrdinalEquals(
@@ -256,7 +256,7 @@ bool ordinal_equals(LeftStringT lhs, RightStringT rhs)
 }
 
 template <typename LeftStringT, typename RightStringT>
-bool iordinal_equals(LeftStringT lhs, RightStringT rhs)
+bool iordinal_equals(const LeftStringT& lhs, const RightStringT& rhs)
 {
 #pragma prefast(suppress:26018, "SAL doesn't offer a way to annotate the requirement that wcslen(convert_to_ptr(x)) == get_string_length(x)")
     return Detail::OrdinalEquals(

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <string>
 
 #include <Windows.h>
@@ -13,7 +12,7 @@
 
 struct NormalizedFirewallRule
 {
-	PFW_RULE fwRule{};
+	FW_RULE* fwRule{};
 	std::wstring ruleId;
 	NormalizedString ruleName;
 	std::wstring ruleDescription;
@@ -45,7 +44,7 @@ struct NormalizedFirewallRule
 	NormalizedFirewallRule() = default;
 	~NormalizedFirewallRule() = default;
 
-	static NormalizedFirewallRule BuildFromFWRule(PFW_RULE fwRule)
+	static NormalizedFirewallRule BuildFromFWRule(FW_RULE* fwRule)
 	{
 		NormalizedFirewallRule normalizedRule;
 		normalizedRule.fwRule = fwRule;

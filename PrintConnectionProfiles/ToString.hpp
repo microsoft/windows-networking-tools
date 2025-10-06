@@ -14,7 +14,7 @@
 
 using std::to_wstring;
 
-inline std::wstring exception_to_wstring(hresult_error const& ex)
+inline std::wstring exception_to_wstring(const hresult_error& ex)
 {
     std::wstringstream ss(L"winrt hresult_error thrown :: ");
     ss << std::hex << ex.to_abi().value << L" :: " << ex.message().c_str() << std::endl;
@@ -42,7 +42,7 @@ inline std::wstring to_wstring(const FILETIME& fileTime)
             SYSTEMTIME localTime{};
             if (SystemTimeToTzSpecificLocalTime(nullptr, &systemTime, &localTime))
             {
-                const size_t formattedStringLength = 64;
+                constexpr size_t formattedStringLength = 64;
                 WCHAR formattedString[formattedStringLength]{};
                 if (GetDateFormatEx(LOCALE_NAME_INVARIANT, DATE_SHORTDATE, &localTime, nullptr, formattedString, formattedStringLength, nullptr) > 0)
                 {
@@ -65,7 +65,7 @@ inline std::wstring to_wstring(const DateTime& dateTime)
     integerConversion.QuadPart = dateTime.time_since_epoch().count();
     FILETIME ft{};
     ft.dwLowDateTime = integerConversion.LowPart;
-    ft.dwHighDateTime = static_cast<LONG>(integerConversion.HighPart);
+    ft.dwHighDateTime = integerConversion.HighPart;
     return to_wstring(ft);
 }
 
