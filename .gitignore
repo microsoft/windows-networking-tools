@@ -12,7 +12,6 @@
 
 /SetNetworkCategory/.vs
 /SetNetworkCategory/packages
->>>>>>> origin/master
 /SetNetworkCategory/Win32
 /SetNetworkCategory/x64
 /SetNetworkCategory/ARM64
@@ -35,13 +34,6 @@
 /QueryFirewallProperties/Debug
 /QueryFirewallProperties/Release
 /QueryFirewallProperties/x64
-
-/FirewallRuleAnalysis/.vs
-/FirewallRuleAnalysis/packages
-/FirewallRuleAnalysis/ARM64
-/FirewallRuleAnalysis/Debug
-/FirewallRuleAnalysis/Release
-/FirewallRuleAnalysis/x64
 
 /FwDiagnose/.vs
 /FwDiagnose/packages

@@ -21,6 +21,7 @@ See the Apache Version 2.0 License for specific language governing permissions a
 #include <wil/com.h>
 #include <wil/resource.h>
 
+
 namespace ctl
 {
 // Callers must instantiate a ctWmiService instance in order to use any of the ctWmi* classes

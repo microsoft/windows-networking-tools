@@ -233,6 +233,7 @@ inline void ctWmiEnumerate::iterator::increment()
         1,
         wbemTarget.put(),
         &uReturn));
+
     if (0 == uReturn)
     {
         // at the end...

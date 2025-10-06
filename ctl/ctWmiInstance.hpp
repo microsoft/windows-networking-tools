@@ -15,7 +15,9 @@ See the Apache Version 2.0 License for specific language governing permissions a
 
 // cpp headers
 #include <utility>
+#include <vector>
 #include <algorithm>
+#include <utility>
 // os headers
 #include <Windows.h>
 #include <objbase.h>

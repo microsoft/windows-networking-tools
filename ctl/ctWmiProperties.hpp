@@ -39,6 +39,10 @@ namespace ctl
 // Exposes enumerating properties of a WMI Provider through an iterator interface.
 class ctWmiProperties
 {
+private:
+    ctWmiService m_wbemServices;
+    wil::com_ptr<IWbemClassObject> m_wbemClass{};
+
 public:
     class iterator;
 
@@ -160,12 +164,14 @@ public:
             return !(*this == iter);
         }
 
+        // preincrement
         iterator& operator++()
         {
             increment();
             return *this;
         }
 
+        // postincrement
         iterator operator++(int)
         {
             iterator temp(*this);
@@ -173,6 +179,7 @@ public:
             return temp;
         }
 
+        // increment by integer
         iterator& operator+=(uint32_t _inc)
         {
             for (auto loop = 0ul; loop < _inc; ++loop)
