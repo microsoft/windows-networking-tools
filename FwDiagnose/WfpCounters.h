@@ -1,0 +1,141 @@
+// ReSharper disable CppInconsistentNaming
+// ReSharper disable IdentifierTypo
+#pragma once
+#include <stdint.h>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <windows.h>
+#include <objbase.h>
+#include <fwpmu.h>
+
+#include "FwDiagnose.h"
+
+#include <wil/resource.h>
+
+void InitializeWfpPerfCounters();
+uint64_t ReadWfpPerfCounters();
+
+inline std::wstring GuidToString(const GUID& guid)
+{
+	wchar_t buffer[39]{};
+	const auto string_length = StringFromGUID2(guid, buffer, std::size(buffer));
+	FAIL_FAST_IF(string_length != std::size(buffer));
+
+	// remove trailing null when constructing the std::wstring
+	std::wstring return_string;
+	return_string.assign(buffer, string_length - 1);
+	return return_string;
+}
+
+HANDLE GetFwpmEngineHandle();
+uint32_t SortedLayerValue(const GUID& layer) noexcept;
+std::string LayerToString(const GUID& layerGuid);
+
+struct FilterDetails
+{
+	GUID filterKey;
+	UINT64 filterId;
+
+	GUID layerKey;
+	GUID subLayerKey;
+
+	NormalizedString name;
+	std::wstring description;
+	UINT32 flags;
+
+	uint64_t weight;
+	uint64_t effectiveWeight;
+
+	std::optional<GUID> providerKey;
+	std::vector<uint8_t> providerData;
+
+	UINT32 numFilterConditions;
+	std::vector<FWPM_FILTER_CONDITION0> filterConditions;
+
+	// not deep copying filter conditions
+
+	FWPM_ACTION0 action_type;
+
+	bool IsDisabled() const noexcept
+	{
+		return (flags & FWPM_FILTER_FLAG_DISABLED) != 0;
+	}
+	bool IsPersistent() const noexcept
+	{
+		return (flags & FWPM_FILTER_FLAG_PERSISTENT) != 0;
+	}
+};
+
+// allow searching FilterDetails by name
+inline bool operator<(const FilterDetails & lhs, const NormalizedString & rhs) noexcept
+{
+	return lhs.name.value < rhs.value;
+}
+inline bool operator<(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
+{
+	return lhs.value < rhs.name.value;
+}
+inline bool operator==(const FilterDetails& lhs, const NormalizedString& rhs) noexcept
+{
+	return lhs.name.value == rhs.value;
+}
+inline bool operator==(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
+{
+	return lhs.value == rhs.name.value;
+}
+
+const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output);
+const std::vector<FilterDetails>& SortFilterDetailsByName();
+size_t CountFiltersByName(const NormalizedString& rule_name);
+size_t CountFilterConditionsByName(const NormalizedString& rule_name);
+
+// callout support
+struct CalloutDetails
+{
+	GUID calloutKey{};
+	GUID applicableLayer{};
+	std::string layer{};
+	std::wstring name{};
+	std::wstring description{};
+	uint64_t referenced_by_filter_count{};
+	bool is_third_party_callout{ false };
+	bool normalizedNameContainsNonAsciiString{ true };
+};
+std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
+std::wstring GetInternalCalloutString(const CalloutDetails& callout);
+std::wstring PrintCallout(const CalloutDetails& callout);
+
+// sublayer support
+struct SubLayerDetails
+{
+	GUID subLayerKey{};
+	std::wstring displayName{};
+	std::wstring description{};
+	size_t filterCount{};
+	size_t disabledFilterCount{};
+	size_t persistentFilterCount{};
+	uint16_t weight{};
+	bool is_third_party_sublayer{ false };
+};
+const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept;
+SubLayerDetails& FindSublayer(const GUID& subLayerKey);
+std::wstring SublayerToString(const SubLayerDetails& sublayer);
+void PrintSublayerFilterDetails();
+
+// providers support
+struct ProviderDetails
+{
+	GUID providerKey{};
+	std::wstring displayName{};
+	std::wstring serviceName{};
+	size_t filterCount{};
+	size_t disabledFilterCount{};
+	size_t persistentFilterCount{};
+	bool is_third_party_provider{ false };
+};
+const std::vector<ProviderDetails>& ReadWfpProviders() noexcept;
+ProviderDetails& FindProvider(const GUID& providerKey);
+std::wstring ProviderToString(const ProviderDetails& provider);
+void PrintProviderFilterDetails();
