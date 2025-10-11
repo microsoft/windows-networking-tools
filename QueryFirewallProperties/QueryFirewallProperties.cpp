@@ -5,7 +5,7 @@
 #include <exception>
 #include <string>
 #include <windows.h>
-#include "ctWmiInitialize.hpp"
+#include "ctWmiInstance.hpp"
 
 #include <wil/com.h>
 #include <wil/resource.h>
@@ -85,7 +85,7 @@ try
 		}
 	}
 
-	ctl::ctWmiEnumerate firewall_profile_enumerator{ ctl::ctWmiService{L"ROOT\\StandardCimv2"} };
+	ctl::ctWmiEnumerateInstance firewall_profile_enumerator{ ctl::ctWmiService{L"ROOT\\StandardCimv2"} };
 
 	wprintf(L"Enumerating NetFirewallProfile from the policy store %ws\n", policyStoreValue);
 

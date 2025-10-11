@@ -1,7 +1,9 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #pragma once
 #include <string>
 #include <chrono>
-
 #include <Windows.h>
 
 bool DebugPrintEnabled() noexcept;

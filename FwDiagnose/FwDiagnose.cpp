@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #include <algorithm>
 #include <iostream>
 #include <numeric>
@@ -9,7 +12,6 @@
 #include "firewall.h"
 #include "FirewallRules.h"
 #include "NormalizedFirewallRule.h"
-#include "ctWmiInitialize.hpp"
 #include "WfpCounters.h"
 
 #include <wil/stl.h>

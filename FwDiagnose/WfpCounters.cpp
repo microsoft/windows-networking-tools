@@ -1,10 +1,13 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #include <memory>
 #include <vector>
 
 #include <Windows.h>
 #include <fwpmu.h>
 
-#include <ctWmiPerformance.hpp>
+#include "ctPerformanceCounter.hpp"
 
 #include "WfpCounters.h"
 
@@ -12,8 +15,8 @@
 #include <wil/resource.h>
 
 const static ctl::ctWmiService* g_wmi = nullptr;
-static ctl::ctWmiPerformance* g_wmi_performance = nullptr;
-static std::shared_ptr<ctl::ctWmiPerformanceCounter<ULONGLONG>>* g_wfp_filter_count;
+static ctl::ctPerformanceCounter* g_wmi_performance = nullptr;
+static std::shared_ptr<ctl::ctPerformanceCounterCounter<ULONGLONG>>* g_wfp_filter_count;
 
 static HANDLE g_wfp_engineHandle = nullptr;
 HANDLE GetFwpmEngineHandle()
@@ -33,14 +36,14 @@ HANDLE GetFwpmEngineHandle()
 void InitializeWfpPerfCounters()
 {
 	g_wmi = new ctl::ctWmiService(L"root\\cimv2");
-	g_wmi_performance = new ctl::ctWmiPerformance(*g_wmi);
-	g_wfp_filter_count = new std::shared_ptr<ctl::ctWmiPerformanceCounter<ULONGLONG>>();
+	g_wmi_performance = new ctl::ctPerformanceCounter(*g_wmi);
+	g_wfp_filter_count = new std::shared_ptr<ctl::ctPerformanceCounterCounter<ULONGLONG>>();
 
 	*g_wfp_filter_count = ctCreatePerfCounter<ULONGLONG>(
 		*g_wmi,
 		ctl::ctWmiEnumClassName::WfpFilterCount,
 		L"Total",
-		ctl::ctWmiPerformanceCollectionType::Detailed);
+		ctl::ctPerformanceCounterCollectionType::Detailed);
 	g_wmi_performance->add_counter(*g_wfp_filter_count);
 }
 

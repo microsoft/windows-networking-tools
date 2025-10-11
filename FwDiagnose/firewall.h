@@ -1,6 +1,7 @@
-#ifndef FIREWALL_H_
-#define FIREWALL_H_
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
+#pragma once
 #include <windows.h>
 
 #pragma warning(push)
@@ -1381,5 +1382,3 @@ extern "C" {
 #endif
 
 #pragma warning(pop)
-
-#endif // FIREWALL_H_

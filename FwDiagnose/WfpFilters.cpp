@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #include <algorithm>
 #include <ranges>
 #include <string>
@@ -10,7 +13,6 @@
 
 #include <wil/stl.h>
 #include <wil/resource.h>
-
 
 static std::vector<FilterDetails> g_all_filters;
 
