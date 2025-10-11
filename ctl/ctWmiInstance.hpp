@@ -562,6 +562,17 @@ public:
         std::shared_ptr<ctWmiInstance> m_wmiInstance;
     };
 
+    static ctWmiEnumerateInstance Query(_In_ PCWSTR query, ctWmiService wbemServices = ctWmiService{L"ROOT\\StandardCimv2"})
+    {
+        ctWmiEnumerateInstance instance(std::move(wbemServices));
+        return instance.query(query);
+    }
+
+    static ctWmiEnumerateInstance Query(_In_ PCWSTR query, const wil::com_ptr<IWbemContext>& context, ctWmiService wbemServices = ctWmiService{L"ROOT\\StandardCimv2"})
+    {
+        ctWmiEnumerateInstance instance(std::move(wbemServices));
+        return instance.query(query, context);
+    }
 
     explicit ctWmiEnumerateInstance(ctWmiService wbemServices) noexcept :
         m_wbemServices(std::move(wbemServices))

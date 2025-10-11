@@ -85,8 +85,6 @@ try
 		}
 	}
 
-	ctl::ctWmiEnumerateInstance firewall_profile_enumerator{ ctl::ctWmiService{L"ROOT\\StandardCimv2"} };
-
 	wprintf(L"Enumerating NetFirewallProfile from the policy store %ws\n", policyStoreValue);
 
 	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
@@ -98,7 +96,7 @@ try
 		wil::make_variant_bstr(policyStoreValue).addressof()));
 
 	bool instances_returned = false;
-	for (const auto& profile : firewall_profile_enumerator.query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
+	for (const auto& profile : ctl::ctWmiEnumerateInstance::Query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
 	{
 		instances_returned = true;
 
