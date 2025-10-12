@@ -208,7 +208,7 @@ class ctEtwRecord
     bool
     queryRelatedActivityId(_Out_ GUID*) const noexcept;
     bool
-    querySID(_Out_ std::shared_ptr<BYTE[]>&, _Out_ size_t*) const;
+    querySID(_Out_ std::vector<BYTE>&) const;
     bool
     queryTerminalSessionId(_Out_ ULONG*) const noexcept;
     bool
@@ -250,13 +250,13 @@ class ctEtwRecord
     bool
     queryEventPropertyStringValue(_Out_ std::wstring&) const;
     bool
-    queryEventPropertyName(_In_ unsigned long ulIndex, _Out_ std::wstring& out_wsPropertyName) const;
+    queryEventPropertyName(_In_ ULONG index, _Out_ std::wstring& property_name) const;
     bool
     queryEventProperty(_In_ PCWSTR, _Out_ std::wstring&) const;
     bool
     queryEventProperty(_In_ PCWSTR, _Out_ ctPropertyPair&) const;
     bool
-    queryEventProperty(_In_ unsigned long, _Out_ std::wstring&) const;
+    queryEventProperty(_In_ ULONG, _Out_ std::wstring&) const;
     /** @} */
 
   private:
@@ -268,16 +268,16 @@ class ctEtwRecord
     EVENT_HEADER m_eventHeader{};
     ETW_BUFFER_CONTEXT m_etwBufferContext{};
 
-    /** @brief v_eventHeaderExtendedData and v_pEventHeaderData stores a deep-copy
+    /** @brief m_eventHeaderExtendedData and m_eventHeaderData stores a deep-copy
      *         of the EVENT_HEADER_EXTENDED_DATA_ITEM struct. */
     std::vector<EVENT_HEADER_EXTENDED_DATA_ITEM> m_eventHeaderExtendedData;
     std::vector<std::shared_ptr<BYTE[]>> m_eventHeaderData;
 
-    /** @brief ptraceEventInfo stores a deep copy of the TRACE_EVENT_INFO struct. */
-    std::shared_ptr<BYTE[]> m_traceEventInfo;
-    ULONG m_cbTraceEventInfo{0};
+    /** @brief m_traceEventInfo stores a deep copy of the TRACE_EVENT_INFO struct. */
+    std::vector<BYTE> m_traceEventInfoBuffer;
+    TRACE_EVENT_INFO* m_traceEventInfoPtr{nullptr};
 
-    /** @brief vPropertyInfo stores an array of all properties */
+    /** @brief m_traceProperties stores an array of all properties */
     std::vector<ctPropertyPair> m_traceProperties;
 
     using ctMappingPair = std::pair<std::shared_ptr<WCHAR[]>, ULONG>;
@@ -316,102 +316,105 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
     }
 
     if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
-        m_cbTraceEventInfo = event_record->UserDataLength;
-        m_traceEventInfo.reset(new BYTE[m_cbTraceEventInfo]);
-        memcpy_s(m_traceEventInfo.get(), m_cbTraceEventInfo, event_record->UserData, m_cbTraceEventInfo);
+        const BYTE* pUserData = static_cast<const BYTE*>(event_record->UserData);
+        m_traceEventInfoBuffer.assign(pUserData, pUserData + event_record->UserDataLength);
+        m_traceEventInfoPtr = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfoBuffer.data());
     } else {
-        m_cbTraceEventInfo = 0;
+        ULONG trace_event_size = 0;
         ULONG tdhError =
-            TdhGetEventInformation(const_cast<PEVENT_RECORD>(event_record), 0, nullptr, nullptr, &m_cbTraceEventInfo);
+            TdhGetEventInformation(const_cast<PEVENT_RECORD>(event_record), 0, nullptr, nullptr, &trace_event_size);
         if (ERROR_INSUFFICIENT_BUFFER == tdhError) {
-            m_traceEventInfo.reset(new BYTE[m_cbTraceEventInfo]);
+            m_traceEventInfoBuffer.resize(trace_event_size);
             THROW_IF_WIN32_ERROR(TdhGetEventInformation(
                 const_cast<PEVENT_RECORD>(event_record),
                 0,
                 nullptr,
-                reinterpret_cast<PTRACE_EVENT_INFO>(m_traceEventInfo.get()),
-                &m_cbTraceEventInfo));
+                reinterpret_cast<PTRACE_EVENT_INFO>(m_traceEventInfoBuffer.data()),
+                &trace_event_size));
+            m_traceEventInfoPtr = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfoBuffer.data());
         }
 
         // retrieve all property data points
         // need to do this in the constructor
         // since the original EVENT_RECORD is required to follow embedded pointers
 
-        BYTE* pByteInfo = m_traceEventInfo.get();
-        TRACE_EVENT_INFO* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-
-        const unsigned long total_properties = pTraceInfo->TopLevelPropertyCount;
-        if (total_properties > 0) {
+        if (m_traceEventInfoPtr->TopLevelPropertyCount > 0) {
             // variables for TdhFormatProperty
             USHORT UserDataLength = event_record->UserDataLength;
             PBYTE UserData = static_cast<PBYTE>(event_record->UserData);
 
             // go through event properties, and pull out the necessary data
-            for (unsigned long property_count = 0; property_count < total_properties; ++property_count) {
-                if (pTraceInfo->EventPropertyInfoArray[property_count].Flags & PropertyStruct) {
+            for (ULONG property_count = 0; property_count < m_traceEventInfoPtr->TopLevelPropertyCount;
+                 ++property_count) {
+                const auto& event_property_info = m_traceEventInfoPtr->EventPropertyInfoArray[property_count];
+                if (event_property_info.Flags != 0) {
+                    // if Flags & PropertyStruct
                     // currently not supporting deep-copying event data of structs
 #ifdef TDH_FORMAT_FATAL_CONDITION
                     DebugBreak();
 #endif
-                    m_traceMapping.emplace_back(std::shared_ptr<WCHAR[]>(), 0);
-                    m_traceProperties.emplace_back(std::shared_ptr<BYTE[]>(), 0);
-                } else if (pTraceInfo->EventPropertyInfoArray[property_count].count > 1) {
+                    m_traceMapping.emplace_back(nullptr, 0);
+                    m_traceProperties.emplace_back(nullptr, 0);
+                } else if (event_property_info.count > 1) {
                     // currently not supporting deep-copying event data of arrays
 #ifdef TDH_FORMAT_FATAL_CONDITION
                     DebugBreak();
 #endif
-                    m_traceMapping.emplace_back(std::shared_ptr<WCHAR[]>(), 0);
-                    m_traceProperties.emplace_back(std::shared_ptr<BYTE[]>(), 0);
+                    m_traceMapping.emplace_back(nullptr, 0);
+                    m_traceProperties.emplace_back(nullptr, 0);
                 } else {
                     // define the event we want with a PROPERTY_DATA_DESCRIPTOR
-                    PROPERTY_DATA_DESCRIPTOR dataDescriptor;
-                    dataDescriptor.PropertyName = reinterpret_cast<ULONGLONG>(
-                        pByteInfo + pTraceInfo->EventPropertyInfoArray[property_count].NameOffset);
-                    dataDescriptor.ArrayIndex = ULONG_MAX;
-                    dataDescriptor.Reserved = 0UL;
+                    PROPERTY_DATA_DESCRIPTOR property_data_descriptor;
+                    property_data_descriptor.PropertyName =
+                        reinterpret_cast<ULONGLONG>(m_traceEventInfoBuffer.data() + event_property_info.NameOffset);
+                    property_data_descriptor.ArrayIndex = ULONG_MAX;
+                    property_data_descriptor.Reserved = 0UL;
 
                     // get the buffer size first
-                    ULONG cbPropertyData = 0;
+                    ULONG property_data_size_bytes = 0;
                     THROW_IF_WIN32_ERROR(TdhGetPropertySize(
                         const_cast<PEVENT_RECORD>(event_record),
                         0,       // not using WPP or 'classic' ETW
                         nullptr, // not using WPP or 'classic' ETW
                         1,       // one property at a time - not support structs of data at this time
-                        &dataDescriptor,
-                        &cbPropertyData));
+                        &property_data_descriptor,
+                        &property_data_size_bytes));
 
                     // now allocate the required buffer, and copy the data
                     // - only if the buffer size > 0
-                    std::shared_ptr<BYTE[]> pPropertyData;
-                    if (cbPropertyData > 0) {
-                        pPropertyData.reset(new BYTE[cbPropertyData]);
+                    std::shared_ptr<BYTE[]> property_data_buffer;
+                    if (property_data_size_bytes > 0) {
+                        property_data_buffer.reset(new BYTE[property_data_size_bytes]);
                         THROW_IF_WIN32_ERROR(TdhGetProperty(
                             const_cast<PEVENT_RECORD>(event_record),
                             0,       // not using WPP or 'classic' ETW
                             nullptr, // not using WPP or 'classic' ETW
                             1,       // one property at a time - not support structs of data at this time
-                            &dataDescriptor,
-                            cbPropertyData,
-                            pPropertyData.get()));
+                            &property_data_descriptor,
+                            property_data_size_bytes,
+                            property_data_buffer.get()));
                     }
-                    m_traceProperties.emplace_back(pPropertyData, cbPropertyData);
+                    m_traceProperties.emplace_back(property_data_buffer, property_data_size_bytes);
 
                     // additionally capture the mapped string for the property, if it exists
-                    PWSTR szMapName = reinterpret_cast<PWSTR>(
-                        pByteInfo + pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.MapNameOffset);
-                    std::shared_ptr<BYTE[]> pPropertyMap;
-                    DWORD dwMapInfoSize = 0;
+                    const PCWSTR property_map_name = reinterpret_cast<PCWSTR>(
+                        m_traceEventInfoBuffer.data() + event_property_info.nonStructType.MapNameOffset);
+                    std::shared_ptr<BYTE[]> property_map_buffer;
+                    DWORD property_map_size_bytes = 0;
 
                     // first query the size needed
                     tdhError = TdhGetEventMapInformation(
-                        const_cast<PEVENT_RECORD>(event_record), szMapName, nullptr, &dwMapInfoSize);
+                        const_cast<PEVENT_RECORD>(event_record),
+                        const_cast<PWSTR>(property_map_name),
+                        nullptr,
+                        &property_map_size_bytes);
                     if (ERROR_INSUFFICIENT_BUFFER == tdhError) {
-                        pPropertyMap.reset(new BYTE[dwMapInfoSize]);
+                        property_map_buffer.reset(new BYTE[property_map_size_bytes]);
                         tdhError = TdhGetEventMapInformation(
                             const_cast<PEVENT_RECORD>(event_record),
-                            szMapName,
-                            reinterpret_cast<PEVENT_MAP_INFO>(pPropertyMap.get()),
-                            &dwMapInfoSize);
+                            const_cast<PWSTR>(property_map_name),
+                            reinterpret_cast<PEVENT_MAP_INFO>(property_map_buffer.get()),
+                            &property_map_size_bytes);
                     }
 
                     switch (tdhError) {
@@ -420,7 +423,7 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
                         break;
                     case ERROR_NOT_FOUND:
                         // this is OK to keep this event - there just wasn't a mapping for a formatted string
-                        pPropertyMap.reset();
+                        property_map_buffer.reset();
                         break;
                     default:
                         // any other error is an unexpected failure
@@ -429,20 +432,18 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
                             "TdhGetEventMapInformation failed with error %u, EVENT_RECORD %p, TRACE_EVENT_INFO %p",
                             tdhError,
                             event_record,
-                            pTraceInfo);
+                            m_traceEventInfoPtr);
 #else
-                        pPropertyMap.reset();
+                        property_map_buffer.reset();
 #endif
                     }
                     // if we successfully retrieved the property info
                     // format the mapped property value
-                    if (pPropertyMap) {
-                        USHORT property_length = pTraceInfo->EventPropertyInfoArray[property_count].length;
-                        // per MSDN, must manually set the length for TDH_OUTTYPE_IPV6
-                        if (TDH_INTYPE_BINARY ==
-                                pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.InType &&
-                            TDH_OUTTYPE_IPV6 ==
-                                pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.OutType) {
+                    if (property_map_buffer) {
+                        auto property_length = event_property_info.length;
+                        if (TDH_INTYPE_BINARY == event_property_info.nonStructType.InType &&
+                            TDH_OUTTYPE_IPV6 == event_property_info.nonStructType.OutType) {
+                            // per MSDN, must manually set the length for TDH_OUTTYPE_IPV6
                             property_length = static_cast<USHORT>(sizeof IN6_ADDR);
                         }
                         const ULONG pointer_size =
@@ -451,11 +452,11 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
                         USHORT UserDataConsumed = 0;
                         std::shared_ptr<WCHAR[]> formatted_value;
                         tdhError = TdhFormatProperty(
-                            pTraceInfo,
-                            reinterpret_cast<PEVENT_MAP_INFO>(pPropertyMap.get()),
+                            m_traceEventInfoPtr,
+                            reinterpret_cast<PEVENT_MAP_INFO>(property_map_buffer.get()),
                             pointer_size,
-                            pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.InType,
-                            pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.OutType,
+                            event_property_info.nonStructType.InType,
+                            event_property_info.nonStructType.OutType,
                             property_length,
                             UserDataLength,
                             UserData,
@@ -465,11 +466,11 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
                         if (ERROR_INSUFFICIENT_BUFFER == tdhError) {
                             formatted_value.reset(new WCHAR[formattedPropertySize / sizeof(WCHAR)]);
                             tdhError = TdhFormatProperty(
-                                pTraceInfo,
-                                reinterpret_cast<PEVENT_MAP_INFO>(pPropertyMap.get()),
+                                m_traceEventInfoPtr,
+                                reinterpret_cast<PEVENT_MAP_INFO>(property_map_buffer.get()),
                                 pointer_size,
-                                pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.InType,
-                                pTraceInfo->EventPropertyInfoArray[property_count].nonStructType.OutType,
+                                event_property_info.nonStructType.InType,
+                                event_property_info.nonStructType.OutType,
                                 property_length,
                                 UserDataLength,
                                 UserData,
@@ -483,19 +484,19 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
                                 "TdhFormatProperty failed with error %u, EVENT_RECORD %p, TRACE_EVENT_INFO %p",
                                 tdhError,
                                 event_record,
-                                pTraceInfo);
+                                m_traceEventInfoPtr);
 #else
-                            m_traceMapping.emplace_back(std::shared_ptr<WCHAR[]>(), 0);
+                            m_traceMapping.emplace_back(nullptr, 0);
 #endif
                         } else {
-                        UserDataLength -= UserDataConsumed;
-                        UserData += UserDataConsumed;
-                        // now add the value/size pair to the member std::vector storing all properties
+                            UserDataLength -= UserDataConsumed;
+                            UserData += UserDataConsumed;
+                            // now add the value/size pair to the member std::vector storing all properties
                             m_traceMapping.emplace_back(formatted_value, formattedPropertySize);
                         }
                     } else {
                         // store null values
-                        m_traceMapping.emplace_back(std::shared_ptr<WCHAR[]>(), 0);
+                        m_traceMapping.emplace_back(nullptr, 0);
                     }
                 }
             }
@@ -520,8 +521,7 @@ ctEtwRecord::swap(ctEtwRecord& rhs) noexcept
     using std::swap;
     swap(m_eventHeaderExtendedData, rhs.m_eventHeaderExtendedData);
     swap(m_eventHeaderData, rhs.m_eventHeaderData);
-    swap(m_traceEventInfo, rhs.m_traceEventInfo);
-    swap(m_cbTraceEventInfo, rhs.m_cbTraceEventInfo);
+    swap(m_traceEventInfoBuffer, rhs.m_traceEventInfoBuffer);
     swap(m_traceProperties, rhs.m_traceProperties);
     swap(m_traceMapping, rhs.m_traceMapping);
     swap(m_initialized, rhs.m_initialized);
@@ -689,14 +689,12 @@ ctEtwRecord::writeRecord(std::wstring& reusable_string) const
         wsData += reinterpret_cast<LPWSTR>(pszGuid.get());
     }
 
-    std::shared_ptr<BYTE[]> pSID;
-    size_t cbSID = 0;
-    if (querySID(pSID, &cbSID)) {
+    std::vector<BYTE> pSID;
+    if (querySID(pSID)) {
         wsData += L"\n\tSID ";
-        LPWSTR szSID = nullptr;
-        if (::ConvertSidToStringSid(pSID.get(), &szSID)) {
-            wsData += szSID;
-            LocalFree(szSID);
+        wil::unique_hlocal_string szSID = nullptr;
+        if (::ConvertSidToStringSid(pSID.data(), &szSID)) {
+            wsData += szSID.get();
         } else {
             THROW_LAST_ERROR();
         }
@@ -805,13 +803,14 @@ ctEtwRecord::writeRecord(std::wstring& reusable_string) const
         wsData += stackBuffer;
 
         if (ulData > 0) {
-            BYTE* pByteInfo = m_traceEventInfo.get();
-            TRACE_EVENT_INFO* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
+            const BYTE* pByteInfo = m_traceEventInfoBuffer.data();
+            const TRACE_EVENT_INFO* pTraceInfo =
+                reinterpret_cast<const TRACE_EVENT_INFO*>(m_traceEventInfoBuffer.data());
             wsData += L"\n\tProperty Names:";
-            for (unsigned long ulCount = 0; ulCount < ulData; ++ulCount) {
+            for (ULONG ulCount = 0; ulCount < ulData; ++ulCount) {
                 wsData.append(L"\n\t\t");
-                wsData.append(
-                    reinterpret_cast<wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset));
+                wsData.append(reinterpret_cast<const wchar_t*>(
+                    pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset));
                 wsData.append(L": ");
                 wsData.append(buildEventPropertyString(ulCount));
             }
@@ -832,15 +831,15 @@ ctEtwRecord::writeFormattedMessage(std::wstring& reusable_string, bool include_m
 
     ULONG ulData = 0;
     if (queryTopLevelPropertyCount(&ulData) && ulData > 0) {
-        BYTE* pByteInfo = m_traceEventInfo.get();
-        const TRACE_EVENT_INFO* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
+        const BYTE* pByteInfo = m_traceEventInfoBuffer.data();
+        const TRACE_EVENT_INFO* pTraceInfo = reinterpret_cast<const TRACE_EVENT_INFO*>(m_traceEventInfoBuffer.data());
 
         std::wstring wsProperties;
         std::vector<std::wstring> wsPropertyVector;
-        for (unsigned long ulCount = 0; ulCount < ulData; ++ulCount) {
+        for (ULONG ulCount = 0; ulCount < ulData; ++ulCount) {
             wsProperties.append(L"\n[");
             wsProperties.append(
-                reinterpret_cast<wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset));
+                reinterpret_cast<const wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset));
             wsProperties.append(L"] ");
 
             // use the mapped string if it's available
@@ -848,7 +847,7 @@ ctEtwRecord::writeFormattedMessage(std::wstring& reusable_string, bool include_m
                 wsProperties.append(m_traceMapping[ulCount].first.get());
                 wsPropertyVector.emplace_back(m_traceMapping[ulCount].first.get());
             } else {
-                std::wstring wsPropertyValue = buildEventPropertyString(ulCount);
+                const std::wstring wsPropertyValue = buildEventPropertyString(ulCount);
                 wsProperties.append(wsPropertyValue);
                 wsPropertyVector.push_back(wsPropertyValue);
             }
@@ -872,7 +871,6 @@ ctEtwRecord::writeFormattedMessage(std::wstring& reusable_string, bool include_m
                          0,
                          reinterpret_cast<va_list*>(messageArguments.data()))) {
                 const auto free_message = wil::scope_exit([&] { LocalFree(formattedMessage); });
-                UNREFERENCED_PARAMETER(free_message); // will not dismiss it - it will always free
                 wsData.append(formattedMessage);
             } else {
                 wsData.append(wsEventMessage);
@@ -897,12 +895,12 @@ ctEtwRecord::writeMessageProperties() const
 
     ULONG ulData = 0;
     if (queryTopLevelPropertyCount(&ulData) && ulData > 0) {
-        BYTE* pByteInfo = m_traceEventInfo.get();
-        const TRACE_EVENT_INFO* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
+        const BYTE* pByteInfo = m_traceEventInfoBuffer.data();
+        const TRACE_EVENT_INFO* pTraceInfo = reinterpret_cast<const TRACE_EVENT_INFO*>(m_traceEventInfoBuffer.data());
 
-        for (unsigned long ulCount = 0; ulCount < ulData; ++ulCount) {
+        for (ULONG ulCount = 0; ulCount < ulData; ++ulCount) {
             const std::wstring key =
-                reinterpret_cast<wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset);
+                reinterpret_cast<const wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset);
 
             // use the mapped string if it's available
             std::wstring value;
@@ -963,11 +961,10 @@ try {
             return false;
         }
     }
-    // a deep comparison of the m_traceEventInfo member
-    if (m_cbTraceEventInfo != rhs.m_cbTraceEventInfo) {
+    if (m_traceEventInfoBuffer.size() != rhs.m_traceEventInfoBuffer.size()) {
         return false;
     }
-    if (0 != memcmp(m_traceEventInfo.get(), rhs.m_traceEventInfo.get(), m_cbTraceEventInfo)) {
+    if (m_traceEventInfoBuffer != rhs.m_traceEventInfoBuffer) {
         return false;
     }
 
@@ -1017,7 +1014,7 @@ ctEtwRecord::getActivityId() const noexcept
 }
 
 inline bool
-ctEtwRecord::queryKernelTime(_Out_ ULONG* pout_Time) const noexcept
+ctEtwRecord::queryKernelTime(_Out_ ULONG* kernel_time) const noexcept
 {
     if (!m_initialized) {
         return false;
@@ -1027,12 +1024,12 @@ ctEtwRecord::queryKernelTime(_Out_ ULONG* pout_Time) const noexcept
         return false;
     }
 
-    *pout_Time = m_eventHeader.KernelTime;
+    *kernel_time = m_eventHeader.KernelTime;
     return true;
 }
 
 inline bool
-ctEtwRecord::queryUserTime(_Out_ ULONG* pout_Time) const noexcept
+ctEtwRecord::queryUserTime(_Out_ ULONG* user_time) const noexcept
 {
     if (!m_initialized) {
         return false;
@@ -1042,7 +1039,7 @@ ctEtwRecord::queryUserTime(_Out_ ULONG* pout_Time) const noexcept
         return false;
     }
 
-    *pout_Time = m_eventHeader.UserTime;
+    *user_time = m_eventHeader.UserTime;
     return true;
 }
 
@@ -1123,13 +1120,14 @@ ctEtwRecord::getLoggerId() const noexcept
 /**
  * @brief Accessors for EVENT_HEADER_EXTENDED_DATA_ITEM properties
  * @details Retrieved from the member variable
- *          std::vector<EVENT_HEADER_EXTENDED_DATA_ITEM> v_eventHeaderExtendedData.
+ *          std::vector<EVENT_HEADER_EXTENDED_DATA_ITEM> m_eventHeaderExtendedData.
  *          Required to walk the std::vector to determine if the asked-for property
  *          is in any of the data items stored.
  */
 inline bool
-ctEtwRecord::queryRelatedActivityId(_Out_ GUID* pout_GUID) const noexcept
+ctEtwRecord::queryRelatedActivityId(_Out_ GUID* related_activity_id) const noexcept
 {
+	*related_activity_id = {};
     if (!m_initialized) {
         return false;
     }
@@ -1140,7 +1138,7 @@ ctEtwRecord::queryRelatedActivityId(_Out_ GUID* pout_GUID) const noexcept
             assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID));
             const EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID* relatedID =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID*>(tempItem.DataPtr);
-            *pout_GUID = relatedID->RelatedActivityId;
+            *related_activity_id = relatedID->RelatedActivityId;
             bFoundProperty = true;
             break;
         }
@@ -1150,8 +1148,9 @@ ctEtwRecord::queryRelatedActivityId(_Out_ GUID* pout_GUID) const noexcept
 }
 
 inline bool
-ctEtwRecord::querySID(_Out_ std::shared_ptr<BYTE[]>& out_pSID, _Out_ size_t* pout_cbSize) const
+ctEtwRecord::querySID(_Out_ std::vector<BYTE>& sid) const
 {
+    sid.clear();
     if (!m_initialized) {
         return false;
     }
@@ -1159,10 +1158,9 @@ ctEtwRecord::querySID(_Out_ std::shared_ptr<BYTE[]>& out_pSID, _Out_ size_t* pou
     bool bFoundProperty = false;
     for (const auto& tempItem : m_eventHeaderExtendedData) {
         if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_SID) {
-            const SID* p_temp_SID = reinterpret_cast<SID*>(tempItem.DataPtr);
-            out_pSID.reset(new BYTE[tempItem.DataSize]);
-            *pout_cbSize = tempItem.DataSize;
-            memcpy_s(out_pSID.get(), tempItem.DataSize, p_temp_SID, *pout_cbSize);
+            sid.assign(
+                reinterpret_cast<BYTE*>(tempItem.DataPtr),
+                reinterpret_cast<BYTE*>(tempItem.DataPtr) + tempItem.DataSize);
             bFoundProperty = true;
             break;
         }
@@ -1172,8 +1170,9 @@ ctEtwRecord::querySID(_Out_ std::shared_ptr<BYTE[]>& out_pSID, _Out_ size_t* pou
 }
 
 inline bool
-ctEtwRecord::queryTerminalSessionId(_Out_ ULONG* pout_ID) const noexcept
+ctEtwRecord::queryTerminalSessionId(_Out_ ULONG* terminal_session_id) const noexcept
 {
+    *terminal_session_id = {};
     if (!m_initialized) {
         return false;
     }
@@ -1183,7 +1182,7 @@ ctEtwRecord::queryTerminalSessionId(_Out_ ULONG* pout_ID) const noexcept
         if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_TS_ID) {
             assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_TS_ID));
             const EVENT_EXTENDED_ITEM_TS_ID* ts_ID = reinterpret_cast<EVENT_EXTENDED_ITEM_TS_ID*>(tempItem.DataPtr);
-            *pout_ID = ts_ID->SessionId;
+            *terminal_session_id = ts_ID->SessionId;
             bFoundProperty = true;
             break;
         }
@@ -1193,8 +1192,9 @@ ctEtwRecord::queryTerminalSessionId(_Out_ ULONG* pout_ID) const noexcept
 }
 
 inline bool
-ctEtwRecord::queryTransactionInstanceId(_Out_ ULONG* pout_ID) const noexcept
+ctEtwRecord::queryTransactionInstanceId(_Out_ ULONG* transaction_instance_id) const noexcept
 {
+    *transaction_instance_id = {};
     if (!m_initialized) {
         return false;
     }
@@ -1205,7 +1205,7 @@ ctEtwRecord::queryTransactionInstanceId(_Out_ ULONG* pout_ID) const noexcept
             assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
             const EVENT_EXTENDED_ITEM_INSTANCE* instanceInfo =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(tempItem.DataPtr);
-            *pout_ID = instanceInfo->InstanceId;
+            *transaction_instance_id = instanceInfo->InstanceId;
             bFoundProperty = true;
             break;
         }
@@ -1215,8 +1215,9 @@ ctEtwRecord::queryTransactionInstanceId(_Out_ ULONG* pout_ID) const noexcept
 }
 
 inline bool
-ctEtwRecord::queryTransactionParentInstanceId(_Out_ ULONG* pout_ID) const noexcept
+ctEtwRecord::queryTransactionParentInstanceId(_Out_ ULONG* transaction_parent_instance_id) const noexcept
 {
+    *transaction_parent_instance_id = {};
     if (!m_initialized) {
         return false;
     }
@@ -1227,7 +1228,7 @@ ctEtwRecord::queryTransactionParentInstanceId(_Out_ ULONG* pout_ID) const noexce
             assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
             const EVENT_EXTENDED_ITEM_INSTANCE* instanceInfo =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(tempItem.DataPtr);
-            *pout_ID = instanceInfo->ParentInstanceId;
+            *transaction_parent_instance_id = instanceInfo->ParentInstanceId;
             bFoundProperty = true;
             break;
         }
@@ -1237,19 +1238,20 @@ ctEtwRecord::queryTransactionParentInstanceId(_Out_ ULONG* pout_ID) const noexce
 }
 
 inline bool
-ctEtwRecord::queryTransactionParentGuid(_Out_ GUID* pout_GUID) const noexcept
+ctEtwRecord::queryTransactionParentGuid(_Out_ GUID* transaction_parent_guid) const noexcept
 {
+    *transaction_parent_guid = {};
     if (!m_initialized) {
         return false;
     }
 
     bool bFoundProperty = false;
-    for (const auto& tempItem : m_eventHeaderExtendedData) {
-        if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_INSTANCE_INFO) {
-            assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
+    for (const auto& extended_data_item : m_eventHeaderExtendedData) {
+        if (extended_data_item.ExtType == EVENT_HEADER_EXT_TYPE_INSTANCE_INFO) {
+            assert(extended_data_item.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
             const EVENT_EXTENDED_ITEM_INSTANCE* instanceInfo =
-                reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(tempItem.DataPtr);
-            *pout_GUID = instanceInfo->ParentGuid;
+                reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(extended_data_item.DataPtr);
+            *transaction_parent_guid = instanceInfo->ParentGuid;
             bFoundProperty = true;
             break;
         }
@@ -1264,244 +1266,279 @@ ctEtwRecord::queryTransactionParentGuid(_Out_ GUID* pout_GUID) const noexcept
  *          the parent EVENT_HEADER struct.
  */
 inline bool
-ctEtwRecord::queryProviderGuid(_Out_ GUID* pout_GUID) const noexcept
+ctEtwRecord::queryProviderGuid(_Out_ GUID* provider_guid) const noexcept
 {
+    *provider_guid = {};
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    *pout_GUID = pTraceInfo->ProviderGuid;
+    *provider_guid = m_traceEventInfoPtr->ProviderGuid;
     return true;
 }
 
 inline bool
-ctEtwRecord::queryDecodingSource(_Out_ DECODING_SOURCE* pout_SOURCE) const noexcept
+ctEtwRecord::queryDecodingSource(_Out_ DECODING_SOURCE* decoding_source) const noexcept
 {
+    *decoding_source = {};
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    *pout_SOURCE = pTraceInfo->DecodingSource;
+    *decoding_source = m_traceEventInfoPtr->DecodingSource;
     return true;
 }
 
 inline bool
-ctEtwRecord::queryProviderName(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryProviderName(_Out_ std::wstring& provider_name) const
 {
+    provider_name.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->ProviderNameOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->ProviderNameOffset) {
-        return false;
-    }
-
-    const wchar_t* szProviderName = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->ProviderNameOffset);
-    out_wsName.assign(szProviderName);
+    const wchar_t* szProviderName =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->ProviderNameOffset);
+    provider_name.assign(szProviderName);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryLevelName(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryLevelName(_Out_ std::wstring& level_name) const
 {
+    level_name.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->LevelNameOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->LevelNameOffset) {
-        return false;
-    }
-
-    const wchar_t* szLevelName = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->LevelNameOffset);
-    out_wsName.assign(szLevelName);
+    const wchar_t* szLevelName =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->LevelNameOffset);
+    level_name.assign(szLevelName);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryChannelName(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryChannelName(_Out_ std::wstring& channel_name) const
 {
+    channel_name.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->ChannelNameOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->ChannelNameOffset) {
-        return false;
-    }
-
-    const wchar_t* szChannelName = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->ChannelNameOffset);
-    out_wsName.assign(szChannelName);
+    const wchar_t* szChannelName =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->ChannelNameOffset);
+    channel_name.assign(szChannelName);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryKeywords(_Out_ std::vector<std::wstring>& out_vKeywords) const
+ctEtwRecord::queryKeywords(_Out_ std::vector<std::wstring>& keywords) const
 {
+    keywords.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->KeywordsNameOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->KeywordsNameOffset) {
-        return false;
+    const wchar_t* key_name =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->KeywordsNameOffset);
+
+    std::vector<std::wstring> temp_keywords;
+    while (*key_name != L'\0') {
+        temp_keywords.emplace_back(key_name);
+        key_name += wcslen(key_name) + 1;
     }
 
-    const wchar_t* szKeyName = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->KeywordsNameOffset);
-    std::vector<std::wstring> vTemp;
-    std::wstring wsTemp;
-    while (*szKeyName != L'\0') {
-        const size_t cchKeySize = wcslen(szKeyName) + 1;
-        wsTemp.assign(szKeyName);
-        vTemp.push_back(wsTemp);
-        szKeyName += cchKeySize;
-    }
-    vTemp.swap(out_vKeywords);
+    temp_keywords.swap(keywords);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryTaskName(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryTaskName(_Out_ std::wstring& task_name) const
 {
+    task_name.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->TaskNameOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->TaskNameOffset) {
-        return false;
-    }
-
-    const wchar_t* szTaskName = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->TaskNameOffset);
-    out_wsName.assign(szTaskName);
+    const wchar_t* szTaskName =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->TaskNameOffset);
+    task_name.assign(szTaskName);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryOpcodeName(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryOpcodeName(_Out_ std::wstring& opcode_name) const
 {
+    opcode_name.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->OpcodeNameOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->OpcodeNameOffset) {
-        return false;
-    }
-
-    const wchar_t* szOpcodeName = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->OpcodeNameOffset);
-    out_wsName.assign(szOpcodeName);
+    const wchar_t* szOpcodeName =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->OpcodeNameOffset);
+    opcode_name.assign(szOpcodeName);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryEventMessage(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryEventMessage(_Out_ std::wstring& event_message) const
 {
+    event_message.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->EventMessageOffset) {
         return false;
     }
 
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->EventMessageOffset) {
-        return false;
-    }
-
-    const wchar_t* szEventMessage = reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->EventMessageOffset);
-    out_wsName.assign(szEventMessage);
+    const wchar_t* szEventMessage =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventMessageOffset);
+    event_message.assign(szEventMessage);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryProviderMessageName(_Out_ std::wstring& out_wsName) const
+ctEtwRecord::queryProviderMessageName(_Out_ std::wstring& provider_message_name) const
 {
+    provider_message_name.clear();
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
         return false;
     }
-
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    if (0 == pTraceInfo->ProviderMessageOffset) {
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->ProviderMessageOffset) {
         return false;
     }
 
     const wchar_t* szProviderMessageName =
-        reinterpret_cast<wchar_t*>(m_traceEventInfo.get() + pTraceInfo->ProviderMessageOffset);
-    out_wsName.assign(szProviderMessageName);
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->ProviderMessageOffset);
+    provider_message_name.assign(szProviderMessageName);
     return true;
 }
 
 inline bool
-ctEtwRecord::queryPropertyCount(_Out_ ULONG* pout_Properties) const noexcept
+ctEtwRecord::queryPropertyCount(_Out_ ULONG* property_count) const noexcept
 {
+    *property_count = {};
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
         return false;
     }
-
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    *pout_Properties = pTraceInfo->PropertyCount;
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    *property_count = m_traceEventInfoPtr->PropertyCount;
     return true;
 }
 
 inline bool
-ctEtwRecord::queryTopLevelPropertyCount(_Out_ ULONG* pout_TopLevelProperties) const noexcept
+ctEtwRecord::queryTopLevelPropertyCount(_Out_ ULONG* top_level_property_count) const noexcept
 {
+    *top_level_property_count = {};
     if (!m_initialized) {
         return false;
     }
-    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY || !m_traceEventInfo) {
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
         return false;
     }
-
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    *pout_TopLevelProperties = pTraceInfo->TopLevelPropertyCount;
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    *top_level_property_count = m_traceEventInfoPtr->TopLevelPropertyCount;
     return true;
 }
 
 inline bool
-ctEtwRecord::queryEventPropertyStringValue(_Out_ std::wstring& out_wsUserEventString) const
+ctEtwRecord::queryEventPropertyStringValue(_Out_ std::wstring& event_property_string_value) const
 {
+    event_property_string_value.clear();
     if (!m_initialized) {
         return false;
     }
-
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
     if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
         // per the flags, the byte array is a null-terminated string
-        out_wsUserEventString.assign(reinterpret_cast<wchar_t*>(m_traceEventInfo.get()));
+        event_property_string_value.assign(reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data()));
         return true;
     }
 
@@ -1509,24 +1546,24 @@ ctEtwRecord::queryEventPropertyStringValue(_Out_ std::wstring& out_wsUserEventSt
 }
 
 inline bool
-ctEtwRecord::queryEventPropertyName(_In_ const unsigned long ulIndex, _Out_ std::wstring& out_wsPropertyName) const
+ctEtwRecord::queryEventPropertyName(_In_ const ULONG index, _Out_ std::wstring& property_name) const
 {
+    property_name.clear();
     // immediately fail if no top level property count value or the value is 0
-    unsigned long ulData = 0;
-    if (!queryTopLevelPropertyCount(&ulData) || 0 == ulData) {
-        out_wsPropertyName.clear();
+    ULONG top_level_property_count = 0;
+    if (!queryTopLevelPropertyCount(&top_level_property_count) || 0 == top_level_property_count) {
         return false;
     }
-    if (ulIndex >= ulData) {
-        out_wsPropertyName.clear();
+    if (index >= top_level_property_count) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
         return false;
     }
 
-    BYTE* pByteInfo = m_traceEventInfo.get();
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    const auto* szPropertyFound =
-        reinterpret_cast<wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulIndex].NameOffset);
-    out_wsPropertyName.assign(szPropertyFound);
+    const auto* szPropertyFound = reinterpret_cast<const wchar_t*>(
+        m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventPropertyInfoArray[index].NameOffset);
+    property_name.assign(szPropertyFound);
 
     return true;
 }
@@ -1535,19 +1572,21 @@ inline bool
 ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ std::wstring& property_value) const
 {
     // immediately fail if no top level property count value or the value is 0
-    unsigned long ulData = 0;
+    ULONG top_level_property_count = 0;
 
-    if (!queryTopLevelPropertyCount(&ulData) || 0 == ulData) {
+    if (!queryTopLevelPropertyCount(&top_level_property_count) || 0 == top_level_property_count) {
+        property_value.clear();
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
         property_value.clear();
         return false;
     }
 
     // iterate through each property name looking for a match
-    const BYTE* pByteInfo = m_traceEventInfo.get();
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    for (unsigned long ulCount = 0; ulCount < ulData; ++ulCount) {
-        const auto* szPropertyFound =
-            reinterpret_cast<const wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset);
+    for (ULONG ulCount = 0; ulCount < top_level_property_count; ++ulCount) {
+        const auto* szPropertyFound = reinterpret_cast<const wchar_t*>(
+            m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventPropertyInfoArray[ulCount].NameOffset);
         if (0 == _wcsicmp(property_name, szPropertyFound)) {
             property_value.assign(buildEventPropertyString(ulCount));
             return true;
@@ -1558,51 +1597,61 @@ ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ std::wstring& p
 }
 
 inline bool
-ctEtwRecord::queryEventProperty(_In_ const unsigned long ulIndex, _Out_ std::wstring& property_value) const
+ctEtwRecord::queryEventProperty(_In_ const ULONG index, _Out_ std::wstring& property_value) const
 {
-    // immediately fail if no top level property count value or the value is 0 or ulIndex is larger than
-    // total number of properties
-    unsigned long ulData = 0;
+    property_value.clear();
 
-    if (!queryTopLevelPropertyCount(&ulData) || 0 == ulData || 0 == ulIndex || ulIndex > ulData) {
-        property_value.clear();
+    // immediately fail if no top level property count value or the value is 0 or index is larger than
+    // total number of properties
+    ULONG top_level_property_count = 0;
+
+    if (!queryTopLevelPropertyCount(&top_level_property_count) || 0 == top_level_property_count) {
+        return false;
+    }
+    if (0 == index || index > top_level_property_count) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
         return false;
     }
 
+    bool bFoundProperty = false;
     // get the property value
-    const BYTE* pByteInfo = m_traceEventInfo.get();
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    const bool bFoundMatch = nullptr != reinterpret_cast<const wchar_t*>(
-                                            pByteInfo + pTraceInfo->EventPropertyInfoArray[ulIndex - 1].NameOffset);
-    if (bFoundMatch) {
-        property_value.assign(buildEventPropertyString(ulIndex - 1));
-    } else {
-        property_value.clear();
+    const wchar_t* name_value = reinterpret_cast<const wchar_t*>(
+        m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventPropertyInfoArray[index - 1].NameOffset);
+    if (name_value) {
+        property_value.assign(buildEventPropertyString(index - 1));
+        bFoundProperty = true;
     }
-    return bFoundMatch;
+
+    return bFoundProperty;
 }
 
 inline bool
-ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ ctPropertyPair& out_eventPair) const
+ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ ctPropertyPair& event_properties) const
 {
+    event_properties = {};
+
     // immediately fail if no top level property count value or the value is 0
-    unsigned long ulData = 0;
+    ULONG ulData = 0;
     if (!queryTopLevelPropertyCount(&ulData) || 0 == ulData) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
         return false;
     }
 
     // iterate through each property name looking for a match
     bool bFoundMatch = false;
-    BYTE* pByteInfo = m_traceEventInfo.get();
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
 
-    for (unsigned long ulCount = 0; !bFoundMatch && ulCount < ulData; ++ulCount) {
-        const auto* szPropertyFound =
-            reinterpret_cast<wchar_t*>(pByteInfo + pTraceInfo->EventPropertyInfoArray[ulCount].NameOffset);
+    for (ULONG ulCount = 0; !bFoundMatch && ulCount < ulData; ++ulCount) {
+        const auto* szPropertyFound = reinterpret_cast<const wchar_t*>(
+            m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventPropertyInfoArray[ulCount].NameOffset);
+
         if (0 == _wcsicmp(property_name, szPropertyFound)) {
             assert(ulCount < m_traceProperties.size());
             if (ulCount < m_traceProperties.size()) {
-                out_eventPair = m_traceProperties[ulCount];
+                event_properties = m_traceProperties[ulCount];
                 bFoundMatch = true;
             } else {
 #ifdef TDH_FORMAT_FATAL_CONDITION
@@ -1617,12 +1666,12 @@ ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ ctPropertyPair&
 }
 
 inline std::wstring
-ctEtwRecord::buildEventPropertyString(ULONG ulProperty) const
+ctEtwRecord::buildEventPropertyString(ULONG property_index) const
 {
     //
     // immediately fail if no top level property count value or the value asked for is out of range
-    unsigned long ulData = 0;
-    if (!queryTopLevelPropertyCount(&ulData) || ulProperty >= ulData) {
+    ULONG ulData = 0;
+    if (!queryTopLevelPropertyCount(&ulData) || property_index >= ulData) {
         throw std::runtime_error("ctEtwRecord - ETW Property value requested is out of range");
     }
 
@@ -1631,445 +1680,445 @@ ctEtwRecord::buildEventPropertyString(ULONG ulProperty) const
     std::wstring wsData;
 
     // retrieve the raw property information
-    const auto* pTraceInfo = reinterpret_cast<TRACE_EVENT_INFO*>(m_traceEventInfo.get());
-    USHORT propertyOutType = pTraceInfo->EventPropertyInfoArray[ulProperty].nonStructType.OutType;
-    const ULONG propertySize = m_traceProperties[ulProperty].second;
-    const BYTE* propertyBuf = m_traceProperties[ulProperty].first.get();
+    USHORT propertyOutType = m_traceEventInfoPtr->EventPropertyInfoArray[property_index].nonStructType.OutType;
+    const ULONG propertySize = m_traceProperties[property_index].second;
+    const BYTE* propertyBuf = m_traceProperties[property_index].first.get();
 
     // build a string only if the property data > 0 bytes
-    if (propertySize > 0) {
-        // build the string based on the IN and OUT types
-        switch (pTraceInfo->EventPropertyInfoArray[ulProperty].nonStructType.InType) {
-        case TDH_INTYPE_NULL: {
-            wsData = L"null";
-            break;
-        }
+    // if (propertySize > 0) {
+    // build the string based on the IN and OUT types
+    const auto& propertyInfo = m_traceEventInfoPtr->EventPropertyInfoArray[property_index];
+    switch (propertyInfo.nonStructType.InType) {
+    case TDH_INTYPE_NULL: {
+        wsData = L"null";
+        break;
+    }
 
-        case TDH_INTYPE_UNICODESTRING: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_STRING;
-            }
-            // xs:string
-            assert(propertyOutType == TDH_OUTTYPE_STRING);
-            // - not guaranteed to be NULL terminated
-            const auto* wszBuffer = reinterpret_cast<const wchar_t*>(propertyBuf);
-            const auto* wszBufferEnd = wszBuffer + propertySize / 2;
-            // don't assign over the final NULL terminator (will embed the null in the std::wstring)
-            while (wszBuffer < wszBufferEnd && L'\0' == *(wszBufferEnd - 1)) {
-                --wszBufferEnd;
-            }
-            wsData.assign(wszBuffer, wszBufferEnd);
-            break;
+    case TDH_INTYPE_UNICODESTRING: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_STRING;
         }
+        // xs:string
+        assert(propertyOutType == TDH_OUTTYPE_STRING);
+        // - not guaranteed to be NULL terminated
+        const auto* wszBuffer = reinterpret_cast<const wchar_t*>(propertyBuf);
+        const auto* wszBufferEnd = wszBuffer + propertySize / 2;
+        // don't assign over the final NULL terminator (will embed the null in the std::wstring)
+        while (wszBuffer < wszBufferEnd && L'\0' == *(wszBufferEnd - 1)) {
+            --wszBufferEnd;
+        }
+        wsData.assign(wszBuffer, wszBufferEnd);
+        break;
+    }
 
-        case TDH_INTYPE_ANSISTRING: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_STRING;
-            }
-            // xs:string
-            assert(propertyOutType == TDH_OUTTYPE_STRING);
-            // - not guaranteed to be NULL terminated
-            const auto* szBuffer = reinterpret_cast<const char*>(propertyBuf);
-            const auto* szBufferEnd = szBuffer + propertySize;
-            // don't assign over the final NULL terminator (will embed the null in the std::wstring)
-            while (szBuffer < szBufferEnd && L'\0' == *(szBufferEnd - 1)) {
-                --szBufferEnd;
-            }
-            const std::string sData(szBuffer, szBufferEnd);
-            // convert to wide
-            int iResult = MultiByteToWideChar(CP_ACP, 0, sData.c_str(), -1, nullptr, 0);
+    case TDH_INTYPE_ANSISTRING: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_STRING;
+        }
+        // xs:string
+        assert(propertyOutType == TDH_OUTTYPE_STRING);
+        // - not guaranteed to be NULL terminated
+        const auto* szBuffer = reinterpret_cast<const char*>(propertyBuf);
+        const auto* szBufferEnd = szBuffer + propertySize;
+        // don't assign over the final NULL terminator (will embed the null in the std::wstring)
+        while (szBuffer < szBufferEnd && L'\0' == *(szBufferEnd - 1)) {
+            --szBufferEnd;
+        }
+        const std::string sData(szBuffer, szBufferEnd);
+        // convert to wide
+        int iResult = MultiByteToWideChar(CP_ACP, 0, sData.c_str(), -1, nullptr, 0);
+        if (iResult != 0) {
+            std::vector<wchar_t> conversion(iResult, L'\0');
+            iResult = MultiByteToWideChar(CP_ACP, 0, sData.c_str(), -1, conversion.data(), iResult);
             if (iResult != 0) {
-                std::vector<wchar_t> conversion(iResult, L'\0');
-                iResult = MultiByteToWideChar(CP_ACP, 0, sData.c_str(), -1, conversion.data(), iResult);
-                if (iResult != 0) {
-                    wsData = conversion.data();
-                }
+                wsData = conversion.data();
             }
-            break;
         }
+        break;
+    }
 
-        case TDH_INTYPE_INT8: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_BYTE;
-            }
-            // xs:byte
-            assert(1 == propertySize);
-            const char prop = *reinterpret_cast<const char*>(propertyBuf);
-            assert(propertyOutType == TDH_OUTTYPE_BYTE);
+    case TDH_INTYPE_INT8: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_BYTE;
+        }
+        // xs:byte
+        assert(1 == propertySize);
+        const char prop = *reinterpret_cast<const char*>(propertyBuf);
+        assert(propertyOutType == TDH_OUTTYPE_BYTE);
+        _itow_s(prop, stackBuffer, 10);
+        wsData = stackBuffer;
+        break;
+    }
+
+    case TDH_INTYPE_UINT8: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_UNSIGNEDBYTE;
+        }
+        // xs:unsignedByte; win:hexInt8
+        assert(1 == propertySize);
+        const unsigned char prop = *propertyBuf;
+        if (TDH_OUTTYPE_UNSIGNEDBYTE == propertyOutType) {
             _itow_s(prop, stackBuffer, 10);
             wsData = stackBuffer;
-            break;
-        }
-
-        case TDH_INTYPE_UINT8: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_UNSIGNEDBYTE;
-            }
-            // xs:unsignedByte; win:hexInt8
-            assert(1 == propertySize);
-            const unsigned char prop = *propertyBuf;
-            if (TDH_OUTTYPE_UNSIGNEDBYTE == propertyOutType) {
-                _itow_s(prop, stackBuffer, 10);
-                wsData = stackBuffer;
-            } else if (TDH_OUTTYPE_HEXINT8 == propertyOutType) {
-                _itow_s(prop, stackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            } else if (TDH_OUTTYPE_BOOLEAN == propertyOutType) {
-                if (prop == 0) {
-                    wsData = L"false";
-                } else {
-                    wsData = L"true";
-                }
-            } else {
-                FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT8 value [%u]", propertyOutType, prop);
-            }
-            break;
-        }
-
-        case TDH_INTYPE_INT16: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_SHORT;
-            }
-            // xs:short
-            assert(2 == propertySize);
-            const short prop = *reinterpret_cast<const short*>(propertyBuf);
-            assert(propertyOutType == TDH_OUTTYPE_SHORT);
-            _itow_s(prop, stackBuffer, 10);
-            wsData = stackBuffer;
-            break;
-        }
-
-        case TDH_INTYPE_UINT16: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_UNSIGNEDSHORT;
-            }
-            // xs:unsignedShort; win:Port; win:HexInt16
-            assert(2 == propertySize);
-            const unsigned short prop = *reinterpret_cast<const unsigned short*>(propertyBuf);
-            if (TDH_OUTTYPE_UNSIGNEDSHORT == propertyOutType) {
-                _itow_s(prop, stackBuffer, 10);
-                wsData = stackBuffer;
-            } else if (TDH_OUTTYPE_PORT == propertyOutType) {
-                _itow_s(ntohs(prop), stackBuffer, 10);
-                wsData = stackBuffer;
-            } else if (TDH_OUTTYPE_HEXINT16 == propertyOutType) {
-                _itow_s(prop, stackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            } else {
-                FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT16 value [%u]", propertyOutType, prop);
-            }
-            break;
-        }
-
-        case TDH_INTYPE_INT32: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_INT;
-            }
-            // xs:int
-            assert(4 == propertySize);
-            const int prop = *reinterpret_cast<const int*>(propertyBuf);
-            assert(propertyOutType == TDH_OUTTYPE_INT);
-            _itow_s(prop, stackBuffer, 10);
-            wsData = stackBuffer;
-            break;
-        }
-
-        case TDH_INTYPE_UINT32: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_UNSIGNEDINT;
-            }
-            // xs:unsignedInt, win:PID, win:TID, win:IPv4, win:ETWTIME, win:ErrorCode, win:HexInt32
-            assert(4 == propertySize);
-            const unsigned int prop = *reinterpret_cast<const unsigned int*>(propertyBuf);
-            if (TDH_OUTTYPE_UNSIGNEDINT == propertyOutType || TDH_OUTTYPE_UNSIGNEDLONG == propertyOutType ||
-                TDH_OUTTYPE_PID == propertyOutType || TDH_OUTTYPE_TID == propertyOutType ||
-                TDH_OUTTYPE_ETWTIME == propertyOutType) {
-                // display as an unsigned int
-                _ultow_s(prop, stackBuffer, 10);
-                wsData = stackBuffer;
-            } else if (TDH_OUTTYPE_IPV4 == propertyOutType) {
-                // display as a v4 address
-                ::RtlIpv4AddressToString(reinterpret_cast<const IN_ADDR*>(propertyBuf), stackBuffer);
-                wsData += stackBuffer;
-            } else if (
-                TDH_OUTTYPE_HEXINT32 == propertyOutType || TDH_OUTTYPE_ERRORCODE == propertyOutType ||
-                TDH_OUTTYPE_WIN32ERROR == propertyOutType || TDH_OUTTYPE_NTSTATUS == propertyOutType ||
-                TDH_OUTTYPE_HRESULT == propertyOutType) {
-                // display as a hex value
-                _ultow_s(prop, stackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            } else {
-                FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT32 value [%u]", propertyOutType, prop);
-            }
-            break;
-        }
-
-        case TDH_INTYPE_INT64: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_LONG;
-            }
-            // xs:long
-            assert(8 == propertySize);
-            const INT64 prop = *reinterpret_cast<const INT64*>(propertyBuf);
-            assert(propertyOutType == TDH_OUTTYPE_LONG);
-            _i64tow_s(prop, stackBuffer, cch_StackBuffer, 10);
-            wsData = stackBuffer;
-            break;
-        }
-
-        case TDH_INTYPE_UINT64: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_UNSIGNEDLONG;
-            }
-            // xs:unsignedLong, win:HexInt64
-            assert(8 == propertySize);
-            const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
-            if (TDH_OUTTYPE_UNSIGNEDLONG == propertyOutType) {
-                _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 10);
-                wsData = stackBuffer;
-            } else if (TDH_OUTTYPE_HEXINT64 == propertyOutType) {
-                _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            } else {
-                FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT64 value [%llu]", propertyOutType, prop);
-            }
-            break;
-        }
-
-        case TDH_INTYPE_FLOAT: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_FLOAT;
-            }
-            // xs:float
-            const float prop = *reinterpret_cast<const float*>(propertyBuf);
-            assert(propertyOutType == TDH_OUTTYPE_FLOAT);
-            if (swprintf_s(stackBuffer, cch_StackBuffer, L"%f", prop) > 0) {
-                wsData += stackBuffer;
-            }
-            break;
-        }
-
-        case TDH_INTYPE_DOUBLE: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_DOUBLE;
-            }
-            // xs:double
-            const double prop = *reinterpret_cast<const double*>(propertyBuf);
-            assert(propertyOutType == TDH_OUTTYPE_DOUBLE);
-            if (swprintf_s(stackBuffer, cch_StackBuffer, L"%f", prop) > 0) {
-                wsData += stackBuffer;
-            }
-            break;
-        }
-
-        case TDH_INTYPE_BOOLEAN: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_BOOLEAN;
-            }
-            // xs:boolean
-            assert(propertyOutType == TDH_OUTTYPE_BOOLEAN);
-            const int prop = *reinterpret_cast<const int*>(propertyBuf);
-            if (0 == prop) {
+        } else if (TDH_OUTTYPE_HEXINT8 == propertyOutType) {
+            _itow_s(prop, stackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        } else if (TDH_OUTTYPE_BOOLEAN == propertyOutType) {
+            if (prop == 0) {
                 wsData = L"false";
             } else {
                 wsData = L"true";
             }
-            break;
+        } else {
+            FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT8 value [%u]", propertyOutType, prop);
         }
+        break;
+    }
 
-        case TDH_INTYPE_BINARY: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_HEXBINARY;
-            }
-            // xs:hexBinary, win:IPv6 (16 bytes), win:SocketAddress
-            if (TDH_OUTTYPE_HEXBINARY == propertyOutType) {
-                wsData = L'[';
-                const BYTE* buffer = propertyBuf;
-                for (unsigned long ulBits = 0; ulBits < propertySize; ++ulBits) {
-                    const unsigned char chData = buffer[ulBits];
-                    _itow_s(chData, stackBuffer, 16);
-                    wsData += stackBuffer;
-                }
-                wsData += L']';
-            } else if (TDH_OUTTYPE_IPV6 == propertyOutType) {
-                ::RtlIpv6AddressToString(reinterpret_cast<const IN6_ADDR*>(propertyBuf), stackBuffer);
-                wsData += stackBuffer;
-            } else if (TDH_OUTTYPE_SOCKETADDRESS == propertyOutType) {
-                DWORD dwSize = cch_StackBuffer;
-                // Winsock APIs are not const-correct
-                const int iReturn = ::WSAAddressToString(
-                    reinterpret_cast<sockaddr*>(const_cast<BYTE*>(propertyBuf)),
-                    propertySize,
-                    nullptr,
-                    stackBuffer,
-                    &dwSize);
-                if (0 == iReturn) {
-                    wsData = stackBuffer;
-                }
-            } else {
-                FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_BINARY value", propertyOutType);
-            }
-            break;
+    case TDH_INTYPE_INT16: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_SHORT;
         }
+        // xs:short
+        assert(2 == propertySize);
+        const short prop = *reinterpret_cast<const short*>(propertyBuf);
+        assert(propertyOutType == TDH_OUTTYPE_SHORT);
+        _itow_s(prop, stackBuffer, 10);
+        wsData = stackBuffer;
+        break;
+    }
 
-        case TDH_INTYPE_GUID: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_GUID;
-            }
-            // xs:GUID
-            assert(TDH_OUTTYPE_GUID == propertyOutType);
-            assert(sizeof(GUID) == propertySize);
-            if (sizeof(GUID) == propertySize) {
-                RPC_WSTR pszGuid = nullptr;
-                const RPC_STATUS uuidStatus = ::UuidToString(reinterpret_cast<const GUID*>(propertyBuf), &pszGuid);
-                if (RPC_S_OK == uuidStatus) {
-                    wsData = reinterpret_cast<LPWSTR>(pszGuid);
-                    ::RpcStringFree(&pszGuid);
-                }
-            }
-            break;
+    case TDH_INTYPE_UINT16: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_UNSIGNEDSHORT;
         }
-
-        case TDH_INTYPE_POINTER: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_HEXINT64;
-            }
-            // win:hexInt64
-            if (4 == propertySize) {
-                assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
-                const unsigned long prop = *reinterpret_cast<const unsigned long*>(propertyBuf);
-                _ultow_s(prop, stackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            } else if (8 == propertySize) {
-                assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
-                const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
-                _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            } else {
-                FAIL_FAST_MSG(
-                    "Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_POINTER with a %d -size value",
-                    propertyOutType,
-                    propertySize);
-            }
-            break;
+        // xs:unsignedShort; win:Port; win:HexInt16
+        assert(2 == propertySize);
+        const unsigned short prop = *reinterpret_cast<const unsigned short*>(propertyBuf);
+        if (TDH_OUTTYPE_UNSIGNEDSHORT == propertyOutType) {
+            _itow_s(prop, stackBuffer, 10);
+            wsData = stackBuffer;
+        } else if (TDH_OUTTYPE_PORT == propertyOutType) {
+            _itow_s(ntohs(prop), stackBuffer, 10);
+            wsData = stackBuffer;
+        } else if (TDH_OUTTYPE_HEXINT16 == propertyOutType) {
+            _itow_s(prop, stackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        } else {
+            FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT16 value [%u]", propertyOutType, prop);
         }
+        break;
+    }
 
-        case TDH_INTYPE_FILETIME: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_DATETIME;
-            }
-            // xs:dateTime
-            assert(sizeof(FILETIME) == propertySize);
-            if (sizeof(FILETIME) == propertySize) {
-                const FILETIME ft = *reinterpret_cast<const FILETIME*>(propertyBuf);
-                LARGE_INTEGER li;
-                li.LowPart = ft.dwLowDateTime;
-                li.HighPart = static_cast<LONG>(ft.dwHighDateTime);
-                _ui64tow_s(li.QuadPart, stackBuffer, cch_StackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            }
-            break;
+    case TDH_INTYPE_INT32: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_INT;
         }
+        // xs:int
+        assert(4 == propertySize);
+        const int prop = *reinterpret_cast<const int*>(propertyBuf);
+        assert(propertyOutType == TDH_OUTTYPE_INT);
+        _itow_s(prop, stackBuffer, 10);
+        wsData = stackBuffer;
+        break;
+    }
 
-        case TDH_INTYPE_SYSTEMTIME: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_DATETIME;
-            }
-            assert(sizeof(SYSTEMTIME) == propertySize);
-            if (sizeof(SYSTEMTIME) == propertySize) {
-                const SYSTEMTIME st = *reinterpret_cast<const SYSTEMTIME*>(propertyBuf);
-                _snwprintf_s(
-                    stackBuffer,
-                    cch_StackBuffer,
-                    99,
-                    L"%d/%d/%d - %d:%d:%d::%d",
-                    st.wYear,
-                    st.wMonth,
-                    st.wDay,
-                    st.wHour,
-                    st.wMinute,
-                    st.wSecond,
-                    st.wMilliseconds);
-                wsData = stackBuffer;
-            }
-            break;
+    case TDH_INTYPE_UINT32: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_UNSIGNEDINT;
         }
+        // xs:unsignedInt, win:PID, win:TID, win:IPv4, win:ETWTIME, win:ErrorCode, win:HexInt32
+        assert(4 == propertySize);
+        const unsigned int prop = *reinterpret_cast<const unsigned int*>(propertyBuf);
+        if (TDH_OUTTYPE_UNSIGNEDINT == propertyOutType || TDH_OUTTYPE_UNSIGNEDLONG == propertyOutType ||
+            TDH_OUTTYPE_PID == propertyOutType || TDH_OUTTYPE_TID == propertyOutType ||
+            TDH_OUTTYPE_ETWTIME == propertyOutType) {
+            // display as an unsigned int
+            _ultow_s(prop, stackBuffer, 10);
+            wsData = stackBuffer;
+        } else if (TDH_OUTTYPE_IPV4 == propertyOutType) {
+            // display as a v4 address
+            ::RtlIpv4AddressToString(reinterpret_cast<const IN_ADDR*>(propertyBuf), stackBuffer);
+            wsData += stackBuffer;
+        } else if (
+            TDH_OUTTYPE_HEXINT32 == propertyOutType || TDH_OUTTYPE_ERRORCODE == propertyOutType ||
+            TDH_OUTTYPE_WIN32ERROR == propertyOutType || TDH_OUTTYPE_NTSTATUS == propertyOutType ||
+            TDH_OUTTYPE_HRESULT == propertyOutType) {
+            // display as a hex value
+            _ultow_s(prop, stackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        } else {
+            FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT32 value [%u]", propertyOutType, prop);
+        }
+        break;
+    }
 
-        case TDH_INTYPE_SID: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_STRING;
-            }
-            //
-            // first write out the raw binary
+    case TDH_INTYPE_INT64: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_LONG;
+        }
+        // xs:long
+        assert(8 == propertySize);
+        const INT64 prop = *reinterpret_cast<const INT64*>(propertyBuf);
+        assert(propertyOutType == TDH_OUTTYPE_LONG);
+        _i64tow_s(prop, stackBuffer, cch_StackBuffer, 10);
+        wsData = stackBuffer;
+        break;
+    }
+
+    case TDH_INTYPE_UINT64: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_UNSIGNEDLONG;
+        }
+        // xs:unsignedLong, win:HexInt64
+        assert(8 == propertySize);
+        const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
+        if (TDH_OUTTYPE_UNSIGNEDLONG == propertyOutType) {
+            _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 10);
+            wsData = stackBuffer;
+        } else if (TDH_OUTTYPE_HEXINT64 == propertyOutType) {
+            _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        } else {
+            FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_UINT64 value [%llu]", propertyOutType, prop);
+        }
+        break;
+    }
+
+    case TDH_INTYPE_FLOAT: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_FLOAT;
+        }
+        // xs:float
+        const float prop = *reinterpret_cast<const float*>(propertyBuf);
+        assert(propertyOutType == TDH_OUTTYPE_FLOAT);
+        if (swprintf_s(stackBuffer, cch_StackBuffer, L"%f", prop) > 0) {
+            wsData += stackBuffer;
+        }
+        break;
+    }
+
+    case TDH_INTYPE_DOUBLE: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_DOUBLE;
+        }
+        // xs:double
+        const double prop = *reinterpret_cast<const double*>(propertyBuf);
+        assert(propertyOutType == TDH_OUTTYPE_DOUBLE);
+        if (swprintf_s(stackBuffer, cch_StackBuffer, L"%f", prop) > 0) {
+            wsData += stackBuffer;
+        }
+        break;
+    }
+
+    case TDH_INTYPE_BOOLEAN: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_BOOLEAN;
+        }
+        // xs:boolean
+        assert(propertyOutType == TDH_OUTTYPE_BOOLEAN);
+        const int prop = *reinterpret_cast<const int*>(propertyBuf);
+        if (0 == prop) {
+            wsData = L"false";
+        } else {
+            wsData = L"true";
+        }
+        break;
+    }
+
+    case TDH_INTYPE_BINARY: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_HEXBINARY;
+        }
+        // xs:hexBinary, win:IPv6 (16 bytes), win:SocketAddress
+        if (TDH_OUTTYPE_HEXBINARY == propertyOutType) {
             wsData = L'[';
             const BYTE* buffer = propertyBuf;
-            for (unsigned long ulBits = 0; ulBits < propertySize; ++ulBits) {
-                const char chData = static_cast<char>(buffer[ulBits]);
+            for (ULONG ulBits = 0; ulBits < propertySize; ++ulBits) {
+                const unsigned char chData = buffer[ulBits];
                 _itow_s(chData, stackBuffer, 16);
                 wsData += stackBuffer;
             }
             wsData += L']';
-            //
-            // now convert if we can to the friendly name
-            // LookupAccountSid is not const correct
-            SID* pSid = reinterpret_cast<SID*>(const_cast<BYTE*>(buffer));
-            std::shared_ptr<WCHAR[]> szName;
-            std::shared_ptr<WCHAR[]> szDomain;
-            DWORD cchName = 0;
-            DWORD cchDomain = 0;
-            SID_NAME_USE sidNameUse{};
-            WCHAR temp[1];
-            if (!::LookupAccountSid(nullptr, pSid, temp, &cchName, temp, &cchDomain, &sidNameUse)) {
-                if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-                    szName.reset(new wchar_t[cchName]);
-                    szDomain.reset(new wchar_t[cchDomain]);
-                    if (::LookupAccountSid(
-                            nullptr, pSid, szName.get(), &cchName, szDomain.get(), &cchDomain, &sidNameUse)) {
-                        wsData += L"  ";
-                        wsData += szDomain.get();
-                        wsData += L"\\";
-                        wsData += szName.get();
-                    }
-                }
-            }
-            break;
-        }
-
-        case TDH_INTYPE_HEXINT32: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_HEXINT32;
-            }
-            if (4 == propertySize) {
-                assert(TDH_OUTTYPE_HEXINT32 == propertyOutType);
-                const unsigned short prop = *reinterpret_cast<const unsigned short*>(propertyBuf);
-                _itow_s(prop, stackBuffer, 10);
+        } else if (TDH_OUTTYPE_IPV6 == propertyOutType) {
+            ::RtlIpv6AddressToString(reinterpret_cast<const IN6_ADDR*>(propertyBuf), stackBuffer);
+            wsData += stackBuffer;
+        } else if (TDH_OUTTYPE_SOCKETADDRESS == propertyOutType) {
+            DWORD dwSize = cch_StackBuffer;
+            // Winsock APIs are not const-correct
+            const int iReturn = ::WSAAddressToString(
+                reinterpret_cast<sockaddr*>(const_cast<BYTE*>(propertyBuf)),
+                propertySize,
+                nullptr,
+                stackBuffer,
+                &dwSize);
+            if (0 == iReturn) {
                 wsData = stackBuffer;
             }
-            break;
+        } else {
+            FAIL_FAST_MSG("Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_BINARY value", propertyOutType);
         }
-
-        case TDH_INTYPE_HEXINT64: {
-            if (propertyOutType == TDH_OUTTYPE_NULL) {
-                propertyOutType = TDH_OUTTYPE_HEXINT64;
-            }
-            if (8 == propertySize) {
-                assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
-                const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
-                _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
-                wsData = L"0x";
-                wsData += stackBuffer;
-            }
-            break;
-        }
-        } // switch statement
+        break;
     }
+
+    case TDH_INTYPE_GUID: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_GUID;
+        }
+        // xs:GUID
+        assert(TDH_OUTTYPE_GUID == propertyOutType);
+        assert(sizeof(GUID) == propertySize);
+        if (sizeof(GUID) == propertySize) {
+            RPC_WSTR pszGuid = nullptr;
+            const RPC_STATUS uuidStatus = ::UuidToString(reinterpret_cast<const GUID*>(propertyBuf), &pszGuid);
+            if (RPC_S_OK == uuidStatus) {
+                wsData = reinterpret_cast<LPWSTR>(pszGuid);
+                ::RpcStringFree(&pszGuid);
+            }
+        }
+        break;
+    }
+
+    case TDH_INTYPE_POINTER: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_HEXINT64;
+        }
+        // win:hexInt64
+        if (4 == propertySize) {
+            assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
+            const ULONG prop = *reinterpret_cast<const ULONG*>(propertyBuf);
+            _ultow_s(prop, stackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        } else if (8 == propertySize) {
+            assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
+            const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
+            _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        } else {
+            FAIL_FAST_MSG(
+                "Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_POINTER with a %d -size value",
+                propertyOutType,
+                propertySize);
+        }
+        break;
+    }
+
+    case TDH_INTYPE_FILETIME: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_DATETIME;
+        }
+        // xs:dateTime
+        assert(sizeof(FILETIME) == propertySize);
+        if (sizeof(FILETIME) == propertySize) {
+            const FILETIME ft = *reinterpret_cast<const FILETIME*>(propertyBuf);
+            LARGE_INTEGER li;
+            li.LowPart = ft.dwLowDateTime;
+            li.HighPart = static_cast<LONG>(ft.dwHighDateTime);
+            _ui64tow_s(li.QuadPart, stackBuffer, cch_StackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        }
+        break;
+    }
+
+    case TDH_INTYPE_SYSTEMTIME: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_DATETIME;
+        }
+        assert(sizeof(SYSTEMTIME) == propertySize);
+        if (sizeof(SYSTEMTIME) == propertySize) {
+            const SYSTEMTIME st = *reinterpret_cast<const SYSTEMTIME*>(propertyBuf);
+            _snwprintf_s(
+                stackBuffer,
+                cch_StackBuffer,
+                99,
+                L"%d/%d/%d - %d:%d:%d::%d",
+                st.wYear,
+                st.wMonth,
+                st.wDay,
+                st.wHour,
+                st.wMinute,
+                st.wSecond,
+                st.wMilliseconds);
+            wsData = stackBuffer;
+        }
+        break;
+    }
+
+    case TDH_INTYPE_SID: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_STRING;
+        }
+        //
+        // first write out the raw binary
+        wsData = L'[';
+        const BYTE* buffer = propertyBuf;
+        for (ULONG ulBits = 0; ulBits < propertySize; ++ulBits) {
+            const char chData = static_cast<char>(buffer[ulBits]);
+            _itow_s(chData, stackBuffer, 16);
+            wsData += stackBuffer;
+        }
+        wsData += L']';
+        //
+        // now convert if we can to the friendly name
+        // LookupAccountSid is not const correct
+        SID* pSid = reinterpret_cast<SID*>(const_cast<BYTE*>(buffer));
+        std::shared_ptr<WCHAR[]> szName;
+        std::shared_ptr<WCHAR[]> szDomain;
+        DWORD cchName = 0;
+        DWORD cchDomain = 0;
+        SID_NAME_USE sidNameUse{};
+        WCHAR temp[1];
+        if (!::LookupAccountSid(nullptr, pSid, temp, &cchName, temp, &cchDomain, &sidNameUse)) {
+            if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+                szName.reset(new wchar_t[cchName]);
+                szDomain.reset(new wchar_t[cchDomain]);
+                if (::LookupAccountSid(
+                        nullptr, pSid, szName.get(), &cchName, szDomain.get(), &cchDomain, &sidNameUse)) {
+                    wsData += L"  ";
+                    wsData += szDomain.get();
+                    wsData += L"\\";
+                    wsData += szName.get();
+                }
+            }
+        }
+        break;
+    }
+
+    case TDH_INTYPE_HEXINT32: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_HEXINT32;
+        }
+        if (4 == propertySize) {
+            assert(TDH_OUTTYPE_HEXINT32 == propertyOutType);
+            const unsigned short prop = *reinterpret_cast<const unsigned short*>(propertyBuf);
+            _itow_s(prop, stackBuffer, 10);
+            wsData = stackBuffer;
+        }
+        break;
+    }
+
+    case TDH_INTYPE_HEXINT64: {
+        if (propertyOutType == TDH_OUTTYPE_NULL) {
+            propertyOutType = TDH_OUTTYPE_HEXINT64;
+        }
+        if (8 == propertySize) {
+            assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
+            const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
+            _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
+            wsData = L"0x";
+            wsData += stackBuffer;
+        }
+        break;
+    }
+    } // switch statement
+    // }
     return wsData;
 }
 } // namespace ctl

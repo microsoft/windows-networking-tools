@@ -101,10 +101,7 @@ class ctEtwReader
      * @return HANDLE to the session thread.
      */
     HANDLE
-    GetTraceSessionHandle() const noexcept
-    {
-        return m_threadHandle;
-    }
+    GetTraceSessionHandle() const noexcept { return m_threadHandle; }
 
     /**
      * @brief Stops the event trace session that was started with StartSession() and disables all providers.
@@ -431,17 +428,16 @@ try {
     VerifyTraceSessionIsRunning();
     // iterate through the std::vector of GUIDs, enabling each provider
     for (const auto& providerGUID : providerGUIDs) {
-        THROW_IF_WIN32_ERROR(
-            ::EnableTraceEx(
-                &providerGUID,
-                &m_sessionGUID,
-                m_sessionHandle,
-                TRUE,
-                uLevel,
-                uMatchAnyKeyword,
-                uMatchAllKeyword,
-                0,
-                nullptr));
+        THROW_IF_WIN32_ERROR(EnableTraceEx(
+            &providerGUID,
+            &m_sessionGUID,
+            m_sessionHandle,
+            TRUE,
+            uLevel,
+            uMatchAnyKeyword,
+            uMatchAllKeyword,
+            0,
+            nullptr));
     }
 
     return S_OK;
