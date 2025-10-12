@@ -7,6 +7,8 @@
 
 #include <windows.h>
 #include <fwpmu.h>
+#include "ctEtwReader.hpp"
+#include "ctEtwRecord.hpp"
 
 #include "WfpCounters.h"
 
@@ -217,6 +219,34 @@ try
 			// should never get here
 			FAIL_FAST();
 		});
+
+	// Microsoft.Windows.Networking.WFP.Callout
+	constexpr GUID wfp_callout{ 0x00e7ee66,0x5b24,0x5c41, {0x22,0xcb,0xaf,0x98,0xf6,0x3e,0x2f,0x90} };
+
+	ctl::ctEtwReader etw_reader{
+	[](const EVENT_RECORD* pRecord)
+	{
+			// Process the ETW event record
+			const auto event_message = ctl::ctEtwRecord(pRecord);
+			wprintf(L" *** %ws\n", event_message.writeFormattedMessage(true).c_str());
+		} };
+	THROW_IF_FAILED(etw_reader.StartTraceSession(L"FwDiagnose", nullptr, wfp_callout));
+	THROW_IF_FAILED(etw_reader.EnableTraceProviders({wfp_callout}));
+	Sleep(1000);
+	wprintf(L"\n..\n");
+	THROW_IF_FAILED(etw_reader.FlushTraceSession());
+	Sleep(1000);
+	THROW_IF_FAILED(etw_reader.FlushTraceSession());
+	wprintf(L"\n..\n");
+	Sleep(1000);
+	THROW_IF_FAILED(etw_reader.FlushTraceSession());
+	wprintf(L"\n..\n");
+	Sleep(1000);
+	THROW_IF_FAILED(etw_reader.FlushTraceSession());
+	wprintf(L"\n..\n");
+	Sleep(1000);
+	THROW_IF_FAILED(etw_reader.FlushTraceSession());
+	wprintf(L"\n..\n");
 
 	return g_all_providers;
 }

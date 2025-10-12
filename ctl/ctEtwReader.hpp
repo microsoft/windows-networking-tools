@@ -227,7 +227,7 @@ try {
         BuildEventTraceProperties(pPropertyBuffer, szSessionName, szFileName, msFlushTimer);
 
     // Now start the trace session
-    auto error_code = ::StartTrace(
+    auto error_code = StartTrace(
         &m_sessionHandle, // session handle
         szSessionName,    // session name
         pProperties       // trace properties struct
@@ -237,9 +237,9 @@ try {
         EVENT_TRACE_PROPERTIES tempProperties{};
         tempProperties.Wnode.BufferSize = sizeof(EVENT_TRACE_PROPERTIES);
         // best effort to stop the existing session
-        ::ControlTrace(NULL, szSessionName, &tempProperties, EVENT_TRACE_CONTROL_STOP);
+        ControlTrace(NULL, szSessionName, &tempProperties, EVENT_TRACE_CONTROL_STOP);
         // Try to start the session again
-        error_code = ::StartTrace(
+        error_code = StartTrace(
             &m_sessionHandle, // session handle
             szSessionName,    // session name
             pProperties       // trace properties struct
