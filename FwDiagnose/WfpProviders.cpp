@@ -7,8 +7,6 @@
 
 #include <windows.h>
 #include <fwpmu.h>
-#include "ctEtwReader.hpp"
-#include "ctEtwRecord.hpp"
 
 #include "WfpCounters.h"
 
@@ -219,41 +217,6 @@ try
 			// should never get here
 			FAIL_FAST();
 		});
-
-	// Microsoft.Windows.Networking.WFP.Callout
-	constexpr GUID wfp_callout{ 0x00e7ee66,0x5b24,0x5c41, {0x22,0xcb,0xaf,0x98,0xf6,0x3e,0x2f,0x90} };
-
-	static std::atomic<uint64_t> last_event_time = 0;
-	ctl::ctEtwReader etw_reader{
-		[](const EVENT_RECORD* pRecord) {
-				// Process the ETW event record
-				const auto event_message = ctl::ctEtwRecord(pRecord);
-				wprintf(L" *** [event id %d] [keyword: %llu]: %ws\n", 
-					event_message.getEventId(),
-					event_message.getKeyword(),
-					event_message.writeFormattedMessage(true).c_str());
-				last_event_time.store(GetTickCount64());
-		}
-	};
-	THROW_IF_FAILED(etw_reader.StartTraceSession(L"FwDiagnose", nullptr, wfp_callout));
-	THROW_IF_FAILED(etw_reader.EnableTraceProviders({wfp_callout}));
-
-	// loop until we haven't seen an event for 1/2  second
-	const auto start_time = GetTickCount64();
-	uint64_t last_seen_time = 0;
-	while (GetTickCount64() - start_time < 1000)
-	{
-		const auto queried_last_event_time = last_event_time.load();
-		if (last_seen_time != 0 && (queried_last_event_time - last_seen_time) > 500)
-		{
-			wprintf(L"\n - no events for 1/2 second, stopping ETW read\n");
-			break;
-		}
-
-		last_seen_time = queried_last_event_time;
-		THROW_IF_FAILED(etw_reader.FlushTraceSession());
-		Sleep(100);
-	}
 
 	return g_all_providers;
 }

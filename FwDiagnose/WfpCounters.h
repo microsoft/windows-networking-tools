@@ -97,14 +97,17 @@ size_t CountFilterConditionsByName(const NormalizedString& rule_name);
 // callout support
 struct CalloutDetails
 {
-	GUID calloutKey{};
-	GUID applicableLayer{};
+	GUID callout_key{};
+	GUID applicable_layer{};
 	std::string layer{};
 	std::wstring name{};
 	std::wstring description{};
-	uint64_t referenced_by_filter_count{};
+	uint32_t callout_id{};
+	std::wstring driver_name{};
+
+    uint64_t referenced_by_filter_count{};
 	bool is_third_party_callout{ false };
-	bool normalizedNameContainsNonAsciiString{ true };
+	bool name_is_non_ascii_string{ true };
 };
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
 std::wstring GetInternalCalloutString(const CalloutDetails& callout);

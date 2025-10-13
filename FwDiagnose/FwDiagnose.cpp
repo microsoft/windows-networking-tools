@@ -318,7 +318,9 @@ int __cdecl main(int argc, char* argv[]) try
 		{
 			if (callout.is_third_party_callout)
 			{
-				std::printf("      %ls\n", callout.name.empty() ? L"(no name)" : callout.name.c_str());
+				std::printf("      name: %ls, driver: %ls\n",
+					callout.name.empty() ? L"(no name)" : callout.name.c_str(),
+					callout.driver_name.empty() ? L"(hidden)" : callout.driver_name.c_str());
 			}
 		}
 
@@ -327,9 +329,9 @@ int __cdecl main(int argc, char* argv[]) try
 			GUID current_layer_being_printed{};
 			for (const auto& callout : wfp_callouts)
 			{
-				if (current_layer_being_printed != callout.applicableLayer)
+				if (current_layer_being_printed != callout.applicable_layer)
 				{
-					current_layer_being_printed = callout.applicableLayer;
+					current_layer_being_printed = callout.applicable_layer;
 					std::printf("\n    %hs\n", callout.layer.c_str());
 				}
 
@@ -452,7 +454,7 @@ int __cdecl main(int argc, char* argv[]) try
 					std::ranges::find_if(
 						wfp_callouts,
 						[&](const CalloutDetails& callout) {
-							return callout.calloutKey == current_fwpm_filter.action_type.calloutKey;
+							return callout.callout_key == current_fwpm_filter.action_type.calloutKey;
 						});
 				if (found_callout == wfp_callouts.end())
 				{
@@ -480,7 +482,7 @@ int __cdecl main(int argc, char* argv[]) try
 				{
 					return false;
 				}
-				return GuidToString(lhs.calloutKey) < GuidToString(rhs.calloutKey);
+				return GuidToString(lhs.callout_key) < GuidToString(rhs.callout_key);
 			}
 		);
 
@@ -505,7 +507,7 @@ int __cdecl main(int argc, char* argv[]) try
 				{
 					const auto internal_string = GetInternalCalloutString(callout);
 					std::printf("    %ls : [%llu] %ls\n",
-						GuidToString(callout.calloutKey).c_str(),
+						GuidToString(callout.callout_key).c_str(),
 						callout.referenced_by_filter_count,
 						internal_string.empty() ? callout.name.c_str() : internal_string.c_str()
 					);

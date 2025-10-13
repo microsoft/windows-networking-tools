@@ -9,6 +9,9 @@
 
 #include "WfpCounters.h"
 
+#include "ctEtwReader.hpp"
+#include "ctEtwRecord.hpp"
+
 #include <wil/stl.h>
 #include <wil/resource.h>
 
@@ -202,12 +205,12 @@ static PCWSTR BuiltInCalloutsToString(const GUID& guid) noexcept;
 
 std::wstring GetInternalCalloutString(const CalloutDetails& callout)
 {
-	if (std::ranges::find(BuiltInCallouts, callout.calloutKey) != std::end(BuiltInCallouts))
+	if (std::ranges::find(BuiltInCallouts, callout.callout_key) != std::end(BuiltInCallouts))
 	{
-		return BuiltInCalloutsToString(callout.calloutKey);
+		return BuiltInCalloutsToString(callout.callout_key);
 	}
 
-	return FirewallPlumberCalloutKey(callout.calloutKey);
+	return FirewallPlumberCalloutKey(callout.callout_key);
 }
 std::wstring PrintCallout(const CalloutDetails& callout)
 {
@@ -217,14 +220,14 @@ std::wstring PrintCallout(const CalloutDetails& callout)
 	{
 		return wil::str_printf<std::wstring>(
 			L"%ls : %ls (name : %ls)",
-			GuidToString(callout.calloutKey).c_str(),
+			GuidToString(callout.callout_key).c_str(),
 			callout_key_string.c_str(),
 			callout.name.empty() ? L"no name" : callout.name.c_str());
 	}
 
 	return wil::str_printf<std::wstring>(
 		L"%ls : %ls",
-		GuidToString(callout.calloutKey).c_str(),
+		GuidToString(callout.callout_key).c_str(),
 		callout.name.empty() ? L"(no name)" : callout.name.c_str());
 }
 
@@ -270,8 +273,8 @@ try
 			const auto* current_fwpm_filter = entries[i];
 			g_all_callouts.push_back(
 				CalloutDetails{
-					.calloutKey = current_fwpm_filter->calloutKey,
-					.applicableLayer = current_fwpm_filter->applicableLayer,
+					.callout_key = current_fwpm_filter->calloutKey,
+					.applicable_layer = current_fwpm_filter->applicableLayer,
 					.layer = LayerToString(current_fwpm_filter->applicableLayer),
 					.name = current_fwpm_filter->displayData.name ?
 						current_fwpm_filter->displayData.name :
@@ -279,6 +282,7 @@ try
 					.description = current_fwpm_filter->displayData.description ?
 					   current_fwpm_filter->displayData.description :
 					   L"(no description)",
+					.callout_id = current_fwpm_filter->calloutId,
 				});
 		}
 
@@ -290,12 +294,12 @@ try
 
 	for (auto& callout : g_all_callouts)
 	{
-		if (std::ranges::find(BuiltInCallouts, callout.calloutKey) != std::end(BuiltInCallouts))
+		if (std::ranges::find(BuiltInCallouts, callout.callout_key) != std::end(BuiltInCallouts))
 		{
 			continue;
 		}
 
-		if (auto callout_key_string = FirewallPlumberCalloutKey(callout.calloutKey); !callout_key_string.empty())
+		if (auto callout_key_string = FirewallPlumberCalloutKey(callout.callout_key); !callout_key_string.empty())
 		{
 			continue;
 		}
@@ -306,8 +310,76 @@ try
 	std::ranges::sort(
 		g_all_callouts, [](const CalloutDetails& left, const CalloutDetails& right)
 		{
-			return SortedLayerValue(left.applicableLayer) < SortedLayerValue(right.applicableLayer);
+			return SortedLayerValue(left.applicable_layer) < SortedLayerValue(right.applicable_layer);
 		});
+
+	// Microsoft.Windows.Networking.WFP.Callout
+	static struct CalloutRundownDetails
+	{
+		struct CalloutDetails
+		{
+			std::wstring driver_name{};
+			uint32_t callout_id{};
+			uint32_t applicable_layer_id{};
+			uint32_t behavior_flags{};
+		};
+		std::vector<CalloutDetails> callouts{};
+	} callout_rundown_details;
+
+	auto callback_fn = [](const EVENT_RECORD* pRecord) {
+			// Process the ETW event record
+			const auto event_message = ctl::ctEtwRecord(pRecord);
+
+			bool is_callout_rundown_record = true;
+			std::wstring callout_id_key;
+			is_callout_rundown_record &= event_message.queryEventProperty(L"CalloutId", callout_id_key);
+			std::wstring driver_name_key;
+			is_callout_rundown_record &= event_message.queryEventProperty(L"DriverName", driver_name_key);
+			std::wstring applicable_layer_id_key;
+			is_callout_rundown_record &= event_message.queryEventProperty(L"ApplicableLayerId", applicable_layer_id_key);
+			std::wstring behavior_flags_key;
+			is_callout_rundown_record &= event_message.queryEventProperty(L"BehaviorFlags", behavior_flags_key);
+			if (!is_callout_rundown_record)
+			{
+				std::wprintf(L" - ignoring non-callout rundown event\n");
+				return;
+			}
+
+			CalloutRundownDetails::CalloutDetails new_callout_details{};
+			new_callout_details.driver_name = driver_name_key;
+			new_callout_details.callout_id = std::stoul(callout_id_key);
+			new_callout_details.applicable_layer_id = std::stoul(applicable_layer_id_key);
+			new_callout_details.behavior_flags = std::stoul(behavior_flags_key);
+			callout_rundown_details.callouts.push_back(new_callout_details);
+		};
+
+	ctl::ctEtwReader etw_reader{ callback_fn };
+
+	constexpr GUID wfp_callout{ 0x00e7ee66,0x5b24,0x5c41, {0x22,0xcb,0xaf,0x98,0xf6,0x3e,0x2f,0x90} };
+	THROW_IF_FAILED(etw_reader.StartTraceSession(L"FwDiagnose", nullptr, wfp_callout));
+	THROW_IF_FAILED(etw_reader.EnableTraceProviders({ wfp_callout }));
+
+	const auto start_time = GetTickCount64();
+	while (GetTickCount64() - start_time < 1000)
+	{
+		THROW_IF_FAILED(etw_reader.FlushTraceSession());
+		Sleep(250);
+	}
+	etw_reader.StopTraceSession();
+
+	for (const auto& callout : callout_rundown_details.callouts)
+	{
+		const auto found_callout = std::ranges::find_if(
+			g_all_callouts,
+			[&](const CalloutDetails& callout_details)
+			{
+				return callout_details.callout_id == callout.callout_id;
+			});
+		if (found_callout != g_all_callouts.end())
+		{
+			found_callout->driver_name = callout.driver_name;
+		}
+	}
 
 	return g_all_callouts;
 }
