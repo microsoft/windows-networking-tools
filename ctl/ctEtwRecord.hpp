@@ -8,7 +8,6 @@
 #define TDH_FORMAT_FATAL_CONDITION
 
 // CPP Headers
-#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -1135,7 +1134,7 @@ ctEtwRecord::queryRelatedActivityId(_Out_ GUID* related_activity_id) const noexc
     bool bFoundProperty = false;
     for (const auto& tempItem : m_eventHeaderExtendedData) {
         if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_RELATED_ACTIVITYID) {
-            assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID));
+            FAIL_FAST_IF(tempItem.DataSize != sizeof(EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID));
             const EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID* relatedID =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_RELATED_ACTIVITYID*>(tempItem.DataPtr);
             *related_activity_id = relatedID->RelatedActivityId;
@@ -1180,7 +1179,7 @@ ctEtwRecord::queryTerminalSessionId(_Out_ ULONG* terminal_session_id) const noex
     bool bFoundProperty = false;
     for (const auto& tempItem : m_eventHeaderExtendedData) {
         if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_TS_ID) {
-            assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_TS_ID));
+            FAIL_FAST_IF(tempItem.DataSize != sizeof(EVENT_EXTENDED_ITEM_TS_ID));
             const EVENT_EXTENDED_ITEM_TS_ID* ts_ID = reinterpret_cast<EVENT_EXTENDED_ITEM_TS_ID*>(tempItem.DataPtr);
             *terminal_session_id = ts_ID->SessionId;
             bFoundProperty = true;
@@ -1202,7 +1201,7 @@ ctEtwRecord::queryTransactionInstanceId(_Out_ ULONG* transaction_instance_id) co
     bool bFoundProperty = false;
     for (const auto& tempItem : m_eventHeaderExtendedData) {
         if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_INSTANCE_INFO) {
-            assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
+            FAIL_FAST_IF(tempItem.DataSize != sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
             const EVENT_EXTENDED_ITEM_INSTANCE* instanceInfo =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(tempItem.DataPtr);
             *transaction_instance_id = instanceInfo->InstanceId;
@@ -1225,7 +1224,7 @@ ctEtwRecord::queryTransactionParentInstanceId(_Out_ ULONG* transaction_parent_in
     bool bFoundProperty = false;
     for (const auto& tempItem : m_eventHeaderExtendedData) {
         if (tempItem.ExtType == EVENT_HEADER_EXT_TYPE_INSTANCE_INFO) {
-            assert(tempItem.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
+            FAIL_FAST_IF(tempItem.DataSize != sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
             const EVENT_EXTENDED_ITEM_INSTANCE* instanceInfo =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(tempItem.DataPtr);
             *transaction_parent_instance_id = instanceInfo->ParentInstanceId;
@@ -1248,7 +1247,7 @@ ctEtwRecord::queryTransactionParentGuid(_Out_ GUID* transaction_parent_guid) con
     bool bFoundProperty = false;
     for (const auto& extended_data_item : m_eventHeaderExtendedData) {
         if (extended_data_item.ExtType == EVENT_HEADER_EXT_TYPE_INSTANCE_INFO) {
-            assert(extended_data_item.DataSize == sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
+            FAIL_FAST_IF(extended_data_item.DataSize != sizeof(EVENT_EXTENDED_ITEM_INSTANCE));
             const EVENT_EXTENDED_ITEM_INSTANCE* instanceInfo =
                 reinterpret_cast<EVENT_EXTENDED_ITEM_INSTANCE*>(extended_data_item.DataPtr);
             *transaction_parent_guid = instanceInfo->ParentGuid;
@@ -1649,7 +1648,7 @@ ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ ctPropertyPair&
             m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventPropertyInfoArray[ulCount].NameOffset);
 
         if (0 == _wcsicmp(property_name, szPropertyFound)) {
-            assert(ulCount < m_traceProperties.size());
+            FAIL_FAST_IF(ulCount >= m_traceProperties.size());
             if (ulCount < m_traceProperties.size()) {
                 event_properties = m_traceProperties[ulCount];
                 bFoundMatch = true;
@@ -1680,13 +1679,17 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
     std::wstring wsData;
 
     // retrieve the raw property information
-    USHORT propertyOutType = m_traceEventInfoPtr->EventPropertyInfoArray[property_index].nonStructType.OutType;
-    const ULONG propertySize = m_traceProperties[property_index].second;
     const BYTE* propertyBuf = m_traceProperties[property_index].first.get();
+    const ULONG propertySize = m_traceProperties[property_index].second;
+
+    if (propertySize > 0) {
+        DebugBreak();
+        return {};
+    }
 
     // build a string only if the property data > 0 bytes
-    // if (propertySize > 0) {
     // build the string based on the IN and OUT types
+    auto propertyOutType = m_traceEventInfoPtr->EventPropertyInfoArray[property_index].nonStructType.OutType;
     const auto& propertyInfo = m_traceEventInfoPtr->EventPropertyInfoArray[property_index];
     switch (propertyInfo.nonStructType.InType) {
     case TDH_INTYPE_NULL: {
@@ -1699,7 +1702,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_STRING;
         }
         // xs:string
-        assert(propertyOutType == TDH_OUTTYPE_STRING);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_STRING);
         // - not guaranteed to be NULL terminated
         const auto* wszBuffer = reinterpret_cast<const wchar_t*>(propertyBuf);
         const auto* wszBufferEnd = wszBuffer + propertySize / 2;
@@ -1716,7 +1719,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_STRING;
         }
         // xs:string
-        assert(propertyOutType == TDH_OUTTYPE_STRING);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_STRING);
         // - not guaranteed to be NULL terminated
         const auto* szBuffer = reinterpret_cast<const char*>(propertyBuf);
         const auto* szBufferEnd = szBuffer + propertySize;
@@ -1742,9 +1745,9 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_BYTE;
         }
         // xs:byte
-        assert(1 == propertySize);
+        FAIL_FAST_IF(1 != propertySize);
         const char prop = *reinterpret_cast<const char*>(propertyBuf);
-        assert(propertyOutType == TDH_OUTTYPE_BYTE);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_BYTE);
         _itow_s(prop, stackBuffer, 10);
         wsData = stackBuffer;
         break;
@@ -1755,7 +1758,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_UNSIGNEDBYTE;
         }
         // xs:unsignedByte; win:hexInt8
-        assert(1 == propertySize);
+        FAIL_FAST_IF(1 != propertySize);
         const unsigned char prop = *propertyBuf;
         if (TDH_OUTTYPE_UNSIGNEDBYTE == propertyOutType) {
             _itow_s(prop, stackBuffer, 10);
@@ -1781,9 +1784,9 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_SHORT;
         }
         // xs:short
-        assert(2 == propertySize);
+        FAIL_FAST_IF(2 != propertySize);
         const short prop = *reinterpret_cast<const short*>(propertyBuf);
-        assert(propertyOutType == TDH_OUTTYPE_SHORT);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_SHORT);
         _itow_s(prop, stackBuffer, 10);
         wsData = stackBuffer;
         break;
@@ -1794,7 +1797,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_UNSIGNEDSHORT;
         }
         // xs:unsignedShort; win:Port; win:HexInt16
-        assert(2 == propertySize);
+        FAIL_FAST_IF(2 != propertySize);
         const unsigned short prop = *reinterpret_cast<const unsigned short*>(propertyBuf);
         if (TDH_OUTTYPE_UNSIGNEDSHORT == propertyOutType) {
             _itow_s(prop, stackBuffer, 10);
@@ -1817,9 +1820,9 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_INT;
         }
         // xs:int
-        assert(4 == propertySize);
+        FAIL_FAST_IF(4 != propertySize);
         const int prop = *reinterpret_cast<const int*>(propertyBuf);
-        assert(propertyOutType == TDH_OUTTYPE_INT);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_INT);
         _itow_s(prop, stackBuffer, 10);
         wsData = stackBuffer;
         break;
@@ -1830,7 +1833,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_UNSIGNEDINT;
         }
         // xs:unsignedInt, win:PID, win:TID, win:IPv4, win:ETWTIME, win:ErrorCode, win:HexInt32
-        assert(4 == propertySize);
+        FAIL_FAST_IF(4 != propertySize);
         const unsigned int prop = *reinterpret_cast<const unsigned int*>(propertyBuf);
         if (TDH_OUTTYPE_UNSIGNEDINT == propertyOutType || TDH_OUTTYPE_UNSIGNEDLONG == propertyOutType ||
             TDH_OUTTYPE_PID == propertyOutType || TDH_OUTTYPE_TID == propertyOutType ||
@@ -1861,9 +1864,9 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_LONG;
         }
         // xs:long
-        assert(8 == propertySize);
+        FAIL_FAST_IF(8 != propertySize);
         const INT64 prop = *reinterpret_cast<const INT64*>(propertyBuf);
-        assert(propertyOutType == TDH_OUTTYPE_LONG);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_LONG);
         _i64tow_s(prop, stackBuffer, cch_StackBuffer, 10);
         wsData = stackBuffer;
         break;
@@ -1874,7 +1877,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_UNSIGNEDLONG;
         }
         // xs:unsignedLong, win:HexInt64
-        assert(8 == propertySize);
+        FAIL_FAST_IF(8 != propertySize);
         const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
         if (TDH_OUTTYPE_UNSIGNEDLONG == propertyOutType) {
             _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 10);
@@ -1895,7 +1898,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
         }
         // xs:float
         const float prop = *reinterpret_cast<const float*>(propertyBuf);
-        assert(propertyOutType == TDH_OUTTYPE_FLOAT);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_FLOAT);
         if (swprintf_s(stackBuffer, cch_StackBuffer, L"%f", prop) > 0) {
             wsData += stackBuffer;
         }
@@ -1908,7 +1911,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
         }
         // xs:double
         const double prop = *reinterpret_cast<const double*>(propertyBuf);
-        assert(propertyOutType == TDH_OUTTYPE_DOUBLE);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_DOUBLE);
         if (swprintf_s(stackBuffer, cch_StackBuffer, L"%f", prop) > 0) {
             wsData += stackBuffer;
         }
@@ -1920,7 +1923,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_BOOLEAN;
         }
         // xs:boolean
-        assert(propertyOutType == TDH_OUTTYPE_BOOLEAN);
+        FAIL_FAST_IF(propertyOutType != TDH_OUTTYPE_BOOLEAN);
         const int prop = *reinterpret_cast<const int*>(propertyBuf);
         if (0 == prop) {
             wsData = L"false";
@@ -1970,8 +1973,8 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_GUID;
         }
         // xs:GUID
-        assert(TDH_OUTTYPE_GUID == propertyOutType);
-        assert(sizeof(GUID) == propertySize);
+        FAIL_FAST_IF(TDH_OUTTYPE_GUID != propertyOutType);
+        FAIL_FAST_IF(sizeof(GUID) != propertySize);
         if (sizeof(GUID) == propertySize) {
             RPC_WSTR pszGuid = nullptr;
             const RPC_STATUS uuidStatus = ::UuidToString(reinterpret_cast<const GUID*>(propertyBuf), &pszGuid);
@@ -1989,13 +1992,13 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
         }
         // win:hexInt64
         if (4 == propertySize) {
-            assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
+            FAIL_FAST_IF(TDH_OUTTYPE_HEXINT64 != propertyOutType);
             const ULONG prop = *reinterpret_cast<const ULONG*>(propertyBuf);
             _ultow_s(prop, stackBuffer, 16);
             wsData = L"0x";
             wsData += stackBuffer;
         } else if (8 == propertySize) {
-            assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
+            FAIL_FAST_IF(TDH_OUTTYPE_HEXINT64 != propertyOutType);
             const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
             _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
             wsData = L"0x";
@@ -2014,7 +2017,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_DATETIME;
         }
         // xs:dateTime
-        assert(sizeof(FILETIME) == propertySize);
+        FAIL_FAST_IF(sizeof(FILETIME) != propertySize);
         if (sizeof(FILETIME) == propertySize) {
             const FILETIME ft = *reinterpret_cast<const FILETIME*>(propertyBuf);
             LARGE_INTEGER li;
@@ -2031,7 +2034,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
         if (propertyOutType == TDH_OUTTYPE_NULL) {
             propertyOutType = TDH_OUTTYPE_DATETIME;
         }
-        assert(sizeof(SYSTEMTIME) == propertySize);
+        FAIL_FAST_IF(sizeof(SYSTEMTIME) != propertySize);
         if (sizeof(SYSTEMTIME) == propertySize) {
             const SYSTEMTIME st = *reinterpret_cast<const SYSTEMTIME*>(propertyBuf);
             _snwprintf_s(
@@ -2096,7 +2099,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_HEXINT32;
         }
         if (4 == propertySize) {
-            assert(TDH_OUTTYPE_HEXINT32 == propertyOutType);
+            FAIL_FAST_IF(TDH_OUTTYPE_HEXINT32 != propertyOutType);
             const unsigned short prop = *reinterpret_cast<const unsigned short*>(propertyBuf);
             _itow_s(prop, stackBuffer, 10);
             wsData = stackBuffer;
@@ -2109,7 +2112,7 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
             propertyOutType = TDH_OUTTYPE_HEXINT64;
         }
         if (8 == propertySize) {
-            assert(TDH_OUTTYPE_HEXINT64 == propertyOutType);
+            FAIL_FAST_IF(TDH_OUTTYPE_HEXINT64 != propertyOutType);
             const UINT64 prop = *reinterpret_cast<const UINT64*>(propertyBuf);
             _ui64tow_s(prop, stackBuffer, cch_StackBuffer, 16);
             wsData = L"0x";
@@ -2118,7 +2121,6 @@ ctEtwRecord::buildEventPropertyString(ULONG property_index) const
         break;
     }
     } // switch statement
-    // }
     return wsData;
 }
 } // namespace ctl
