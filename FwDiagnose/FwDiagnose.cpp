@@ -318,8 +318,9 @@ int __cdecl main(int argc, char* argv[]) try
 		{
 			if (callout.is_third_party_callout)
 			{
-				std::printf("      name: %ls, driver: %ls\n",
+				std::printf("       %ls [callout id: %u] [%ls]\n",
 					callout.name.empty() ? L"(no name)" : callout.name.c_str(),
+					callout.callout_id,
 					callout.driver_name.empty() ? L"(hidden)" : callout.driver_name.c_str());
 			}
 		}
@@ -490,7 +491,7 @@ int __cdecl main(int argc, char* argv[]) try
 		{
 			std::printf("\n");
 		}
-		std::printf("  * Total filters that invoke a callout (FWP_ACTION_FLAG_CALLOUT): %llu\n",
+		std::printf("  * Total filters that invoke a callout (FWP_ACTION_FLAG_CALLOUT): %llu [3rd party callout filters: %llu]\n",
 			std::accumulate(
 				wfp_callouts.begin(),
 				wfp_callouts.end(),
@@ -498,7 +499,56 @@ int __cdecl main(int argc, char* argv[]) try
 				[](uint64_t sum, const CalloutDetails& callout) {
 					return sum + callout.referenced_by_filter_count;
 				}
-			));
+			),
+			std::accumulate(
+				wfp_callouts.begin(),
+				wfp_callouts.end(),
+				0ull,
+				[](uint64_t sum, const CalloutDetails& callout) {
+					return sum + (callout.is_third_party_callout ? callout.referenced_by_filter_count : 0);
+				}
+			)
+		);
+
+		std::printf("    * 3rd party callouts filters\n");
+		for (const auto& callout : wfp_callouts)
+		{
+			if (callout.is_third_party_callout)
+			{
+				const auto internal_string = GetInternalCalloutString(callout);
+				std::printf("      callout id %u : [%llu] %ls [%ls]\n",
+					callout.callout_id,
+					callout.referenced_by_filter_count,
+					internal_string.empty() ? callout.name.c_str() : internal_string.c_str(),
+					callout.driver_name.empty() ? L"(hidden)" : callout.driver_name.c_str()
+				);
+
+			    for (const auto& current_fwpm_filter : filter_details)
+		        {
+			        if (current_fwpm_filter.action_type.type & FWP_ACTION_FLAG_CALLOUT &&
+						current_fwpm_filter.action_type.calloutKey == callout.callout_key)
+			        {
+						// find what sublayer their callout is in
+						std::wstring filter_sublayer;
+						for (const auto& sublayer : wfp_sublayers)
+						{
+						    if (sublayer.subLayerKey == current_fwpm_filter.subLayerKey)
+						    {
+								filter_sublayer = sublayer.displayName;
+								break;
+						    }
+						}
+
+			            std::printf("        filter id %llu : [filter name: %ls] [layer: %hs] [sublayer: %ls]\n",
+							current_fwpm_filter.filterId,
+							current_fwpm_filter.name.value.c_str(),
+							LayerToString(current_fwpm_filter.layerKey).c_str(),
+							filter_sublayer.c_str());
+			        }
+				}
+			}
+		}
+
 		if (g_verboseOutput)
 		{
 			for (const auto& callout : wfp_callouts)
@@ -521,15 +571,15 @@ int __cdecl main(int argc, char* argv[]) try
 			for (auto& policy : g_policy_objects)
 			{
 				timer.start("LoadFirewallRulesFromStore");
-				const auto hrload = LoadFirewallRulesFromStore(policy);
+				const auto load_error = LoadFirewallRulesFromStore(policy);
 				timer.end();
-				if (FAILED(hrload))
+				if (FAILED(load_error))
 				{
-					if (hrload == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+					if (load_error == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
 					{
 						continue;
 					}
-					THROW_HR(hrload);
+					THROW_HR(load_error);
 				}
 				timer.end();
 

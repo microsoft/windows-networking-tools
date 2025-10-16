@@ -1,8 +1,6 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
-
 #pragma once
 
+// clang-format off
 #include <algorithm>
 #include <cassert>
 #include <cwchar>
@@ -13,7 +11,6 @@
 
 #include <Windows.h>
 #include <guiddef.h>
-
 // these 4 headers needed ETW APIs
 #include <evntcons.h>
 #include <evntrace.h>
@@ -23,7 +20,7 @@
 #include "ctEtwRecord.hpp"
 
 #include "wil/resource.h"
-
+// clang-format on
 
 /// \brief Re-defining this flag from ntwmi.h to avoid pulling in a bunch of dependencies and conflicts
 constexpr ULONG EVENT_TRACE_USE_MS_FLUSH_TIMER = 0x00000010; ///< FlushTimer value in milliseconds
@@ -547,37 +544,33 @@ CATCH_RETURN();
 
 inline VOID WINAPI
 ctEtwReader::EventRecordCallback(PEVENT_RECORD pEventRecord) noexcept
-{
+try {
     ctEtwReader* pEventReader = static_cast<ctEtwReader*>(pEventRecord->UserContext);
 
-    try {
-        // When opening a saved session from an ETL file, the first event record
-        // contains diagnostic information about the contents of the trace - the
-        // most important (for us) field being the number of buffers written. By
-        // saving this value, we can consume it later on inside BufferCallback to
-        // force ProcessTrace() to return when the entire contents of the session
-        // have been read.
-        bool process = true;
-        if (!pEventReader->m_initNumBuffers) {
-            const ctEtwRecord eventMessage(pEventRecord);
-            std::wstring task;
-            if (eventMessage.queryTaskName(task) && task == L"EventTrace") {
-                process = false;
-                ctEtwRecord::ctPropertyPair pair;
-                if (eventMessage.queryEventProperty(L"BuffersWritten", pair)) {
-                    pEventReader->m_initNumBuffers = true;
-                    pEventReader->m_numBuffers = *reinterpret_cast<int*>(pair.first.get());
-                }
+    // When opening a saved session from an ETL file, the first event record
+    // contains diagnostic information about the contents of the trace - the
+    // most important (for us) field being the number of buffers written. By
+    // saving this value, we can consume it later on inside BufferCallback to
+    // force ProcessTrace() to return when the entire contents of the session
+    // have been read.
+    bool process = true;
+    if (!pEventReader->m_initNumBuffers) {
+        const ctEtwRecord eventMessage(pEventRecord);
+        std::wstring task;
+        if (eventMessage.queryTaskName(task) && task == L"EventTrace") {
+            process = false;
+            ctEtwRecord::ctPropertyPair pair;
+            if (eventMessage.queryEventProperty(L"BuffersWritten", pair)) {
+                pEventReader->m_initNumBuffers = true;
+                pEventReader->m_numBuffers = *reinterpret_cast<int*>(pair.first.get());
             }
         }
-
-        if (process) {
-            pEventReader->m_eventFilter(pEventRecord);
-        }
-    } catch (...) {
-        // the above could throw std::exception objects (e.g. std::bad_alloc)
-        // - or wil exception objects (which derive from std::exception)
     }
+
+    if (process) {
+        pEventReader->m_eventFilter(pEventRecord);
+    }
+} catch (...) {
 }
 
 inline ULONG WINAPI

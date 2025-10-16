@@ -367,7 +367,8 @@ try
 	}
 	etw_reader.StopTraceSession();
 
-	for (const auto& callout : callout_rundown_details.callouts)
+	// move the driver names into the callout details
+	for (auto& callout : callout_rundown_details.callouts)
 	{
 		const auto found_callout = std::ranges::find_if(
 			g_all_callouts,
@@ -377,7 +378,7 @@ try
 			});
 		if (found_callout != g_all_callouts.end())
 		{
-			found_callout->driver_name = callout.driver_name;
+			found_callout->driver_name = std::move(callout.driver_name);
 		}
 	}
 
