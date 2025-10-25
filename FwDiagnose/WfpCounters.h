@@ -105,7 +105,8 @@ struct CalloutDetails
 	uint32_t callout_id{};
 	std::wstring driver_name{};
 
-    uint64_t referenced_by_filter_count{};
+    uint64_t referenced_by_filter_count_enabled{};
+    uint64_t referenced_by_filter_count_disabled{};
 	bool is_third_party_callout{ false };
 	bool name_is_non_ascii_string{ true };
 };

@@ -202,15 +202,15 @@ int __cdecl main(int argc, char* argv[]) try
 					banner_header.c_str());
 
 				timer.start("LoadFirewallRulesFromStore");
-				const auto hrload = LoadFirewallRulesFromStore(policy);
+				const auto load_error = LoadFirewallRulesFromStore(policy);
 				timer.end();
-				if (FAILED(hrload))
+				if (FAILED(load_error))
 				{
-					if (hrload == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+					if (load_error == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
 					{
 						continue;
 					}
-					THROW_HR(hrload);
+					THROW_HR(load_error);
 				}
 
 				timer.start("CheckForRulesWithErrorStatus");
@@ -359,7 +359,7 @@ int __cdecl main(int argc, char* argv[]) try
 		{
 			if (sublayer.is_third_party_sublayer)
 			{
-				std::printf("      %ls\n", sublayer.displayName.empty() ? L"(no display name)" : sublayer.displayName.c_str());
+				std::printf("      %ls [weight %hu]\n", sublayer.displayName.empty() ? L"(no display name)" : sublayer.displayName.c_str(), sublayer.weight);
 			}
 		}
 
@@ -465,7 +465,15 @@ int __cdecl main(int argc, char* argv[]) try
 				}
 				else
 				{
-					++found_callout->referenced_by_filter_count;
+					if (current_fwpm_filter.IsDisabled())
+					{
+						++found_callout->referenced_by_filter_count_disabled;
+					}
+					else
+					{
+						++found_callout->referenced_by_filter_count_enabled;
+					}
+
 				}
 			}
 		}
@@ -475,11 +483,11 @@ int __cdecl main(int argc, char* argv[]) try
 			wfp_callouts,
 			[](const CalloutDetails& lhs, const CalloutDetails& rhs) noexcept
 			{
-				if (lhs.referenced_by_filter_count > rhs.referenced_by_filter_count)
+				if (lhs.referenced_by_filter_count_enabled > rhs.referenced_by_filter_count_enabled)
 				{
 					return true;
 				}
-				if (lhs.referenced_by_filter_count < rhs.referenced_by_filter_count)
+				if (lhs.referenced_by_filter_count_enabled < rhs.referenced_by_filter_count_enabled)
 				{
 					return false;
 				}
@@ -491,13 +499,13 @@ int __cdecl main(int argc, char* argv[]) try
 		{
 			std::printf("\n");
 		}
-		std::printf("  * Total filters that invoke a callout (FWP_ACTION_FLAG_CALLOUT): %llu [3rd party callout filters: %llu]\n",
+		std::printf("  * Total enabled filters that invoke a callout (FWP_ACTION_FLAG_CALLOUT): %llu [3rd party callout filters: %llu]\n",
 			std::accumulate(
 				wfp_callouts.begin(),
 				wfp_callouts.end(),
 				0ull,
 				[](uint64_t sum, const CalloutDetails& callout) {
-					return sum + callout.referenced_by_filter_count;
+					return sum + callout.referenced_by_filter_count_enabled;
 				}
 			),
 			std::accumulate(
@@ -505,7 +513,25 @@ int __cdecl main(int argc, char* argv[]) try
 				wfp_callouts.end(),
 				0ull,
 				[](uint64_t sum, const CalloutDetails& callout) {
-					return sum + (callout.is_third_party_callout ? callout.referenced_by_filter_count : 0);
+					return sum + (callout.is_third_party_callout ? callout.referenced_by_filter_count_enabled : 0);
+				}
+			)
+		);
+		std::printf("  * Total disabled filters that invoke a callout (FWP_ACTION_FLAG_CALLOUT): %llu [3rd party callout filters: %llu]\n",
+			std::accumulate(
+				wfp_callouts.begin(),
+				wfp_callouts.end(),
+				0ull,
+				[](uint64_t sum, const CalloutDetails& callout) {
+					return sum + callout.referenced_by_filter_count_disabled;
+				}
+			),
+			std::accumulate(
+				wfp_callouts.begin(),
+				wfp_callouts.end(),
+				0ull,
+				[](uint64_t sum, const CalloutDetails& callout) {
+					return sum + (callout.is_third_party_callout ? callout.referenced_by_filter_count_disabled : 0);
 				}
 			)
 		);
@@ -516,35 +542,36 @@ int __cdecl main(int argc, char* argv[]) try
 			if (callout.is_third_party_callout)
 			{
 				const auto internal_string = GetInternalCalloutString(callout);
-				std::printf("      callout id %u : [%llu] %ls [%ls]\n",
+				std::printf("      callout id %lu : [%llu filters enabled] [%llu filters disabled] [callout name: %ls] [driver name: %ls]\n",
 					callout.callout_id,
-					callout.referenced_by_filter_count,
+					callout.referenced_by_filter_count_enabled,
+					callout.referenced_by_filter_count_disabled,
 					internal_string.empty() ? callout.name.c_str() : internal_string.c_str(),
 					callout.driver_name.empty() ? L"(hidden)" : callout.driver_name.c_str()
 				);
 
-			    for (const auto& current_fwpm_filter : filter_details)
-		        {
-			        if (current_fwpm_filter.action_type.type & FWP_ACTION_FLAG_CALLOUT &&
+				for (const auto& current_fwpm_filter : filter_details)
+				{
+					if (current_fwpm_filter.action_type.type & FWP_ACTION_FLAG_CALLOUT &&
 						current_fwpm_filter.action_type.calloutKey == callout.callout_key)
-			        {
+					{
 						// find what sublayer their callout is in
 						std::wstring filter_sublayer;
 						for (const auto& sublayer : wfp_sublayers)
 						{
-						    if (sublayer.subLayerKey == current_fwpm_filter.subLayerKey)
-						    {
+							if (sublayer.subLayerKey == current_fwpm_filter.subLayerKey)
+							{
 								filter_sublayer = sublayer.displayName;
 								break;
-						    }
+							}
 						}
 
-			            std::printf("        filter id %llu : [filter name: %ls] [layer: %hs] [sublayer: %ls]\n",
+						std::printf("        filter id %llu : [filter name: %ls] [layer: %hs] [sublayer: %ls]\n",
 							current_fwpm_filter.filterId,
 							current_fwpm_filter.name.value.c_str(),
 							LayerToString(current_fwpm_filter.layerKey).c_str(),
 							filter_sublayer.c_str());
-			        }
+					}
 				}
 			}
 		}
@@ -553,12 +580,13 @@ int __cdecl main(int argc, char* argv[]) try
 		{
 			for (const auto& callout : wfp_callouts)
 			{
-				if (callout.referenced_by_filter_count > 0)
+				if (callout.referenced_by_filter_count_enabled > 0)
 				{
 					const auto internal_string = GetInternalCalloutString(callout);
-					std::printf("    %ls : [%llu] %ls\n",
+					std::printf("    %ls : [%llu filters enabled] [%llu filters disabled] %ls\n",
 						GuidToString(callout.callout_key).c_str(),
-						callout.referenced_by_filter_count,
+						callout.referenced_by_filter_count_enabled,
+						callout.referenced_by_filter_count_disabled,
 						internal_string.empty() ? callout.name.c_str() : internal_string.c_str()
 					);
 				}
@@ -702,15 +730,18 @@ int __cdecl main(int argc, char* argv[]) try
 			}
 		}
 
-		const uint64_t final_wfp_filter_count = ReadWfpPerfCounters();
-		if (filter_details.size() != final_wfp_filter_count)
+		if (VerboseOutputEnabled())
 		{
-			std::printf(
-				"\n"
-				"  ** WARNING: The WMI-based WFP filter count (%llu) does not match the Filter count via the Fwpm* APIs (%zu) : a difference of %llu\n",
-				final_wfp_filter_count,
-				filter_details.size(),
-				final_wfp_filter_count > filter_details.size() ? final_wfp_filter_count - filter_details.size() : filter_details.size() - final_wfp_filter_count);
+			const uint64_t final_wfp_filter_count = ReadWfpPerfCounters();
+			if (filter_details.size() != final_wfp_filter_count)
+			{
+				std::printf(
+					"\n"
+					"  ** WARNING: The WMI-based WFP filter count (%llu) does not match the Filter count via the Fwpm* APIs (%zu) : a difference of %llu\n",
+					final_wfp_filter_count,
+					filter_details.size(),
+					final_wfp_filter_count > filter_details.size() ? final_wfp_filter_count - filter_details.size() : filter_details.size() - final_wfp_filter_count);
+			}
 		}
 	}
 
