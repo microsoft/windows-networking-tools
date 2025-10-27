@@ -39,44 +39,7 @@ static void PrintDeletionHeader(PCSTR str) noexcept
 		"     - indicate 'A' to delete ALL duplicate rules from this store without further prompts\n",
 		str);
 }
-
-enum class PromptResponse
-{
-	Yes,
-	No,
-	Skip,
-	All
-};
-
-static PromptResponse PromptForDeletion()
-{
-	std::wstring userInput;
-	for (;;)
-	{
-		std::printf("       Delete all duplicates of this rule (y/n/s/a)? ");
-		userInput.clear();
-		std::getline(std::wcin, userInput);
-
-		if (userInput == L"y" || userInput == L"Y")
-		{
-			return PromptResponse::Yes;
-		}
-		if (userInput == L"n" || userInput == L"N")
-		{
-			return PromptResponse::No;
-		}
-
-		if (userInput == L"s" || userInput == L"S")
-		{
-			return PromptResponse::Skip;
-		}
-
-		if (userInput == L"a" || userInput == L"A")
-		{
-			return PromptResponse::All;
-		}
-	}
-}
+static PCSTR DeletionPrompt = "Delete all duplicates of this rule";
 
 void LoadFirewallFunctions()
 {
@@ -362,7 +325,7 @@ void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rul
 
 		if (!delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion())
+			switch (PromptForDeletion(DeletionPrompt))
 			{
 			case PromptResponse::Yes:
 				// continue to delete the duplicates of this rule
@@ -609,7 +572,7 @@ void DeleteMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized
 
 		if (!delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion())
+			switch (PromptForDeletion(DeletionPrompt))
 			{
 			case PromptResponse::Yes:
 				// continue to delete this rule
@@ -941,7 +904,7 @@ void DeleteUnresolvedUserAccountRules(const std::vector<NormalizedFirewallRule>&
 
 		if (!delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion())
+			switch (PromptForDeletion(DeletionPrompt))
 			{
 			case PromptResponse::Yes:
 				// continue to delete this rule

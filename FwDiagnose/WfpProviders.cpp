@@ -253,7 +253,7 @@ void PrintProviderFilterDetails()
 
 		const auto built_in_provider_string = ProviderToString(provider);
 		std::printf(
-			"    %ls : [%zu] %ls (disabled filters: %zu, persistent filters: %zu)\n",
+			"    %ls : [filter count: %zu] %ls (disabled filters: %zu, persistent filters: %zu)\n",
 			GuidToString(provider.providerKey).c_str(),
 			provider.filterCount,
 			built_in_provider_string.c_str(),

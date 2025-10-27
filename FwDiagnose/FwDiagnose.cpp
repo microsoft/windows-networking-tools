@@ -17,6 +17,7 @@
 #include <wil/stl.h>
 #include <wil/resource.h>
 #include <wil/registry.h>
+#include <wil/result.h>
 
 
 // not static - shared with other files
@@ -44,7 +45,14 @@ bool WfpOutputEnabled() noexcept
 	return g_wfpOutput;
 }
 
-FirewallPolicyObjects g_policy_objects[] =
+static bool g_deleteWfpCalloutFilters = false;
+
+static bool DeleteWfpCalloutFiltersEnabled() noexcept
+{
+	return g_deleteWfpCalloutFilters;
+}
+
+static FirewallPolicyObjects g_policy_objects[] =
 {
 	{.type = FW_STORE_TYPE_LOCAL,            .type_string = "Local", .normalizedRules = {}},
 	// { .type= FW_STORE_TYPE_DYNAMIC, .type_string= "Dynamic", .normalizedRules = {}},
@@ -64,18 +72,21 @@ static void PrintUsage() noexcept
 	std::printf(
 		"Usage: FwDiagnose.exe [-clean] [-verbose] [-wfp]\n"
 		"This tool enumerates the local firewall rules and checks for errors, duplicates, and missing application files.\n"
+		"This tool also enumerates WFP objects (callouts, sublayers, providers, and filters)\n"
 		"Options:\n"
-		"  -?            : Show this help message.\n"
-		"  -clean        : Prompts to delete duplicate rules\n"
-		"                : Prompts to delete rules with application exes referencing non-existing files\n"
-		"                : Prompts to delete rules referencing unknown SIDs\n"
-		"                : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
-		"                : This requires Administrator privileges\n"
-		"  -wfp          : Output details of WFP objects (callouts, sublayers, and filters)\n"
-		"                : This requires Administrator privileges\n"
-		"  -verbose      : Output details of rules and/or WFP objects\n"
+		"  -?               : Show this help message.\n"
+		"  -clean_rules     : Prompts to delete duplicate rules\n"
+		"                   : Prompts to delete rules with application exes referencing non-existing files\n"
+		"                   : Prompts to delete rules referencing unknown SIDs\n"
+		"                   : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
+		"                   : This requires Administrator privileges\n"
+		"  -wfp             : Output details of WFP objects (callouts, sublayers, and filters)\n"
+		"                   : This requires Administrator privileges\n"
+		"  -delete_callouts : Prompt to delete filters for 3rd party WFP callout drivers\n"
+		"                     Requires -wfp to also be specified\n"
+		"  -verbose         : Output details of rules and/or WFP objects\n"
 		"\n"
-		"  -wfp and -clean cannot both be specified");
+		"Note: -wfp and -clean_rules cannot both be specified");
 }
 int __cdecl main(int argc, char* argv[]) try
 {
@@ -103,9 +114,9 @@ int __cdecl main(int argc, char* argv[]) try
 			g_debugPrint = true;
 		}
 
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean") == 0; }) != args.end())
+		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean_rules") == 0; }) != args.end())
 		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean") == 0; });
+			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean_rules") == 0; });
 			args.erase(removed_args.cbegin(), args.end());
 			g_cleanBrokenRules = true;
 		}
@@ -124,6 +135,13 @@ int __cdecl main(int argc, char* argv[]) try
 			g_wfpOutput = true;
 		}
 
+		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete_callouts") == 0; }) != args.end())
+		{
+			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete_callouts") == 0; });
+			args.erase(removed_args.cbegin(), args.end());
+			g_deleteWfpCalloutFilters = true;
+		}
+
 		if (!args.empty())
 		{
 			std::printf("Unrecognized arguments: ");
@@ -137,9 +155,16 @@ int __cdecl main(int argc, char* argv[]) try
 			return ERROR_BAD_ARGUMENTS;
 		}
 
-		if (g_wfpOutput && CleanBrokenRulesEnabled())
+		if (g_wfpOutput && g_cleanBrokenRules)
 		{
-			std::printf("The -wfp and -clean options cannot both be specified\n");
+			std::printf("The -wfp and -clean_rules options cannot both be specified\n");
+			PrintUsage();
+			return ERROR_BAD_ARGUMENTS;
+		}
+
+		if (g_deleteWfpCalloutFilters && !g_wfpOutput)
+		{
+			std::printf("The -disable_callout option requires the -wfp option to also be specified\n");
 			PrintUsage();
 			return ERROR_BAD_ARGUMENTS;
 		}
@@ -449,7 +474,7 @@ int __cdecl main(int argc, char* argv[]) try
 		// updates which callouts are referenced by filters
 		for (const auto& current_fwpm_filter : filter_details)
 		{
-			if (current_fwpm_filter.action_type.type & FWP_ACTION_FLAG_CALLOUT)
+			if (current_fwpm_filter.InvokesCallout())
 			{
 				auto found_callout =
 					std::ranges::find_if(
@@ -542,7 +567,7 @@ int __cdecl main(int argc, char* argv[]) try
 			if (callout.is_third_party_callout)
 			{
 				const auto internal_string = GetInternalCalloutString(callout);
-				std::printf("      callout id %lu : [%llu filters enabled] [%llu filters disabled] [callout name: %ls] [driver name: %ls]\n",
+				std::printf("      callout id %ld : [%llu filters enabled] [%llu filters disabled] [callout name: %ls] [driver name: %ls]\n",
 					callout.callout_id,
 					callout.referenced_by_filter_count_enabled,
 					callout.referenced_by_filter_count_disabled,
@@ -552,8 +577,7 @@ int __cdecl main(int argc, char* argv[]) try
 
 				for (const auto& current_fwpm_filter : filter_details)
 				{
-					if (current_fwpm_filter.action_type.type & FWP_ACTION_FLAG_CALLOUT &&
-						current_fwpm_filter.action_type.calloutKey == callout.callout_key)
+					if (current_fwpm_filter.InvokesCallout(callout.callout_key))
 					{
 						// find what sublayer their callout is in
 						std::wstring filter_sublayer;
@@ -566,7 +590,7 @@ int __cdecl main(int argc, char* argv[]) try
 							}
 						}
 
-						std::printf("        filter id %llu : [filter name: %ls] [layer: %hs] [sublayer: %ls]\n",
+						std::printf("        - filter id %llu : [filter name: %ls] [layer: %hs] [sublayer: %ls]\n",
 							current_fwpm_filter.filterId,
 							current_fwpm_filter.name.value.c_str(),
 							LayerToString(current_fwpm_filter.layerKey).c_str(),
@@ -578,12 +602,13 @@ int __cdecl main(int argc, char* argv[]) try
 
 		if (g_verboseOutput)
 		{
+			std::printf("\n    * Filters per Callout\n");
 			for (const auto& callout : wfp_callouts)
 			{
 				if (callout.referenced_by_filter_count_enabled > 0)
 				{
 					const auto internal_string = GetInternalCalloutString(callout);
-					std::printf("    %ls : [%llu filters enabled] [%llu filters disabled] %ls\n",
+					std::printf("      %ls : [%llu filters enabled] [%llu filters disabled] [callout name: %ls]\n",
 						GuidToString(callout.callout_key).c_str(),
 						callout.referenced_by_filter_count_enabled,
 						callout.referenced_by_filter_count_disabled,
@@ -724,6 +749,114 @@ int __cdecl main(int argc, char* argv[]) try
 						if (rules_printed >= 10)
 						{
 							break;
+						}
+					}
+				}
+			}
+		}
+
+		if (DeleteWfpCalloutFiltersEnabled())
+		{
+			std::printf(
+				"\n"
+				"**************************************************************************************\n"
+				"                      Deleting Filters for 3rd Party WFP Callouts                     \n"
+				"**************************************************************************************\n");
+			std::vector<std::wstring> callout_drivers;
+			for (const auto& callout : wfp_callouts)
+			{
+				if (callout.is_third_party_callout)
+				{
+					if (callout.driver_name.empty())
+					{
+						continue;
+					}
+					if (std::ranges::find(callout_drivers, callout.driver_name) != callout_drivers.end())
+					{
+						continue;
+					}
+					callout_drivers.emplace_back(callout.driver_name);
+				}
+			}
+			std::printf(
+				"  * Total 3rd party callout drivers: %zu\n",
+				callout_drivers.size());
+			for (const auto& driver_name : callout_drivers)
+			{
+				std::printf("    - %ls\n", driver_name.c_str());
+			}
+
+			bool delete_all_with_no_more_prompts = false;
+			for (const auto& driver : callout_drivers)
+			{
+				std::printf("\n  * Deleting filters for the callout driver: %ls\n", driver.c_str());
+				for (const auto& callout : wfp_callouts)
+				{
+					if (callout.driver_name != driver)
+					{
+						continue;
+					}
+
+					std::printf(
+						"\n"
+						"    * Deleting the filters for WFP callout %ls - registered with this driver\n"
+						"       Callout id %d\n"
+						"       Filters for this callout: %llu\n",
+						callout.name.c_str(),
+						callout.callout_id,
+						callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled);
+
+					if (callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled == 0)
+					{
+						std::printf("      * No Filters to delete for this callout\n");
+						continue;
+					}
+
+					bool skip_remaining_callouts = false;
+					if (!delete_all_with_no_more_prompts)
+					{
+						constexpr auto* DeletionPrompt = "Delete all filters referencing this callout";
+						switch (PromptForDeletion(DeletionPrompt))
+						{
+						case PromptResponse::Yes:
+							// continue to delete filters for this callout
+							break;
+
+						case PromptResponse::No:
+							std::printf("       - Skipping this callout\n");
+							skip_remaining_callouts = true;
+							continue;
+
+						case PromptResponse::Skip:
+							std::printf("       - Skipping the remainder of the callouts with this driver\n");
+							skip_remaining_callouts = true;
+							break;
+
+						case PromptResponse::All:
+							std::printf("       - Deleting all filters referencing all callouts\n");
+							delete_all_with_no_more_prompts = true;
+							break;
+						}
+					}
+					if (skip_remaining_callouts)
+					{
+						break;
+					}
+
+					std::printf("       - Deleting filters referencing this callout\n");
+					for (const auto& current_fwpm_filter : filter_details)
+					{
+						if (current_fwpm_filter.InvokesCallout(callout.callout_key))
+						{
+							std::printf("         Deleting filter id %llu : [filter name: %ls] [layer: %hs]\n",
+								current_fwpm_filter.filterId,
+								current_fwpm_filter.name.value.c_str(),
+								LayerToString(current_fwpm_filter.layerKey).c_str());
+							const auto delete_error = FwpmFilterDeleteByKey0(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
+							if (delete_error != 0)
+							{
+								std::printf("         - FwpmFilterDeleteByKey failed: 0x%x\n", delete_error);
+							}
 						}
 					}
 				}

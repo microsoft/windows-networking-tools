@@ -69,6 +69,18 @@ struct FilterDetails
 	{
 		return (flags & FWPM_FILTER_FLAG_PERSISTENT) != 0;
 	}
+	bool InvokesCallout() const noexcept
+	{
+		return (action_type.type & FWP_ACTION_FLAG_CALLOUT) != 0;
+	}
+	bool InvokesCallout(const GUID& calloutKey) const noexcept
+	{
+		if ((action_type.type & FWP_ACTION_FLAG_CALLOUT) == 0)
+		{
+			return false;
+		}
+		return (action_type.calloutKey == calloutKey);
+	}
 };
 
 // allow searching FilterDetails by name

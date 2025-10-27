@@ -317,7 +317,7 @@ void PrintSublayerFilterDetails()
 		if (std::ranges::find(BuiltInSublayers, sublayer.subLayerKey) != std::end(BuiltInSublayers))
 		{
 			std::printf(
-				"    %ls : [%zu] %ls (disabled filters: %zu, persistent filters: %zu)\n",
+				"    %ls : [filter count: %zu] %ls (disabled filters: %zu, persistent filters: %zu)\n",
 				GuidToString(sublayer.subLayerKey).c_str(),
 				sublayer.filterCount,
 				BuiltInSublayerToString(sublayer.subLayerKey),
@@ -327,7 +327,7 @@ void PrintSublayerFilterDetails()
 		else
 		{
 			std::printf(
-				"    %ls : [%zu] %ls (disabled: %zu, persistent: %zu)\n",
+				"    %ls : [filter count: %zu] %ls (disabled: %zu, persistent: %zu)\n",
 				GuidToString(sublayer.subLayerKey).c_str(),
 				sublayer.filterCount,
 				sublayer.displayName.c_str(),
