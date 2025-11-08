@@ -341,7 +341,6 @@ try
 			is_callout_rundown_record &= event_message.queryEventProperty(L"BehaviorFlags", behavior_flags_key);
 			if (!is_callout_rundown_record)
 			{
-				std::wprintf(L" - ignoring non-callout rundown event\n");
 				return;
 			}
 

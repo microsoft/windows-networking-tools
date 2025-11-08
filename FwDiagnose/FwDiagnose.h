@@ -49,6 +49,35 @@ inline PromptResponse PromptForDeletion(PCSTR deletion_prompt)
 		}
 	}
 }
+inline PromptResponse PromptForDeletion(PCWSTR deletion_prompt)
+{
+	std::wstring userInput;
+	for (;;)
+	{
+		std::printf("       %ls (y/n/s/a)? ", deletion_prompt);
+		userInput.clear();
+		std::getline(std::wcin, userInput);
+
+		if (userInput == L"y" || userInput == L"Y")
+		{
+			return PromptResponse::Yes;
+		}
+		if (userInput == L"n" || userInput == L"N")
+		{
+			return PromptResponse::No;
+		}
+
+		if (userInput == L"s" || userInput == L"S")
+		{
+			return PromptResponse::Skip;
+		}
+
+		if (userInput == L"a" || userInput == L"A")
+		{
+			return PromptResponse::All;
+		}
+	}
+}
 
 class ChronoTimer
 {

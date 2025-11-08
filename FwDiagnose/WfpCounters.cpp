@@ -33,7 +33,8 @@ HANDLE GetFwpmEngineHandle()
 	return g_wfp_engineHandle;
 }
 
-void InitializeWfpPerfCounters()
+bool InitializeWfpPerfCounters() noexcept
+try
 {
 	g_wmi = new ctl::ctWmiService(L"root\\cimv2");
 	g_wmi_performance = new ctl::ctPerformanceCounter(*g_wmi);
@@ -45,6 +46,11 @@ void InitializeWfpPerfCounters()
 		L"Total",
 		ctl::ctPerformanceCounterCollectionType::Detailed);
 	g_wmi_performance->add_counter(*g_wfp_filter_count);
+	return true;
+}
+catch (...)
+{
+	return false;
 }
 
 uint64_t ReadWfpPerfCounters()
