@@ -7,19 +7,12 @@
 #pragma warning(push)
 #pragma warning(disable : 4201)   // nonstandard extension used : nameless struct/union
 
-
-#define FW_VERSION(major,minor) \
-        ((WORD)(((BYTE)(minor)) | ((WORD)((BYTE)(major))) << 8))
-
-#define FW_MAJOR(word) \
-        (((WORD)(word) & ((WORD)(0xFF00))) >> 8)
-
-#define FW_MINOR(word) \
-        ((WORD)(word) & ((WORD)(0x00FF)))
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define FW_VERSION(major,minor) \
+        ((WORD)(((BYTE)(minor)) | ((WORD)((BYTE)(major))) << 8))
 
 #define FW_CURRENT_BINARY_VERSION         FW_VERSION(2,27)
 
@@ -1317,20 +1310,9 @@ extern "C" {
 		);
 
 	DWORD WINAPI
-		FWSetFirewallRule(
-			FW_POLICY_STORE_HANDLE  hPolicyStore,
-			FW_RULE* pRule
-		);
-
-	DWORD WINAPI
 		FWDeleteFirewallRule(
 			FW_POLICY_STORE_HANDLE  hPolicyStore,
 			PCWSTR             wszRuleID
-		);
-
-	DWORD WINAPI
-		FWDeleteAllFirewallRules(
-			FW_POLICY_STORE_HANDLE hPolicyStore
 		);
 
 	DWORD WINAPI
@@ -1345,18 +1327,9 @@ extern "C" {
 		);
 
 	DWORD WINAPI
-		FWEnumProducts(
-			__in FW_POLICY_STORE_HANDLE hPolicyStore,
-			__out DWORD* pdwNumProducts,
-			__deref_out_ecount(*pdwNumProducts) FW_PRODUCT** ppProducts
+		FWFreeFirewallRules(
+			FW_RULE* pRules
 		);
-
-	// Free the memory returned by FWEnumProducts.
-	void WINAPI
-		FWFreeProducts(
-			__inout FW_PRODUCT* pProducts
-		);
-
 
 #ifdef __cplusplus
 }
