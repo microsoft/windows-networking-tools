@@ -17,7 +17,7 @@
 
 #include <wil/resource.h>
 
-void InitializeWfpPerfCounters();
+bool InitializeWfpPerfCounters() noexcept;
 uint64_t ReadWfpPerfCounters();
 
 inline std::wstring GuidToString(const GUID& guid)

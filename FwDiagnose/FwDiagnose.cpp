@@ -18,11 +18,9 @@
 #include "WfpCounters.h"
 
 #include <wil/stl.h>
-#include <wil/resource.h>
 #include <wil/registry.h>
 #include <wil/com.h>
 #include <wil/result.h>
-
 
 // not static - shared with other files
 static bool g_debugPrint = false;
@@ -70,6 +68,40 @@ static FirewallPolicyObjects g_policy_objects[] =
 	{.type = FW_STORE_TYPE_TENANT_RESTRICTIONS, .type_string = "Tenant Restrictions", .normalizedRules = {} }
 };
 
+static std::vector<FWPM_FILTER*> g_deletedWfpFilters;
+
+static void RestoreDeletedFilters() noexcept
+{
+	if (g_deletedWfpFilters.empty())
+	{
+		return;
+	}
+
+	const auto engine_handle = GetFwpmEngineHandle();
+	for (auto& filter : g_deletedWfpFilters)
+	{
+		if (filter)
+		{
+			const auto fwpm_error = FwpmFilterAdd0(
+				engine_handle,
+				filter,
+				nullptr,
+				nullptr);
+			if (fwpm_error != ERROR_SUCCESS)
+			{
+				std::printf("Failed to restore deleted WFP filter %llu. Error: 0x%lx\n", filter->filterId, fwpm_error);
+			}
+			else
+			{
+				std::printf("Restored deleted WFP filter %llu\n", filter->filterId);
+			}
+
+			FwpmFreeMemory(reinterpret_cast<void**>(&filter));
+		}
+	}
+	g_deletedWfpFilters.clear();
+}
+
 static void PrintUsage() noexcept
 {
 	std::printf(
@@ -78,23 +110,23 @@ static void PrintUsage() noexcept
 		"This tool also enumerates WFP objects (callouts, sublayers, providers, and filters)\n"
 		"Options:\n"
 		"  -?               : Show this help message.\n"
-		"  -clean_rules     : Prompts to delete duplicate rules\n"
+		"  -clean-rules     : Prompts to delete duplicate rules\n"
 		"                   : Prompts to delete rules with application exes referencing non-existing files\n"
 		"                   : Prompts to delete rules referencing unknown SIDs\n"
 		"                   : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"                   : This requires Administrator privileges\n"
 		"  -wfp             : Output details of WFP objects (callouts, sublayers, and filters)\n"
 		"                   : This requires Administrator privileges\n"
-		"  -delete_callouts : Prompt to delete filters for 3rd party WFP callout drivers\n"
-		"                     Requires -wfp to also be specified\n"
+		"  -delete-callouts : Prompt to temporarily delete filters for 3rd party WFP callout drivers\n"
+		"                     Will restore any deleted filters before this program exits\n"
 		"  -verbose         : Output details of rules and/or WFP objects\n"
 		"\n"
-		"Note: -wfp and -clean_rules cannot both be specified");
+		"Note: -wfp and -clean-rules cannot both be specified");
 }
 int __cdecl main(int argc, char* argv[]) try
 {
 	const auto coInit = wil::CoInitializeEx();
-	InitializeWfpPerfCounters();
+	const auto wmi_supported = InitializeWfpPerfCounters();
 
 	std::vector<std::string> args;
 	for (int i = 1; i < argc; ++i)
@@ -117,9 +149,9 @@ int __cdecl main(int argc, char* argv[]) try
 			g_debugPrint = true;
 		}
 
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean_rules") == 0; }) != args.end())
+		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean-rules") == 0; }) != args.end())
 		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean_rules") == 0; });
+			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean-rules") == 0; });
 			args.erase(removed_args.cbegin(), args.end());
 			g_cleanBrokenRules = true;
 		}
@@ -138,10 +170,12 @@ int __cdecl main(int argc, char* argv[]) try
 			g_wfpOutput = true;
 		}
 
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete_callouts") == 0; }) != args.end())
+		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete-callouts") == 0; }) != args.end())
 		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete_callouts") == 0; });
+			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete-callouts") == 0; });
 			args.erase(removed_args.cbegin(), args.end());
+			// delete-callouts will automatically enable wfp output
+			g_wfpOutput = true;
 			g_deleteWfpCalloutFilters = true;
 		}
 
@@ -160,7 +194,7 @@ int __cdecl main(int argc, char* argv[]) try
 
 		if (g_wfpOutput && g_cleanBrokenRules)
 		{
-			std::printf("The -wfp and -clean_rules options cannot both be specified\n");
+			std::printf("The -wfp and -clean-rules options cannot both be specified\n");
 			PrintUsage();
 			return ERROR_BAD_ARGUMENTS;
 		}
@@ -181,7 +215,7 @@ int __cdecl main(int argc, char* argv[]) try
 	{
 		// if we are deleting rules, capture filter counts before and after
 		uint64_t initial_filter_count = 0;
-		if (CleanBrokenRulesEnabled())
+		if (wmi_supported && CleanBrokenRulesEnabled())
 		{
 			initial_filter_count = ReadWfpPerfCounters();
 		}
@@ -293,29 +327,32 @@ int __cdecl main(int argc, char* argv[]) try
 			}
 		}
 
-		const uint64_t final_wfp_filter_count = ReadWfpPerfCounters();
-		// if we are deleting rules, capture filter counts before and after
-		if (CleanBrokenRulesEnabled())
+		if (wmi_supported)
 		{
-			std::printf(
-				"\n"
-				"**************************************************************************************\n"
-				"                              Perf Counters: WFP Filters                              \n"
-				"**************************************************************************************\n"
-				"  * Total filters before removing rules: %llu\n"
-				"  * Total filters after removing rules: %llu\n",
-				initial_filter_count,
-				final_wfp_filter_count);
-		}
-		else
-		{
-			std::printf(
-				"\n"
-				"**************************************************************************************\n"
-				"                              Perf Counters: WFP Filters                              \n"
-				"**************************************************************************************\n"
-				"  * Total filters: %llu\n",
-				final_wfp_filter_count);
+			const uint64_t final_wfp_filter_count = ReadWfpPerfCounters();
+			// if we are deleting rules, capture filter counts before and after
+			if (CleanBrokenRulesEnabled())
+			{
+				std::printf(
+					"\n"
+					"**************************************************************************************\n"
+					"                              Perf Counters: WFP Filters                              \n"
+					"**************************************************************************************\n"
+					"  * Total filters before removing rules: %llu\n"
+					"  * Total filters after removing rules: %llu\n",
+					initial_filter_count,
+					final_wfp_filter_count);
+			}
+			else
+			{
+				std::printf(
+					"\n"
+					"**************************************************************************************\n"
+					"                              Perf Counters: WFP Filters                              \n"
+					"**************************************************************************************\n"
+					"  * Total filters: %llu\n",
+					final_wfp_filter_count);
+			}
 		}
 	}
 	else
@@ -763,7 +800,7 @@ int __cdecl main(int argc, char* argv[]) try
 			std::printf(
 				"\n"
 				"**************************************************************************************\n"
-				"                      Deleting Filters for 3rd Party WFP Callouts                     \n"
+				"               Temporarily Deleting Filters for 3rd Party WFP Callouts                \n"
 				"**************************************************************************************\n");
 			std::vector<std::wstring> callout_drivers;
 			for (const auto& callout : wfp_callouts)
@@ -789,10 +826,15 @@ int __cdecl main(int argc, char* argv[]) try
 				std::printf("    - %ls\n", driver_name.c_str());
 			}
 
+			const auto restore_deleted_filters_on_exit = wil::scope_exit([]()
+				{
+					RestoreDeletedFilters();
+				});
+
 			bool delete_all_with_no_more_prompts = false;
 			for (const auto& driver : callout_drivers)
 			{
-				std::printf("\n  * Deleting filters for the callout driver: %ls\n", driver.c_str());
+				std::printf("\n  * Temporarily deleting filters for the callout driver: %ls\n", driver.c_str());
 				for (const auto& callout : wfp_callouts)
 				{
 					if (callout.driver_name != driver)
@@ -802,10 +844,11 @@ int __cdecl main(int argc, char* argv[]) try
 
 					std::printf(
 						"\n"
-						"    * Deleting the filters for WFP callout %ls - registered with this driver\n"
-						"       Callout id %d\n"
+						"    * Temporarily deleting the filters for WFP callout %ls - registered with driver %ls\n"
+						"       Callout id %ld\n"
 						"       Filters for this callout: %llu\n",
 						callout.name.c_str(),
+						callout.driver_name.c_str(),
 						callout.callout_id,
 						callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled);
 
@@ -818,25 +861,25 @@ int __cdecl main(int argc, char* argv[]) try
 					bool skip_remaining_callouts = false;
 					if (!delete_all_with_no_more_prompts)
 					{
-						constexpr auto* DeletionPrompt = "Delete all filters referencing this callout";
-						switch (PromptForDeletion(DeletionPrompt))
+						const auto DeletionPrompt = wil::str_printf<std::wstring>(L"Temporarily delete all filters referencing this callout (%ls) referencing driver (%ls)", callout.name.c_str(), callout.driver_name.c_str());
+						switch (PromptForDeletion(DeletionPrompt.c_str()))
 						{
 						case PromptResponse::Yes:
 							// continue to delete filters for this callout
 							break;
 
 						case PromptResponse::No:
-							std::printf("       - Skipping this callout\n");
+							std::printf("       - Skipping filters for this one callout (%ls)\n", callout.name.c_str());
 							skip_remaining_callouts = true;
 							continue;
 
 						case PromptResponse::Skip:
-							std::printf("       - Skipping the remainder of the callouts with this driver\n");
+							std::printf("       - Skipping the remainder of the callouts for this driver (%ls)\n", driver.c_str());
 							skip_remaining_callouts = true;
 							break;
 
 						case PromptResponse::All:
-							std::printf("       - Deleting all filters referencing all callouts\n");
+							std::printf("       - Deleting all filters referencing all callouts for all drivers\n");
 							delete_all_with_no_more_prompts = true;
 							break;
 						}
@@ -846,38 +889,55 @@ int __cdecl main(int argc, char* argv[]) try
 						break;
 					}
 
-					std::printf("       - Deleting filters referencing this callout\n");
+					std::printf("       - Temporarily deleting filters referencing this callout\n");
 					for (const auto& current_fwpm_filter : filter_details)
 					{
 						if (current_fwpm_filter.InvokesCallout(callout.callout_key))
 						{
-							std::printf("         Deleting filter id %llu : [filter name: %ls] [layer: %hs]\n",
+							std::printf("         Temporarily deleting filter id %llu : [filter name: %ls] [layer: %hs]\n",
 								current_fwpm_filter.filterId,
 								current_fwpm_filter.name.value.c_str(),
 								LayerToString(current_fwpm_filter.layerKey).c_str());
-							const auto delete_error = FwpmFilterDeleteByKey0(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
-							if (delete_error != 0)
+
+							FWPM_FILTER* deleted_filter{};
+							// ensure we have space in our vector before deleting the filter
+							g_deletedWfpFilters.push_back(deleted_filter);
+							const auto filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &deleted_filter);
+							if (filter_get_error != 0)
 							{
-								std::printf("         - FwpmFilterDeleteByKey failed: 0x%x\n", delete_error);
+								std::printf("         - FwpmFilterGetByKey failed: 0x%lx -- cannot delete filter %llu\n", filter_get_error, current_fwpm_filter.filterId);
+							}
+							else
+							{
+								const auto delete_error = FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
+								if (delete_error != 0)
+								{
+									std::printf("         - FwpmFilterDeleteByKey failed: 0x%lx\n", delete_error);
+								}
+								else
+								{
+									*g_deletedWfpFilters.rbegin() = deleted_filter;
+								}
 							}
 						}
 					}
 				}
 			}
-		}
 
-		if (VerboseOutputEnabled())
-		{
-			const uint64_t final_wfp_filter_count = ReadWfpPerfCounters();
-			if (filter_details.size() != final_wfp_filter_count)
-			{
-				std::printf(
-					"\n"
-					"  ** WARNING: The WMI-based WFP filter count (%llu) does not match the Filter count via the Fwpm* APIs (%zu) : a difference of %llu\n",
-					final_wfp_filter_count,
-					filter_details.size(),
-					final_wfp_filter_count > filter_details.size() ? final_wfp_filter_count - filter_details.size() : filter_details.size() - final_wfp_filter_count);
-			}
+			// work hard to guarantee we restore the filters we deleted
+			SetConsoleCtrlHandler([](DWORD) -> BOOL
+				{
+					std::printf("Restoring filters to callout drivers...\n");
+					RestoreDeletedFilters();
+					TerminateProcess(GetCurrentProcess(), 0);
+					return TRUE;
+				}, TRUE);
+			std::printf("Press Enter to restore filters to callout drivers\n");
+			std::wstring userInput;
+			std::getline(std::wcin, userInput);
+
+			std::printf("Restoring filters to callout drivers...\n");
+			RestoreDeletedFilters();
 		}
 	}
 
