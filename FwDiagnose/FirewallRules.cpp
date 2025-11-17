@@ -145,14 +145,13 @@ HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 
 	timer.start("EnumFirewallRules");
 	DWORD num_rules = 0;
-	FW_RULE* rules = nullptr;
 	const auto enumRulesError = g_FWEnumFirewallRules(
 		g_policyStore,
 		static_cast<DWORD>(FW_RULE_STATUS_CLASS_ALL),
 		FW_PROFILE_TYPE_ALL,
 		FW_ENUM_RULES_FLAG_INCLUDE_METADATA,
 		&num_rules,
-		&rules);
+		&policy.parent_rule);
 	if (enumRulesError != ERROR_SUCCESS)
 	{
 		std::printf("  Failed to enumerate firewall rules. Error: 0x%lx\n", enumRulesError);
@@ -160,10 +159,10 @@ HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 	}
 	timer.end();
 
-	// cannot FWFreeFirewallRules - since we keep those pointers around to read later
+	// cannot FWFreeFirewallRules - we keep those pointers around to read later
 
 	timer.start("Normalizing Firewall rules into a vector");
-	FW_RULE* rule_iterator = rules;
+	FW_RULE* rule_iterator = policy.parent_rule;
 	while (rule_iterator)
 	{
 		policy.normalizedRules.emplace_back(NormalizedFirewallRule::BuildFromFWRule(rule_iterator));

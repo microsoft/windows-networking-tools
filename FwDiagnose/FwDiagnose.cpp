@@ -7,6 +7,9 @@
 #include <vector>
 
 #include <Windows.h>
+#include <oaidl.h>
+#include <combaseapi.h>
+#include <netfw.h>
 
 #include "FwDiagnose.h"
 #include "firewall.h"
@@ -17,6 +20,7 @@
 #include <wil/stl.h>
 #include <wil/resource.h>
 #include <wil/registry.h>
+#include <wil/com.h>
 #include <wil/result.h>
 
 
@@ -46,7 +50,6 @@ bool WfpOutputEnabled() noexcept
 }
 
 static bool g_deleteWfpCalloutFilters = false;
-
 static bool DeleteWfpCalloutFiltersEnabled() noexcept
 {
 	return g_deleteWfpCalloutFilters;

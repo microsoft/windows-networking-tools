@@ -21,7 +21,7 @@
 extern "C" {
 #endif
 
-#define FW_CURRENT_BINARY_VERSION         FW_VERSION(2,33)
+#define FW_CURRENT_BINARY_VERSION         FW_VERSION(2,27)
 
 	/***********************************************************************
 	 *                                                                     *
@@ -248,12 +248,6 @@ extern "C" {
 		FW_IPV4_RANGE_LIST V4Ranges;
 		FW_IPV6_SUBNET_LIST V6SubNets;
 		FW_IPV6_RANGE_LIST V6Ranges;
-	};
-
-	struct FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST
-	{
-		DWORD dwNumIds;
-		GUID* ids;
 	};
 
 	enum FW_RULE_STATUS
@@ -1265,12 +1259,6 @@ extern "C" {
 		WCHAR* wszFqbn;
 
 		DWORD compartmentId;
-
-		GUID providerContextKey;
-
-		FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST RemoteDynamicKeywordAddresses;
-
-		WCHAR* wszPackageFamilyName; // Package name to be able to filter background tasks on behalf of containers
 	};
 
 	// Different types of rules that the firewall supports.
@@ -1355,13 +1343,6 @@ extern "C" {
 			__deref_out_ecount_opt(*pdwNumRules)
 			FW_RULE** ppRules
 		);
-
-	__control_entrypoint(DllExport)
-		DWORD WINAPI
-		FWFreeFirewallRules(
-			FW_RULE* pRules
-		);
-
 
 	DWORD WINAPI
 		FWEnumProducts(

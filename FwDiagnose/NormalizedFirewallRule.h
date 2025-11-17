@@ -149,10 +149,6 @@ struct NormalizedFirewallRule
 		normalizedRule.AppendValue(fwRule->RemoteOutServerNames);
 		normalizedRule.AppendValue(fwRule->wszFqbn);
 		normalizedRule.AppendValue(fwRule->compartmentId);
-		normalizedRule.AppendValue(fwRule->providerContextKey);
-
-		normalizedRule.AppendValue(fwRule->RemoteDynamicKeywordAddresses);
-		normalizedRule.AppendValue(fwRule->wszPackageFamilyName);
 		return normalizedRule;
 	}
 
@@ -667,28 +663,6 @@ private:
 			for (const auto& name : wil::make_range(names, names + names_count))
 			{
 				AppendValue(name);
-			}
-		}
-	}
-
-	void AppendValue(const FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST& keyword_address_list)
-	{
-		const auto* keywords = keyword_address_list.ids;
-		const auto keywords_count = keyword_address_list.dwNumIds;
-
-		if (keywords_count == 0 || !keywords)
-		{
-			if (keywords_count != 0 || keywords)
-			{
-				DebugBreak();
-			}
-			AppendValue(0);
-		}
-		else
-		{
-			for (const auto& keyword : wil::make_range(keywords, keywords + keywords_count))
-			{
-				AppendValue(keyword);
 			}
 		}
 	}

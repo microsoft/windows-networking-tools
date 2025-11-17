@@ -13,8 +13,9 @@ struct DuplicateRuleDetails
 
 struct FirewallPolicyObjects
 {
-	FW_STORE_TYPE type;
-	PCSTR type_string;
+	FW_RULE* parent_rule{};
+	FW_STORE_TYPE type{};
+	PCSTR type_string{};
 	std::vector<NormalizedFirewallRule> normalizedRules;
 };
 
