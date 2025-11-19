@@ -24,7 +24,6 @@ static HMODULE g_FirewallApiModule = nullptr;
 static decltype(FWOpenPolicyStore)* g_FWOpenPolicyStore = nullptr;
 static decltype(FWClosePolicyStore)* g_FWClosePolicyStore = nullptr;
 static decltype(FWEnumFirewallRules)* g_FWEnumFirewallRules = nullptr;
-static decltype(FWFreeFirewallRules)* g_FWFreeFirewallRules = nullptr;
 static decltype(FWDeleteFirewallRule)* g_FWDeleteFirewallRule = nullptr;
 
 static FW_POLICY_STORE_HANDLE g_policyStore = nullptr;
@@ -47,8 +46,7 @@ void LoadFirewallFunctions()
 	THROW_LAST_ERROR_IF(!g_FirewallApiModule);
 
 	// Load the necessary functions from the FirewallAPI DLL
-	// as documented https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fasp/230d1ae7-b42e-4d9c-b997-b1463aaa0ded
-	// and related RRPC protocol documentation
+	// as documented https://learn.microsoft.com/en-us/windows/win32/ics/firewall-functions
 	uint32_t gle = NO_ERROR;
 	g_FWOpenPolicyStore = reinterpret_cast<decltype(FWOpenPolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWOpenPolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
 	if (!g_FWOpenPolicyStore)
@@ -62,11 +60,6 @@ void LoadFirewallFunctions()
 	}
 	g_FWEnumFirewallRules = reinterpret_cast<decltype(FWEnumFirewallRules)*>(GetProcAddress(g_FirewallApiModule, "FWEnumFirewallRules"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
 	if (!g_FWEnumFirewallRules)
-	{
-		gle = GetLastError();
-	}
-	g_FWFreeFirewallRules = reinterpret_cast<decltype(FWFreeFirewallRules)*>(GetProcAddress(g_FirewallApiModule, "FWFreeFirewallRules"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	if (!g_FWFreeFirewallRules)
 	{
 		gle = GetLastError();
 	}
