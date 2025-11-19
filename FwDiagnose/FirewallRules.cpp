@@ -40,36 +40,20 @@ static void PrintDeletionHeader(PCSTR str) noexcept
 }
 static PCSTR DeletionPrompt = "Delete all duplicates of this rule";
 
+// Load the necessary functions from the FirewallAPI DLL
+// as documented https://learn.microsoft.com/en-us/windows/win32/ics/firewall-functions
 void LoadFirewallFunctions()
 {
 	g_FirewallApiModule = LoadLibraryW(L"FirewallAPI.dll");
 	THROW_LAST_ERROR_IF(!g_FirewallApiModule);
-
-	// Load the necessary functions from the FirewallAPI DLL
-	// as documented https://learn.microsoft.com/en-us/windows/win32/ics/firewall-functions
-	uint32_t gle = NO_ERROR;
 	g_FWOpenPolicyStore = reinterpret_cast<decltype(FWOpenPolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWOpenPolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	if (!g_FWOpenPolicyStore)
-	{
-		gle = GetLastError();
-	}
+	THROW_LAST_ERROR_IF_NULL(g_FWOpenPolicyStore);
 	g_FWClosePolicyStore = reinterpret_cast<decltype(FWClosePolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWClosePolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	if (!g_FWClosePolicyStore)
-	{
-		gle = GetLastError();
-	}
+	THROW_LAST_ERROR_IF_NULL(g_FWClosePolicyStore);
 	g_FWEnumFirewallRules = reinterpret_cast<decltype(FWEnumFirewallRules)*>(GetProcAddress(g_FirewallApiModule, "FWEnumFirewallRules"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	if (!g_FWEnumFirewallRules)
-	{
-		gle = GetLastError();
-	}
+	THROW_LAST_ERROR_IF_NULL(g_FWEnumFirewallRules);
 	g_FWDeleteFirewallRule = reinterpret_cast<decltype(FWDeleteFirewallRule)*>(GetProcAddress(g_FirewallApiModule, "FWDeleteFirewallRule"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	if (!g_FWDeleteFirewallRule)
-	{
-		gle = GetLastError();
-	}
-
-	THROW_IF_WIN32_ERROR(gle);
+	THROW_LAST_ERROR_IF_NULL(g_FWDeleteFirewallRule);
 }
 
 bool HasFirewallAdminAccess()
