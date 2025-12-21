@@ -704,7 +704,7 @@ ctEtwRecord::writeRecord(std::wstring& reusable_string) const
     std::vector<BYTE> pSID;
     if (querySID(pSID)) {
         wsData += L"\n\tSID ";
-        wil::unique_hlocal_string szSID = nullptr;
+        wil::unique_hlocal_string szSID;
         if (::ConvertSidToStringSid(pSID.data(), &szSID)) {
             wsData += szSID.get();
         } else {

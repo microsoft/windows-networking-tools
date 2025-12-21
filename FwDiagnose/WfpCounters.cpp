@@ -19,8 +19,11 @@ static ctl::ctPerformanceCounter* g_wmi_performance = nullptr;
 static std::shared_ptr<ctl::ctPerformanceCounterCounter<ULONGLONG>>* g_wfp_filter_count;
 
 static HANDLE g_wfp_engineHandle = nullptr;
+static wil::critical_section g_wfp_engineHandleLock;
 HANDLE GetFwpmEngineHandle()
 {
+	// [[maybe_unused]] to suppress unused variable warnings for RAII objects
+    [[maybe_unused]] const auto lock = g_wfp_engineHandleLock.lock();
 	if (!g_wfp_engineHandle)
 	{
 		const auto fwpm_error = FwpmEngineOpen0(nullptr, RPC_C_AUTHN_WINNT, nullptr, nullptr, &g_wfp_engineHandle);

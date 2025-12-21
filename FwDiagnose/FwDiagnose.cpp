@@ -22,6 +22,8 @@
 #include <wil/com.h>
 #include <wil/result.h>
 
+#include "WfpEvents.h"
+
 // not static - shared with other files
 static bool g_debugPrint = false;
 bool DebugPrintEnabled() noexcept
@@ -45,6 +47,12 @@ static bool g_wfpOutput = false;
 bool WfpOutputEnabled() noexcept
 {
 	return g_wfpOutput;
+}
+
+static bool g_wfpEventEnumeration = false;
+bool WfpEventEnumerationEnabled() noexcept
+{
+	return g_wfpEventEnumeration;
 }
 
 static bool g_deleteWfpCalloutFilters = false;
@@ -117,6 +125,7 @@ static void PrintUsage() noexcept
 		"                   : This requires Administrator privileges\n"
 		"  -wfp             : Output details of WFP objects (callouts, sublayers, and filters)\n"
 		"                   : This requires Administrator privileges\n"
+		"  -wfp-events      : Enumerate NetEvents from WFP\n"
 		"  -delete-callouts : Prompt to temporarily delete filters for 3rd party WFP callout drivers\n"
 		"                     Will restore any deleted filters before this program exits\n"
 		"  -verbose         : Output details of rules and/or WFP objects\n"
@@ -170,6 +179,13 @@ int __cdecl main(int argc, char* argv[]) try
 			g_wfpOutput = true;
 		}
 
+		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-wfp-events") == 0; }) != args.end())
+		{
+			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-wfp-events") == 0; });
+			args.erase(removed_args.cbegin(), args.end());
+			g_wfpEventEnumeration = true;
+		}
+
 		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete-callouts") == 0; }) != args.end())
 		{
 			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete-callouts") == 0; });
@@ -211,7 +227,7 @@ int __cdecl main(int argc, char* argv[]) try
 
 	LoadFirewallFunctions();
 
-	if (!g_wfpOutput)
+	if (!g_wfpOutput && !g_wfpEventEnumeration)
 	{
 		// if we are deleting rules, capture filter counts before and after
 		uint64_t initial_filter_count = 0;
@@ -355,7 +371,7 @@ int __cdecl main(int argc, char* argv[]) try
 			}
 		}
 	}
-	else
+	else if (g_wfpOutput)
 	{
 		// verify has admin access
 		if (!HasFirewallAdminAccess())
@@ -938,6 +954,81 @@ int __cdecl main(int argc, char* argv[]) try
 
 			std::printf("Restoring filters to callout drivers...\n");
 			RestoreDeletedFilters();
+		}
+	}
+	else if (g_wfpEventEnumeration)
+	{
+		// verify has admin access
+		if (!HasFirewallAdminAccess())
+		{
+			std::printf("  Administrative privileges required - try running from an elevated Administrator command prompt.\n");
+			return ERROR_ACCESS_DENIED;
+		}
+		std::printf(
+			"\n"
+			"**************************************************************************************\n"
+			"                                   WFP NetEvents                                     \n"
+			"**************************************************************************************\n");
+		FWPM_NET_EVENT_ENUM_TEMPLATE0 enum_template{};
+		enum_template.numFilterConditions = 0;
+		enum_template.filterCondition = nullptr;
+		SYSTEMTIME system_time{};
+		GetSystemTime(&system_time);
+		system_time.wMinute -= 10; // look back 10 minutes
+		SystemTimeToFileTime(&system_time, &enum_template.startTime);
+	    system_time.wMinute += 10; // look ahead 10 minutes
+		SystemTimeToFileTime(&system_time, &enum_template.endTime);
+
+		HANDLE enumHandle{};
+		auto create_enum_error = FwpmNetEventCreateEnumHandle0(
+			GetFwpmEngineHandle(),
+			&enum_template,
+			&enumHandle);
+		THROW_IF_WIN32_ERROR_MSG(create_enum_error, "FwpmNetEventCreateEnumHandle0");
+		const auto close_enum_handle_on_exit = wil::scope_exit(
+			[&] {
+				if (enumHandle)
+				{
+					FwpmNetEventDestroyEnumHandle0(GetFwpmEngineHandle(), enumHandle);
+				}
+			});
+
+		for (;;)
+		{
+			FWPM_NET_EVENT5** net_event_array{};
+			UINT32 entries_returned{};
+			create_enum_error = FwpmNetEventEnum5(
+				GetFwpmEngineHandle(),
+				enumHandle,
+				10,
+				&net_event_array,
+				&entries_returned);
+			if (create_enum_error != ERROR_SUCCESS)
+			{
+				std::printf("  * No more NetEvents to enumerate (%lu)\n", create_enum_error);
+				break;
+			}
+			const auto free_memory_on_exit = wil::scope_exit(
+				[&]
+				{
+					if (net_event_array)
+					{
+						FwpmFreeMemory0(reinterpret_cast<void**>(net_event_array));
+					}
+				});
+		    for (UINT32 i = 0; i < entries_returned; ++i)
+			{
+				const auto* current_event = net_event_array[i];
+				std::printf(
+					"- NetEvent %u\n"
+					"%ls\n"
+					"%ls\n"
+					"%ls\n",
+					i + 1,
+					PrintNetEventType(current_event).c_str(),
+					PrintNetEventHeader(current_event).c_str(),
+					PrintNetEventDetailedStruct(current_event).c_str());
+			}
 		}
 	}
 
