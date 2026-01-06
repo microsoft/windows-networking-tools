@@ -40,3 +40,11 @@
 /FirewallRuleAnalysis/Debug
 /FirewallRuleAnalysis/Release
 /FirewallRuleAnalysis/x64
+/FwDiagnose/x64/Debug/Generated Files
+/FwDiagnose/.vs
+/FwDiagnose/packages
+/FwDiagnose/ARM64
+/FwDiagnose/Debug
+/FwDiagnose/Release
+/FwDiagnose/x64
+/ValidateLineEndings/.vs/ValidateLineEndings
