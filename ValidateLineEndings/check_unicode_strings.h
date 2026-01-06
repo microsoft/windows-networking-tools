@@ -32,14 +32,15 @@ public:
 	static bool NullByteAsPartOfUtf16Encoding(const std::filesystem::path& filepath, unsigned char ch) noexcept
 	{
 		using namespace std::string_view_literals;
-		constexpr std::array utf16_file_extensions_without_bom {
+		constexpr std::array utf16_file_extensions_without_bom{
 			L".ini"sv,
 			L".xml"sv,
-			};
+		};
 
 		if (filepath.has_extension() &&
-			std::ranges::find(utf16_file_extensions_without_bom, filepath.extension().wstring()) !=
-			utf16_file_extensions_without_bom.end()) {
+			std::ranges::find(
+				utf16_file_extensions_without_bom,
+				filepath.extension().wstring()) != utf16_file_extensions_without_bom.end()) {
 			if (ch == 0x00) {
 				// UTF-16 file without BOM - allow null bytes as part of the multibyte encoding
 				return true;

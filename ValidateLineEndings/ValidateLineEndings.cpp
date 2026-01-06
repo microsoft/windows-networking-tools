@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -23,6 +22,7 @@ using namespace std;
 static std::atomic g_validation_failure_count = 0;
 static std::atomic g_validation_logged_count = 0;
 
+bool g_only_fix_form_feed_chars = false;
 bool g_only_report_damaged_crlf = false;
 bool g_only_report_disallowed_chars = false;
 
@@ -229,6 +229,69 @@ static void scan_file(const filesystem::path& filepath, vector<unsigned char>& b
 	}
 }
 
+void ReplaceFormFeed(const filesystem::path& filepath)
+{
+	constexpr uint8_t FORM_FEED = 0x0C;
+
+	vector<unsigned char> buffer;
+	buffer.resize(BinaryFileReader::BlockSize);
+
+	WCHAR temp_filename[MAX_PATH]{};
+	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
+	if (temp_filename_error == 0)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed GetTempFileName: {}", gle);
+		return;
+	}
+
+	wil::unique_hfile temp_file_handle{ CreateFile(temp_filename, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+	if (!temp_file_handle)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed CreateFile: {}", gle);
+		return;
+	}
+
+	bool file_fixed = false;
+	bool bom_checked = false;
+	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
+		if (!bom_checked)
+		{
+			if (Utf16Checker::Utf16Bom(buffer) != Utf16Checker::BomType::None)
+			{
+				return; // skip UTF-16 files
+			}
+			bom_checked = true;
+		}
+
+		if (std::erase_if(buffer, [](const auto lhs) { return lhs == FORM_FEED; }) > 0)
+		{
+			file_fixed = true;
+		}
+		WriteFile(temp_file_handle.get(), buffer.data(), static_cast<DWORD>(buffer.size()), nullptr, nullptr);
+		buffer.resize(BinaryFileReader::BlockSize);
+	}
+
+	// close the handle to our temp file, and move it over to the original file
+	temp_file_handle.reset();
+
+	if (file_fixed)
+	{
+		printf("Replacing %ws\n", filepath.c_str());
+		if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
+		{
+			const auto gle = GetLastError();
+			printf("Failed MoveFileEx(%ws, %ws) : %d", temp_filename, filepath.c_str(), gle);
+			return;
+		}
+	}
+	else
+	{
+		DeleteFile(temp_filename);
+	}
+}
+
 // allow users to override parsing files with no extension
 void PrintHelp() noexcept
 {
@@ -239,6 +302,7 @@ void PrintHelp() noexcept
 	println();
 	println("optional parameters [specify only a single parameter]:");
 	println("  -h | --help : prints this help message.");
+	println("  -fix-form-feed: removes the form-feed character from all source files.");
 	println("  -print-skipped-files : print the list of skipped files and extensions to the console.");
 	println("  -only-report-damaged-crlf : only report files that have damaged CRLF line endings.");
 	println("  -only-report-disallowed-chars : only report files that have disallowed characters.");
@@ -256,6 +320,7 @@ int main(int argc, char** argv) {
 			PrintHelp();
 			return 0;
 		}
+
 		if (arg == "-print-skipped-files")
 		{
 			println("\nSkipped directories:");
@@ -282,7 +347,11 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 
-		if (arg == "-only-report-damaged-crlf")
+		if (arg == "-fix-form-feed")
+		{
+			g_only_fix_form_feed_chars = true;
+		}
+		else if (arg == "-only-report-damaged-crlf")
 		{
 			g_only_report_damaged_crlf = true;
 		}
@@ -363,12 +432,29 @@ int main(int argc, char** argv) {
 			continue;
 		}
 
-		scan_file(filepath, buffer);
-		++files_scanned;
+		if (g_only_fix_form_feed_chars)
+		{
+			if (ranges::binary_search(extensions_to_fix_form_feed, extension))
+			{
+				ReplaceFormFeed(filepath);
+				++files_scanned;
+			}
+		}
+		else
+		{
+			scan_file(filepath, buffer);
+			++files_scanned;
+		}
 	}
 
 	println(stdout, "Successfully scanned {} files.", files_scanned);
-	println(stdout, " - Found {} files that have invalid characters that must be resolved.", g_validation_failure_count.load());
-	println(stdout, " - Logged to file {} files that have flagged characters to be removed.", g_validation_logged_count.load());
-	return g_validation_failure_count;
+
+	if (!g_only_fix_form_feed_chars)
+	{
+		println(stdout, " - Found {} files that have invalid characters that must be resolved.", g_validation_failure_count.load());
+		println(stdout, " - Logged to file {} files that have flagged characters to be removed.", g_validation_logged_count.load());
+		return g_validation_failure_count;
+	}
+
+	return 0;
 }

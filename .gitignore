@@ -47,4 +47,11 @@
 /FwDiagnose/Debug
 /FwDiagnose/Release
 /FwDiagnose/x64
-/ValidateLineEndings/.vs/ValidateLineEndings
+
+/ValidateLineEndings/.vs
+/ValidateLineEndings/packages
+/ValidateLineEndings/Validate*
+/ValidateLineEndings/ARM64
+/ValidateLineEndings/Debug
+/ValidateLineEndings/Release
+/ValidateLineEndings/x64

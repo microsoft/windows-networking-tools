@@ -265,3 +265,17 @@ static constexpr std::array skipped_paths{
 	L".\\tests\\ucrt\\crtlibc\\test\\clib\\safeint\\Arith_u_op_Safeint_T"sv,
 };
 static_assert(std::ranges::is_sorted(skipped_paths));
+
+static constexpr std::array extensions_to_fix_form_feed{
+	L".c"sv,
+	L".cpp"sv,
+	L".cxx"sv,
+	L".h"sv,
+	L".hpp"sv,
+	L".hxx"sv,
+	L".idl"sv,
+	L".mc"sv,
+	L".rc"sv,
+	L".w"sv,
+};
+static_assert(std::ranges::is_sorted(extensions_to_fix_form_feed));

@@ -7,6 +7,8 @@
 
 class BinaryFileReader {
 public:
+	static constexpr size_t BlockSize = 65536;
+
 	explicit BinaryFileReader(const std::filesystem::path& filepath) {
 		const auto err = _wfopen_s(&m_file, filepath.c_str(), L"rb");
 
@@ -17,7 +19,6 @@ public:
 
 	[[nodiscard]] bool read_next_block(std::vector<unsigned char>& buffer) const
 	{
-		constexpr size_t BlockSize = 65536;
 		buffer.resize(BlockSize);
 
 		const size_t bytes_read = fread(buffer.data(), 1, BlockSize, m_file);
