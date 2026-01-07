@@ -102,6 +102,10 @@ inline bool operator==(const NormalizedString& lhs, const FilterDetails& rhs) no
 }
 
 const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output);
+
+const std::vector<FilterDetails>& SortFilterDetailsByFilterId();
+const FilterDetails& FindFilterByFilterId(UINT64 filter_id);
+
 const std::vector<FilterDetails>& SortFilterDetailsByName();
 size_t CountFiltersByName(const NormalizedString& rule_name);
 size_t CountFilterConditionsByName(const NormalizedString& rule_name);

@@ -490,7 +490,7 @@ int __cdecl main(int argc, char* argv[]) try
 			"                                     WFP Filters                                      \n"
 			"**************************************************************************************\n");
 		// ReadWfpFilters will also update SubLayers and Provider counts regarding # of filters in each
-		const auto& filter_details = ReadWfpFilters(g_verboseOutput);
+		const std::vector<FilterDetails>& filter_details = ReadWfpFilters(g_verboseOutput);
 		size_t filter_count = 0;
 		size_t disabled_count = 0;
 		size_t persistent_count = 0;
@@ -842,7 +842,7 @@ int __cdecl main(int argc, char* argv[]) try
 				std::printf("    - %ls\n", driver_name.c_str());
 			}
 
-			const auto restore_deleted_filters_on_exit = wil::scope_exit([]()
+			const auto restore_deleted_filters_on_exit = wil::scope_exit([]
 				{
 					RestoreDeletedFilters();
 				});
@@ -964,20 +964,81 @@ int __cdecl main(int argc, char* argv[]) try
 			std::printf("  Administrative privileges required - try running from an elevated Administrator command prompt.\n");
 			return ERROR_ACCESS_DENIED;
 		}
+
+		// read all WFP information to use later (they are stored in global variables)
+		ReadWfpCallouts();
+		ReadWfpSubLayers();
+		ReadWfpProviders();
+		ReadWfpFilters(g_verboseOutput);
+		// then sort filters by filter id for fast lookup
+		SortFilterDetailsByFilterId();
+
+		FWPM_NET_EVENT_SUBSCRIPTION0 subscription_info{};
+		THROW_IF_FAILED(CoCreateGuid(&subscription_info.sessionKey));
+
+		HANDLE eventsHandle{};
+		const auto fwpm_subscription_error = FwpmNetEventSubscribe4(GetFwpmEngineHandle(), &subscription_info, [](void*, const FWPM_NET_EVENT5* event)
+			{
+				// try
+				{
+					std::printf(
+						"\n** NetEvent received **\n"
+						"%ls"
+						"%ls"
+						"%ls",
+						PrintNetEventType(event).c_str(),
+						PrintNetEventHeader(event).c_str(),
+						PrintNetEventDetailedStruct(event).c_str());
+					if (event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP)
+					{
+						std::printf("   * Classify Drop Event\n");
+						const auto& found_filter = FindFilterByFilterId(event->classifyDrop->filterId);
+						std::printf("     * Found matching filter: %llu\n", found_filter.filterId);
+						std::printf("     * Filter name: %ls\n", found_filter.name.value.c_str());
+						std::printf("     * Filter description: %ls\n", found_filter.description.c_str());
+
+						const auto& found_sublayer = FindSublayer(found_filter.subLayerKey);
+						std::printf("     * Filter layer: %hs\n", LayerToString(found_filter.layerKey).c_str());
+						std::printf("     * Filter sublayer: %ls\n", SublayerToString(found_sublayer).c_str());
+					}
+				}
+				// CATCH_LOG()
+			},
+			nullptr, // null context
+			& eventsHandle);
+		THROW_IF_WIN32_ERROR_MSG(fwpm_subscription_error, "FwpmNetEventSubscribe4");
+
 		std::printf(
 			"\n"
 			"**************************************************************************************\n"
-			"                                   WFP NetEvents                                     \n"
+			"                            Subscribed to WFP NetEvents                               \n"
+            "                      ( press Ctrl-C to stop processing events )                      \n"
 			"**************************************************************************************\n");
+
+		static const wil::unique_event ctrl_event(wil::EventOptions::ManualReset);
+		SetConsoleCtrlHandler(
+			[](DWORD) ->BOOL
+			{
+				ctrl_event.SetEvent();
+				return TRUE;
+			},
+			TRUE);
+		(void)ctrl_event.wait();
+
+		const auto fwpm_unsubscribe_error = FwpmNetEventUnsubscribe0(GetFwpmEngineHandle(), eventsHandle);
+		THROW_IF_WIN32_ERROR_MSG(fwpm_unsubscribe_error, "FwpmNetEventUnsubscribe0");
+
+		std::printf("\n  Exiting  \n");
+
+		/*
 		FWPM_NET_EVENT_ENUM_TEMPLATE0 enum_template{};
 		enum_template.numFilterConditions = 0;
 		enum_template.filterCondition = nullptr;
 		SYSTEMTIME system_time{};
 		GetSystemTime(&system_time);
+		SystemTimeToFileTime(&system_time, &enum_template.endTime);
 		system_time.wMinute -= 10; // look back 10 minutes
 		SystemTimeToFileTime(&system_time, &enum_template.startTime);
-	    system_time.wMinute += 10; // look ahead 10 minutes
-		SystemTimeToFileTime(&system_time, &enum_template.endTime);
 
 		HANDLE enumHandle{};
 		auto create_enum_error = FwpmNetEventCreateEnumHandle0(
@@ -1016,7 +1077,7 @@ int __cdecl main(int argc, char* argv[]) try
 						FwpmFreeMemory0(reinterpret_cast<void**>(net_event_array));
 					}
 				});
-		    for (UINT32 i = 0; i < entries_returned; ++i)
+			for (UINT32 i = 0; i < entries_returned; ++i)
 			{
 				const auto* current_event = net_event_array[i];
 				std::printf(
@@ -1028,8 +1089,21 @@ int __cdecl main(int argc, char* argv[]) try
 					PrintNetEventType(current_event).c_str(),
 					PrintNetEventHeader(current_event).c_str(),
 					PrintNetEventDetailedStruct(current_event).c_str());
+				if (current_event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP)
+				{
+					std::printf("   * Classify Drop Event\n");
+					const auto& found_filter = FindFilterByFilterId(current_event->classifyDrop->filterId);
+					std::printf("     * Found matching filter: %llu\n", found_filter.filterId);
+					std::printf("     * Filter name: %ls\n", found_filter.name.value.c_str());
+					std::printf("     * Filter description: %ls\n", found_filter.description.c_str());
+
+					const auto& found_sublayer = FindSublayer(found_filter.subLayerKey);
+					std::printf("     * Filter layer: %hs\n", LayerToString(found_filter.layerKey).c_str());
+					std::printf("     * Filter sublayer: %ls\n", SublayerToString(found_sublayer).c_str());
+				}
 			}
 		}
+*/
 	}
 
 	return 0;

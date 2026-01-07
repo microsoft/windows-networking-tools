@@ -5,8 +5,177 @@
 #include <ws2ipdef.h>
 #include <mstcpip.h>
 #include <Sddl.h>
+#include <nldef.h>
 
 #include <wil/resource.h>
+
+inline
+std::wstring
+IpProtocolToString(UINT8 protocol)
+{
+	switch (protocol)
+	{
+	case IPPROTO_HOPOPTS:
+		return L"HOPOPT (0)";
+	case IPPROTO_ICMP:
+		return L"ICMP (1)";
+	case IPPROTO_IGMP:
+		return L"IGMP (2)";
+	case IPPROTO_GGP:
+		return L"GGP (3)";
+	case IPPROTO_IPV4:
+		return L"IPv4 (4)";
+	case IPPROTO_ST:
+		return L"ST (5)";
+	case IPPROTO_TCP:
+		return L"TCP (6)";
+	case IPPROTO_CBT:
+		return L"CBT (7)";
+	case IPPROTO_EGP:
+		return L"EGP (8)";
+	case IPPROTO_IGP:
+		return L"IGP (9)";
+	case IPPROTO_PUP:
+		return L"PUP (12)";
+	case IPPROTO_UDP:
+		return L"UDP (17)";
+	case IPPROTO_IDP:
+		return L"IDP (22)";
+	case IPPROTO_RDP:
+		return L"RDP (27)";
+	case IPPROTO_IPV6:
+		return L"IPv6 (41)";
+	case IPPROTO_ROUTING:
+		return L"IPv6-Route (43)";
+	case IPPROTO_FRAGMENT:
+		return L"IPv6-Frag (44)";
+	case IPPROTO_ESP:
+		return L"ESP (50)";
+	case IPPROTO_AH:
+		return L"AH (51)";
+	case IPPROTO_ICMPV6:
+		return L"ICMPv6 (58)";
+	case IPPROTO_NONE:
+		return L"IPv6-NoNxt (59)";
+	case IPPROTO_DSTOPTS:
+		return L"IPv6-Opts (60)";
+	case IPPROTO_ND:
+		return L"ND (77)";
+	case IPPROTO_ICLFXBM:
+		return L"ICLFXBM (78)";
+	case IPPROTO_PIM:
+		return L"PIM (103)";
+	case IPPROTO_PGM:
+		return L"PGM (113)";
+	case IPPROTO_L2TP:
+		return L"L2TP (115)";
+	case IPPROTO_SCTP:
+		return L"SCTP (132)";
+	case IPPROTO_RAW:
+		return L"RAW (255)";
+	default:
+		return L"Unknown Protocol (" + std::to_wstring(protocol) + L")";
+	}
+}
+
+inline
+std::wstring
+DirectionToString(UINT32 direction)
+{
+	switch (direction)
+	{
+	case 0x00003900L: // FWP_DIRECTION_IN:
+		return L"In (0x00003900L)";
+
+	case 0x00003901L: // FWP_DIRECTION_OUT:
+		return L"Out (0x00003901L)";
+
+	case 0x00003902L: // FWP_DIRECTION_FORWARD:
+		return L"Forward (0x00003902L)";
+	}
+
+	return L"(unknown FWP_DIRECTION - " + std::to_wstring(direction) + L")";
+}
+
+inline
+std::wstring
+ProfileToString(UINT32 profile)
+{
+    switch (profile)
+    {
+        case NetworkCategoryPublic:
+            return L"Public (0)";
+        case NetworkCategoryPrivate:
+            return L"Private (1)";
+        case NetworkCategoryDomainAuthenticated:
+            return L"DomainAuthenticated (2)";
+        case static_cast<UINT32>(NetworkCategoryUnknown):
+            return L"Unknown (-1)";
+    }
+
+    return L"(unknown Profile - " + std::to_wstring(profile) + L")";
+}
+
+inline
+std::wstring
+ReauthReasonToString(UINT32 reauthReason)
+{
+	if (reauthReason == 0)
+	{
+		return L"not-reauth";
+	}
+
+	std::wstring returnString;
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_POLICY_CHANGE)
+	{
+		returnString += L"POLICY_CHANGE ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_NEW_ARRIVAL_INTERFACE)
+	{
+		returnString += L"NEW_ARRIVAL_INTERFACE ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_NEW_NEXTHOP_INTERFACE)
+	{
+		returnString += L"NEW_NEXTHOP_INTERFACE ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_PROFILE_CROSSING)
+	{
+		returnString += L"PROFILE_CROSSING ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_CLASSIFY_COMPLETION)
+	{
+		returnString += L"CLASSIFY_COMPLETION ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_IPSEC_PROPERTIES_CHANGED)
+	{
+		returnString += L"IPSEC_PROPERTIES_CHANGED ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_MID_STREAM_INSPECTION)
+	{
+		returnString += L"MID_STREAM_INSPECTION ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_SOCKET_PROPERTY_CHANGED)
+	{
+		returnString += L"SOCKET_PROPERTY_CHANGED ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_NEW_INBOUND_MCAST_BCAST_PACKET)
+	{
+		returnString += L"NEW_INBOUND_MCAST_BCAST_PACKET ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_EDP_POLICY_CHANGED)
+	{
+		returnString += L"EDP_POLICY_CHANGED ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_PROXY_HANDLE_CHANGED)
+	{
+		returnString += L"PROXY_HANDLE_CHANGED ";
+	}
+	if (reauthReason & FWP_CONDITION_REAUTHORIZE_REASON_CHECK_OFFLOAD)
+	{
+		returnString += L"CHECK_OFFLOAD ";
+	}
+	return returnString;
+}
 
 inline
 std::wstring
@@ -15,30 +184,30 @@ PrintNetEventType(const FWPM_NET_EVENT5* net_event)
 	switch (net_event->type)
 	{
 	case FWPM_NET_EVENT_TYPE_IKEEXT_MM_FAILURE:
-		return L"  -Type: IKEEXT_MM_FAILURE";
+		return L"  - Type: IKEEXT_MM_FAILURE\n";
 	case FWPM_NET_EVENT_TYPE_IKEEXT_QM_FAILURE:
-		return L"  -Type: IKEEXT_QM_FAILURE";
+		return L"  - Type: IKEEXT_QM_FAILURE\n";
 	case FWPM_NET_EVENT_TYPE_IKEEXT_EM_FAILURE:
-		return L"  -Type: IKEEXT_EM_FAILURE";
+		return L"  - Type: IKEEXT_EM_FAILURE\n";
 	case FWPM_NET_EVENT_TYPE_CLASSIFY_DROP:
-		return L"  -Type: CLASSIFY_DROP";
+		return L"  - Type: CLASSIFY_DROP\n";
 	case FWPM_NET_EVENT_TYPE_IPSEC_KERNEL_DROP:
-		return L"  -Type: IPSEC_KERNEL_DROP";
+		return L"  - Type: IPSEC_KERNEL_DROP\n";
 	case FWPM_NET_EVENT_TYPE_IPSEC_DOSP_DROP:
-		return L"  -Type: IPSEC_DOSP_DROP";
+		return L"  - Type: IPSEC_DOSP_DROP\n";
 	case FWPM_NET_EVENT_TYPE_CLASSIFY_ALLOW:
-		return L"  -Type: CLASSIFY_ALLOW";
+		return L"  - Type: CLASSIFY_ALLOW\n";
 	case FWPM_NET_EVENT_TYPE_CAPABILITY_DROP:
-		return L"  -Type: CAPABILITY_DROP";
+		return L"  - Type: CAPABILITY_DROP\n";
 	case FWPM_NET_EVENT_TYPE_CAPABILITY_ALLOW:
-		return L"  -Type: CAPABILITY_ALLOW";
+		return L"  - Type: CAPABILITY_ALLOW\n";
 	case FWPM_NET_EVENT_TYPE_CLASSIFY_DROP_MAC:
-		return L"  -Type: CLASSIFY_DROP_MAC";
+		return L"  - Type: CLASSIFY_DROP_MAC\n";
 	case FWPM_NET_EVENT_TYPE_LPM_PACKET_ARRIVAL:
-		return L"  -Type: LPM_PACKET_ARRIVAL";
+		return L"  - Type: LPM_PACKET_ARRIVAL\n";
 	case FWPM_NET_EVENT_TYPE_MAX:
 	default:
-		return L"  -Type: (unknown FWPM_NET_EVENT_TYPE - " + std::to_wstring(net_event->type) + L")";
+		return L"  - Type: (unknown FWPM_NET_EVENT_TYPE - " + std::to_wstring(net_event->type) + L")\n";
 	}
 }
 
@@ -63,30 +232,37 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		std::to_wstring(local_time.wSecond) + L"\n";
 
 	result += L"    Flags: 0x" + std::to_wstring(net_event->header.flags) + L"\n";
-
-	result += L"    IPVersion: ";
-	switch (net_event->header.ipVersion)
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET)
 	{
-	case FWP_IP_VERSION_V4:
-		result += L"IPv4";
-		break;
-	case FWP_IP_VERSION_V6:
-		result += L"IPv6";
-		break;
-	case FWP_IP_VERSION_NONE:
-		result += L"IP_VERSION_NONE";
-		// Address Family is only set for FWP_IP_VERSION_NONE
-		result += L"    AddressFamily: " + std::to_wstring(net_event->header.addressFamily);
-		break;
-	default:
-		result += L"(unknown ipVersion - " + std::to_wstring(net_event->header.ipVersion) + L")";
-		break;
+		result += L"    Processed as part of a Reauth event\n";
 	}
-	result += L"\n";
+
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_IP_VERSION_SET)
+	{
+		result += L"    IPVersion: ";
+		switch (net_event->header.ipVersion)
+		{
+		case FWP_IP_VERSION_V4:
+			result += L"IPv4";
+			break;
+		case FWP_IP_VERSION_V6:
+			result += L"IPv6";
+			break;
+		case FWP_IP_VERSION_NONE:
+			result += L"IP_VERSION_NONE";
+			// Address Family is only set for FWP_IP_VERSION_NONE
+			result += L"    AddressFamily: " + std::to_wstring(net_event->header.addressFamily);
+			break;
+		default:
+			result += L"(unknown ipVersion - " + std::to_wstring(net_event->header.ipVersion) + L")";
+			break;
+		}
+		result += L"\n";
+	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET)
 	{
-		result += L"    IPProtocol: " + std::to_wstring(net_event->header.ipProtocol) + L"\n";
+		result += L"    IPProtocol: " + IpProtocolToString(net_event->header.ipProtocol) + L"\n";
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET)
@@ -95,8 +271,10 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.ipVersion == FWP_IP_VERSION_V4)
 		{
 			WCHAR result_buf[17]{}; // documented to be large enough for a IPv4 address string
+			// the UINT32 is in host-byte order, so must convert it before printing
+			const auto fixed_address = ntohl(net_event->header.localAddrV4);
 			FAIL_FAST_IF(nullptr == RtlIpv4AddressToStringW(
-				reinterpret_cast<const in_addr*>(&net_event->header.localAddrV4),
+				reinterpret_cast<const in_addr*>(&fixed_address),
 				result_buf));
 			result += result_buf;
 		}
@@ -116,18 +294,17 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			result += L"(unknown IPVersion for the local address " + std::to_wstring(net_event->header.ipVersion) + L")";
 		}
-		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
+
+		if (net_event->header.ipProtocol == IPPROTO_ICMP || net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
 		{
 			result += L" : " + std::to_wstring(net_event->header.localPort);
 		}
-		result += L"\n";
-	}
-	else
-	{
-		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
+
+		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_SCOPE_ID_SET)
 		{
-			result += L"    LocalPort: " + std::to_wstring(net_event->header.localPort) + L"\n";
+			result += L"    ScopeId: " + std::to_wstring(net_event->header.scopeId);
 		}
+		result += L"\n";
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET)
@@ -136,8 +313,10 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.ipVersion == FWP_IP_VERSION_V4)
 		{
 			WCHAR result_buf[17]{}; // documented to be large enough for a IPv4 address string
+			// the UINT32 is in host-byte order, so must convert it before printing
+			const auto fixed_address = ntohl(net_event->header.remoteAddrV4);
 			FAIL_FAST_IF(nullptr == RtlIpv4AddressToStringW(
-				reinterpret_cast<const in_addr*>(&net_event->header.remoteAddrV4),
+				reinterpret_cast<const in_addr*>(&fixed_address),
 				result_buf));
 			result += result_buf;
 		}
@@ -153,18 +332,12 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			result += L"(unknown IPVersion for the remote address " + std::to_wstring(net_event->header.ipVersion) + L")";
 		}
-		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
+
+		if (net_event->header.ipProtocol == IPPROTO_ICMP || net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
 		{
-			result += L" : " + std::to_wstring(net_event->header.remotePort) + L"\n";
+			result += L" : " + std::to_wstring(net_event->header.remotePort);
 		}
 		result += L"\n";
-	}
-	else
-	{
-		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
-		{
-			result += L"    RemotePort: " + std::to_wstring(net_event->header.remotePort) + L"\n";
-		}
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_APP_ID_SET)
@@ -176,7 +349,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		}
 		else
 		{
-			result += L"Unspecified AppId";
+			result += L"null AppId";
 		}
 		result += L"\n";
 	}
@@ -198,43 +371,63 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		}
 		else
 		{
-			result += L"Unspecified UserId";
+			result += L"null UserId";
 		}
 		result += L"\n";
 	}
 
-
-	if (net_event->header.packageSid)
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET)
 	{
-		result += L"    PackageSid: ";
-		wil::unique_hlocal_string sid_string;
-		if (ConvertSidToStringSid(net_event->header.userId, &sid_string)) {
-			result += sid_string.get();
+		if (net_event->header.packageSid)
+		{
+			result += L"    PackageSid: ";
+			wil::unique_hlocal_string sid_string;
+			if (ConvertSidToStringSid(net_event->header.userId, &sid_string)) {
+				result += sid_string.get();
+			}
+			else
+			{
+				const auto gle = GetLastError();
+				result = L"Failed to convert UserId SID to string. Error: " + std::to_wstring(gle);
+			}
+			result += L"\n";
 		}
 		else
 		{
-			const auto gle = GetLastError();
-			result = L"Failed to convert UserId SID to string. Error: " + std::to_wstring(gle);
+			result += L"    PackageSid: null PackageSid\n";
 		}
-		result += L"\n";
 	}
 
-	if (net_event->header.enterpriseId)
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET)
 	{
-		result += L"    EnterpriseId: " + std::wstring(net_event->header.enterpriseId) + L"\n";
+		if (net_event->header.enterpriseId)
+		{
+			result += L"    EnterpriseId: " + std::wstring(net_event->header.enterpriseId) + L"\n";
+		}
+		else
+		{
+			result += L"    EnterpriseId: null EnterpriseId\n";
+		}
 	}
 
-	if (net_event->header.policyFlags != 0)
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_POLICY_FLAGS_SET)
 	{
 		result += L"    PolicyFlags: 0x" + std::to_wstring(net_event->header.policyFlags) + L"\n";
 	}
 
-	if (net_event->header.effectiveName.size > 0 && net_event->header.effectiveName.data)
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_EFFECTIVE_NAME_SET)
 	{
-		const auto* string_start = reinterpret_cast<const wchar_t*>(net_event->header.effectiveName.data);
-		result += L"    EffectiveName: ";
-		result += std::wstring(string_start, string_start + (net_event->header.effectiveName.size / sizeof(wchar_t)));
-		result += L"\n";
+		if (net_event->header.effectiveName.size > 0 && net_event->header.effectiveName.data)
+		{
+			const auto* string_start = reinterpret_cast<const wchar_t*>(net_event->header.effectiveName.data);
+			result += L"    EffectiveName: ";
+			result += std::wstring(string_start, string_start + (net_event->header.effectiveName.size / sizeof(wchar_t)));
+			result += L"\n";
+		}
+		else
+		{
+			result += L"    EffectiveName: null EffectiveName\n";
+		}
 	}
 
 	return result;
@@ -255,7 +448,6 @@ inline
 std::wstring
 PrintNetEventDetailedStruct(const FWPM_NET_EVENT5* net_event)
 {
-	std::wstring result;
 	switch (net_event->type)
 	{
 	case FWPM_NET_EVENT_TYPE_IKEEXT_MM_FAILURE:
@@ -398,7 +590,7 @@ inline std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_
 
 	result += L"    EndCertHash: ";
 	for (unsigned char i : event->endCertHash)
-    {
+	{
 		WCHAR buf[4];
 		swprintf_s(buf, L"%02x", i);
 		result += buf;
@@ -453,11 +645,11 @@ inline std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP
 
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	result += L"    LayerId: " + std::to_wstring(event->layerId) + L"\n";
-	result += L"    ReauthReason: " + std::to_wstring(event->reauthReason) + L"\n";
-	result += L"    OriginalProfile: " + std::to_wstring(event->originalProfile) + L"\n";
-	result += L"    CurrentProfile: " + std::to_wstring(event->currentProfile) + L"\n";
-	result += L"    MsFwpDirection: " + std::to_wstring(event->msFwpDirection) + L"\n";
-	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"TRUE" : L"FALSE") + L"\n";
+	result += L"    ReauthReason: " + ReauthReasonToString(event->reauthReason) + L"\n";
+	result += L"    OriginalProfile: " + ProfileToString(event->originalProfile) + L"\n";
+	result += L"    CurrentProfile: " + ProfileToString(event->currentProfile) + L"\n";
+	result += L"    MsFwpDirection: " + DirectionToString(event->msFwpDirection) + L"\n";
+	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"True" : L"False") + L"\n";
 
 	if (event->vSwitchId.size > 0 && event->vSwitchId.data)
 	{
@@ -556,11 +748,11 @@ inline std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALL
 
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	result += L"    LayerId: " + std::to_wstring(event->layerId) + L"\n";
-	result += L"    ReauthReason: " + std::to_wstring(event->reauthReason) + L"\n";
-	result += L"    OriginalProfile: " + std::to_wstring(event->originalProfile) + L"\n";
-	result += L"    CurrentProfile: " + std::to_wstring(event->currentProfile) + L"\n";
-	result += L"    MsFwpDirection: " + std::to_wstring(event->msFwpDirection) + L"\n";
-	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"TRUE" : L"FALSE") + L"\n";
+	result += L"    ReauthReason: " + ReauthReasonToString(event->reauthReason) + L"\n";
+	result += L"    OriginalProfile: " + ProfileToString(event->originalProfile) + L"\n";
+	result += L"    CurrentProfile: " + ProfileToString(event->currentProfile) + L"\n";
+	result += L"    MsFwpDirection: " + DirectionToString(event->msFwpDirection) + L"\n";
+	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"True" : L"False") + L"\n";
 
 	return result;
 }
@@ -588,7 +780,7 @@ inline std::wstring PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_
 	result += L"\n";
 
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
-	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"TRUE" : L"FALSE") + L"\n";
+	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"True" : L"False") + L"\n";
 
 	return result;
 }
@@ -616,7 +808,7 @@ inline std::wstring PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY
 	result += L"\n";
 
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
-	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"TRUE" : L"FALSE") + L"\n";
+	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"True" : L"False") + L"\n";
 
 	return result;
 }
@@ -654,11 +846,11 @@ inline std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_D
 	result += L"    IfLuid: " + std::to_wstring(event->ifLuid) + L"\n";
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	result += L"    LayerId: " + std::to_wstring(event->layerId) + L"\n";
-	result += L"    ReauthReason: " + std::to_wstring(event->reauthReason) + L"\n";
-	result += L"    OriginalProfile: " + std::to_wstring(event->originalProfile) + L"\n";
-	result += L"    CurrentProfile: " + std::to_wstring(event->currentProfile) + L"\n";
-	result += L"    MsFwpDirection: " + std::to_wstring(event->msFwpDirection) + L"\n";
-	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"TRUE" : L"FALSE") + L"\n";
+	result += L"    ReauthReason: " + ReauthReasonToString(event->reauthReason) + L"\n";
+	result += L"    OriginalProfile: " + ProfileToString(event->originalProfile) + L"\n";
+	result += L"    CurrentProfile: " + ProfileToString(event->currentProfile) + L"\n";
+	result += L"    MsFwpDirection: " + DirectionToString(event->msFwpDirection) + L"\n";
+	result += L"    IsLoopback: " + std::wstring(event->isLoopback ? L"True" : L"False") + L"\n";
 
 	if (event->vSwitchId.size > 0 && event->vSwitchId.data)
 	{

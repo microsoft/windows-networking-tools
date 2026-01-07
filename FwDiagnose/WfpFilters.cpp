@@ -126,10 +126,13 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 			}
 			catch (...)
 			{
-				std::printf(
-					"   Filter %ls in unknown sublayer %ls\n",
-					current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
-					GuidToString(current_fwpm_filter->subLayerKey).c_str());
+				if (verbose_output)
+				{
+					std::printf(
+						"   Filter %ls in unknown sublayer %ls\n",
+						current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
+						GuidToString(current_fwpm_filter->subLayerKey).c_str());
+				}
 			}
 
 			// update provider details
@@ -150,10 +153,14 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 				}
 				catch (...)
 				{
-					std::printf(
-						"   Filter %ls has unknown provider %ls\n",
-						current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
-						GuidToString(*current_fwpm_filter->providerKey).c_str());
+					if (verbose_output)
+					{
+
+						std::printf(
+							"   Filter %ls has unknown provider %ls\n",
+							current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
+							GuidToString(*current_fwpm_filter->providerKey).c_str());
+					}
 				}
 			}
 		}
@@ -165,6 +172,49 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 	}
 
 	return g_all_filters;
+}
+
+const std::vector<FilterDetails>& SortFilterDetailsByFilterId()
+{
+	std::ranges::sort(
+		g_all_filters,
+		[](const FilterDetails& lhs, const FilterDetails& rhs) noexcept
+		{
+			return lhs.filterId < rhs.filterId;
+		});
+	return g_all_filters;
+}
+
+const FilterDetails& FindFilterByFilterId(UINT64 filter_id)
+{
+	bool retried_when_not_found = false;
+	for (;;)
+	{
+		const auto found_filter = std::lower_bound(
+			g_all_filters.cbegin(),
+			g_all_filters.cend(),
+			filter_id,
+			[](const FilterDetails& filter, const UINT64 id) noexcept
+			{
+				return filter.filterId < id;
+			});
+		if (found_filter == g_all_filters.cend())
+		{
+			if (retried_when_not_found)
+			{
+				THROW_WIN32_MSG(ERROR_NOT_FOUND, "Filter ID %llu was not found", filter_id);
+			}
+
+			// if the filter ID wasn't found, we need to refresh the filters and try again
+			ReadWfpFilters(false);
+			SortFilterDetailsByFilterId();
+			retried_when_not_found = true;
+		}
+		else
+		{
+			return *found_filter;
+		}
+	}
 }
 
 const std::vector<FilterDetails>& SortFilterDetailsByName()
