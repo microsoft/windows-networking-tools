@@ -17,7 +17,7 @@ public:
 		}
 	}
 
-	[[nodiscard]] bool read_next_block(std::vector<unsigned char>& buffer) const
+	[[nodiscard]] bool read_next_block(std::vector<uint8_t>& buffer) const
 	{
 		buffer.resize(BlockSize);
 

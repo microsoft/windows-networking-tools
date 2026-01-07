@@ -12,7 +12,7 @@ public:
 		UTF16_BE
 	};
 
-	static BomType Utf16Bom(std::vector<unsigned char>& buffer) noexcept
+	static BomType Utf16Bom(std::vector<uint8_t>& buffer) noexcept
 	{
 		if (buffer.size() > 1) {
 			const auto first_character = buffer[0];
@@ -29,7 +29,7 @@ public:
 		return BomType::None;
 	}
 
-	static bool NullByteAsPartOfUtf16Encoding(const std::filesystem::path& filepath, unsigned char ch) noexcept
+	static bool NullByteAsPartOfUtf16Encoding(const std::filesystem::path& filepath, uint8_t ch) noexcept
 	{
 		using namespace std::string_view_literals;
 		constexpr std::array utf16_file_extensions_without_bom{
@@ -56,7 +56,7 @@ constexpr uint8_t bom_utf8_b = 0xBB;
 constexpr uint8_t bom_utf8_c = 0xBF;
 class Utf8Checker {
 public:
-	static bool HasUtf8Bom(const std::vector<unsigned char>& buffer) noexcept
+	static bool HasUtf8Bom(const std::vector<uint8_t>& buffer) noexcept
 	{
 		if (buffer.size() > 2) {
 			const auto first_character = buffer[0];
@@ -73,16 +73,32 @@ public:
 		return false;
 	}
 
-	static bool IsCharToManuallyRemove(unsigned char ch) noexcept
+	static bool IsCharToManuallyRemove(uint8_t ch) noexcept
 	{
-		constexpr std::array<unsigned char, 2> ManuallyRemoveCharacters{
+		constexpr std::array<uint8_t, 2> ManuallyRemoveCharacters{
 			0x0C, // form feed character often found before function defintions
 			0x1A, // substitute character often found at end of files
 		};
 		return std::ranges::find(ManuallyRemoveCharacters, ch) != ManuallyRemoveCharacters.end();
 	}
 
-	bool IsContinuationOrSequenceByte(unsigned char ch) noexcept
+	static bool IsPrintableCharacter(uint8_t ch) noexcept
+	{
+		// allow for the tab character
+		// allow CR and LF line endings
+		// [0x20, 0x7E] are the printable characters, including the space character.
+		// https://en.wikipedia.org/wiki/ASCII#Printable_characters
+		// [0xA0, 0xBF] are additional printable characters in Latin-1 Supplement block.
+
+		return (
+			ch == 0x09 || // TAB
+			ch == 0x0A || // LF
+			ch == 0x0D || // CR
+			(ch >= 0x20 && ch <= 0x7E) || // printable ASCII characters
+			(ch >= 0xA0 && ch <= 0xBF));  // additional printable characters in Latin-1 Supplement block
+	}
+
+	bool IsContinuationOrSequenceByte(uint8_t ch) noexcept
 	{
 		const auto update_tracking_on_exit = wil::scope_exit([&]() {
 			update_tracking_fields(ch);
@@ -136,31 +152,14 @@ public:
 		return false;
 	}
 
-	bool IsPrintableCharacter(unsigned char ch) noexcept
-	{
-		// allow for the tab character
-		// allow CR and LF line endings
-		// [0x20, 0x7E] are the printable characters, including the space character.
-		// https://en.wikipedia.org/wiki/ASCII#Printable_characters
-		// [0xA0, 0xBF] are additional printable characters in Latin-1 Supplement block.
-
-		return (
-			ch == 0x09 || // TAB
-			ch == 0x0A || // LF
-			ch == 0x0D || // CR
-			(ch >= 0x20 && ch <= 0x7E) || // printable ASCII characters
-			(ch >= 0xA0 && ch <= 0xBF));  // additional printable characters in Latin-1 Supplement block
-	}
-
-
 private:
-	unsigned char previous = 0x00;
-	unsigned char previous2 = 0x00;
-	unsigned char previous3 = 0x00;
-	unsigned char previous4 = 0x00;
-	unsigned char previous5 = 0x00;
+	uint8_t previous = 0x00;
+	uint8_t previous2 = 0x00;
+	uint8_t previous3 = 0x00;
+	uint8_t previous4 = 0x00;
+	uint8_t previous5 = 0x00;
 
-	void update_tracking_fields(unsigned char ch)
+	void update_tracking_fields(uint8_t ch)
 	{
 		previous5 = previous4;
 		previous4 = previous3;

@@ -75,12 +75,153 @@ void ShellExecutePath(_In_ PCWSTR path) noexcept
 	}
 }
 
-static void scan_file(const filesystem::path& filepath, vector<unsigned char>& buffer)
+constexpr uint8_t FORM_FEED = 0x0C;
+constexpr uint8_t CR = 0x0D; // '\r'
+constexpr uint8_t LF = 0x0A; // '\n'
+
+void FixCrlfInFile(const filesystem::path& filepath)
 {
-	constexpr uint8_t CR = 0x0D; // '\r'
-	constexpr uint8_t LF = 0x0A; // '\n'
-	bool file_has_cr = false;
-	bool file_has_lf = false;
+	vector<uint8_t> buffer;
+	buffer.resize(BinaryFileReader::BlockSize);
+
+	WCHAR temp_filename[MAX_PATH]{};
+	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
+	if (temp_filename_error == 0)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed GetTempFileName: {}", gle);
+		return;
+	}
+
+	wil::unique_hfile temp_file_handle{ CreateFile(temp_filename, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+	if (!temp_file_handle)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed CreateFile: {}", gle);
+		return;
+	}
+
+	std::vector<uint8_t> modified_buffer;
+	modified_buffer.resize(static_cast<uint32_t>(BinaryFileReader::BlockSize * 1.25));
+
+	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
+		// requring a CRLF
+		// - if a CR and the next character is not an LF, fix it
+		// - if a LF and the previous character is not a CR, fix it
+		uint8_t previous_character{};
+		for (auto iter = buffer.cbegin(); iter != buffer.cend(); ++iter)
+		{
+			const auto current_character = *iter;
+
+			if (iter == buffer.cbegin())
+			{
+				// loop again to move iter to the 2nd character
+				// without updating iter_prev
+			}
+			else if (previous_character == CR && current_character != LF)
+			{
+				// add an LF after the CR - before the current_character
+				modified_buffer.push_back(LF);
+			}
+			else if (current_character == LF && previous_character != CR)
+			{
+				// add a CR before the LF (LF is the current_character)
+				modified_buffer.push_back(CR);
+			}
+			modified_buffer.push_back(current_character);
+			previous_character = current_character;
+		}
+
+		WriteFile(
+			temp_file_handle.get(),
+			modified_buffer.data(),
+			static_cast<DWORD>(modified_buffer.size()),
+			nullptr,
+			nullptr);
+		modified_buffer.clear();
+	}
+
+	// close the handle to our temp file, and move it over to the original file
+	temp_file_handle.reset();
+
+	printf("Replacing %ws\n", filepath.c_str());
+	if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
+	{
+		const auto gle = GetLastError();
+		printf("Failed MoveFileEx(%ws, %ws) : %d", temp_filename, filepath.c_str(), gle);
+		return;
+	}
+	DeleteFile(temp_filename);
+}
+void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
+{
+	vector<uint8_t> buffer;
+	buffer.resize(BinaryFileReader::BlockSize);
+
+	WCHAR temp_filename[MAX_PATH]{};
+	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
+	if (temp_filename_error == 0)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed GetTempFileName: {}", gle);
+		return;
+	}
+
+	wil::unique_hfile temp_file_handle{ CreateFile(temp_filename, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+	if (!temp_file_handle)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed CreateFile: {}", gle);
+		return;
+	}
+
+	bool file_fixed = false;
+	bool bom_checked = false;
+	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
+		if (!bom_checked)
+		{
+			if (Utf16Checker::Utf16Bom(buffer) != Utf16Checker::BomType::None)
+			{
+				return; // skip UTF-16 files
+			}
+			bom_checked = true;
+		}
+
+		if (std::erase_if(buffer, [&](const auto lhs) { return lhs == char_to_remove; }) > 0)
+		{
+			file_fixed = true;
+		}
+
+		WriteFile(
+			temp_file_handle.get(),
+			buffer.data(),
+			static_cast<DWORD>(buffer.size()),
+			nullptr,
+			nullptr);
+		buffer.resize(BinaryFileReader::BlockSize);
+	}
+
+	// close the handle to our temp file, and move it over to the original file
+	temp_file_handle.reset();
+
+	if (file_fixed)
+	{
+		printf("Replacing %ws\n", filepath.c_str());
+		if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
+		{
+			const auto gle = GetLastError();
+			printf("Failed MoveFileEx(%ws, %ws) : %d", temp_filename, filepath.c_str(), gle);
+			return;
+		}
+	}
+
+	DeleteFile(temp_filename);
+}
+
+static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
+{
+	bool file_has_single_cr = false;
+	bool file_has_single_lf = false;
 	bool file_has_crlf = false;
 
 	bool file_has_chars_to_be_manually_removed = false;
@@ -97,7 +238,7 @@ static void scan_file(const filesystem::path& filepath, vector<unsigned char>& b
 	size_t current_line = 1;
 	size_t disallowed_character_count = 0;
 	Utf8Checker utf8_checker;
-	unsigned char previous_ch = '\0';
+	uint8_t previous_ch = '\0';
 	bool has_utf8_bom = false;
 	bool bom_checked = false;
 	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
@@ -145,12 +286,12 @@ static void scan_file(const filesystem::path& filepath, vector<unsigned char>& b
 					++current_line;
 				}
 				else {
-					file_has_cr = true;
+					file_has_single_cr = true;
 					++current_line;
 				}
 			}
 			else if (ch == LF) {
-				file_has_lf = true;
+				file_has_single_lf = true;
 				++current_line;
 			}
 			previous_ch = ch;
@@ -159,7 +300,7 @@ static void scan_file(const filesystem::path& filepath, vector<unsigned char>& b
 			// - it's not printable
 			// - it's not part of a UTF-8 multibyte sequence
 			// - it does not look like UTF-16 encoding in a file that didn't have the UTF-16 BOM
-			if (!utf8_checker.IsPrintableCharacter(ch) &&
+			if (!Utf8Checker::IsPrintableCharacter(ch) &&
 				!utf8_checker.IsContinuationOrSequenceByte(ch) &&
 				!Utf16Checker::NullByteAsPartOfUtf16Encoding(filepath, ch))
 			{
@@ -193,23 +334,25 @@ static void scan_file(const filesystem::path& filepath, vector<unsigned char>& b
 	}
 
 	if (previous_ch == CR) { // file ends with CR
-		file_has_cr = true;
+		file_has_single_cr = true;
 	}
 
 	if (!g_only_report_disallowed_chars)
 	{
-		if (file_has_cr) {
+		if (file_has_single_cr) {
 			print_validation_failure(filepath, "file contains CR line endings (possibly damaged CRLF).");
 			if (g_open_file_damaged_crlf)
 			{
-				ShellExecutePath(filepath.c_str());
+				FixCrlfInFile(filepath);
+				// ShellExecutePath(filepath.c_str());
 			}
 		}
-		else if (file_has_lf && file_has_crlf) {
+		else if (file_has_single_lf && file_has_crlf) {
 			print_validation_failure(filepath, "file contains mixed line endings (both LF and CRLF).");
 			if (g_open_file_damaged_crlf)
 			{
-				ShellExecutePath(filepath.c_str());
+				FixCrlfInFile(filepath);
+				// ShellExecutePath(filepath.c_str());
 			}
 		}
 		/*
@@ -226,69 +369,6 @@ static void scan_file(const filesystem::path& filepath, vector<unsigned char>& b
 			}
 		}
 		*/
-	}
-}
-
-void ReplaceFormFeed(const filesystem::path& filepath)
-{
-	constexpr uint8_t FORM_FEED = 0x0C;
-
-	vector<unsigned char> buffer;
-	buffer.resize(BinaryFileReader::BlockSize);
-
-	WCHAR temp_filename[MAX_PATH]{};
-	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
-	if (temp_filename_error == 0)
-	{
-		const auto gle = GetLastError();
-		println(stderr, "Failed GetTempFileName: {}", gle);
-		return;
-	}
-
-	wil::unique_hfile temp_file_handle{ CreateFile(temp_filename, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
-	if (!temp_file_handle)
-	{
-		const auto gle = GetLastError();
-		println(stderr, "Failed CreateFile: {}", gle);
-		return;
-	}
-
-	bool file_fixed = false;
-	bool bom_checked = false;
-	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
-		if (!bom_checked)
-		{
-			if (Utf16Checker::Utf16Bom(buffer) != Utf16Checker::BomType::None)
-			{
-				return; // skip UTF-16 files
-			}
-			bom_checked = true;
-		}
-
-		if (std::erase_if(buffer, [](const auto lhs) { return lhs == FORM_FEED; }) > 0)
-		{
-			file_fixed = true;
-		}
-		WriteFile(temp_file_handle.get(), buffer.data(), static_cast<DWORD>(buffer.size()), nullptr, nullptr);
-		buffer.resize(BinaryFileReader::BlockSize);
-	}
-
-	// close the handle to our temp file, and move it over to the original file
-	temp_file_handle.reset();
-
-	if (file_fixed)
-	{
-		printf("Replacing %ws\n", filepath.c_str());
-		if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
-		{
-			const auto gle = GetLastError();
-			printf("Failed MoveFileEx(%ws, %ws) : %d", temp_filename, filepath.c_str(), gle);
-			return;
-		}
-	}
-	else
-	{
-		DeleteFile(temp_filename);
 	}
 }
 
@@ -390,7 +470,7 @@ int main(int argc, char** argv) {
 	}
 
 	int files_scanned = 0;
-	vector<unsigned char> buffer;
+	vector<uint8_t> buffer;
 	for (filesystem::recursive_directory_iterator rdi{ "." }, last; rdi != last; ++rdi) {
 		const filesystem::path& filepath = rdi->path();
 
@@ -436,7 +516,7 @@ int main(int argc, char** argv) {
 		{
 			if (ranges::binary_search(extensions_to_fix_form_feed, extension))
 			{
-				ReplaceFormFeed(filepath);
+				RemoveCharInFile(filepath, FORM_FEED);
 				++files_scanned;
 			}
 		}
