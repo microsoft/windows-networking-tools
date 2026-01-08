@@ -977,9 +977,12 @@ int __cdecl main(int argc, char* argv[]) try
 		THROW_IF_FAILED(CoCreateGuid(&subscription_info.sessionKey));
 
 		HANDLE eventsHandle{};
-		const auto fwpm_subscription_error = FwpmNetEventSubscribe4(GetFwpmEngineHandle(), &subscription_info, [](void*, const FWPM_NET_EVENT5* event)
+		const auto fwpm_subscription_error = FwpmNetEventSubscribe4(
+			GetFwpmEngineHandle(),
+			&subscription_info,
+			[](void*, const FWPM_NET_EVENT5* event)
 			{
-				// try
+				try
 				{
 					std::printf(
 						"\n** NetEvent received **\n"
@@ -992,17 +995,24 @@ int __cdecl main(int argc, char* argv[]) try
 					if (event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP)
 					{
 						std::printf("   * Classify Drop Event\n");
+
 						const auto& found_filter = FindFilterByFilterId(event->classifyDrop->filterId);
-						std::printf("     * Found matching filter: %llu\n", found_filter.filterId);
 						std::printf("     * Filter name: %ls\n", found_filter.name.value.c_str());
 						std::printf("     * Filter description: %ls\n", found_filter.description.c_str());
+						if (found_filter.InvokesCallout())
+						{
+							std::printf("     * Filter invokes callout: %ls\n", PrintCallout(found_filter.action_type.calloutKey).c_str());
+						}
 
 						const auto& found_sublayer = FindSublayer(found_filter.subLayerKey);
 						std::printf("     * Filter layer: %hs\n", LayerToString(found_filter.layerKey).c_str());
-						std::printf("     * Filter sublayer: %ls\n", SublayerToString(found_sublayer).c_str());
+						std::printf("     * Filter sublayer: %ls\n", SublayerToSimpleString(found_sublayer).c_str());
 					}
 				}
-				// CATCH_LOG()
+				catch (const std::exception& ex)
+				{
+					std::printf("\n*** An error occurred processing a NetEvent: %hs\n", ex.what());
+				}
 			},
 			nullptr, // null context
 			& eventsHandle);
@@ -1028,7 +1038,7 @@ int __cdecl main(int argc, char* argv[]) try
 		const auto fwpm_unsubscribe_error = FwpmNetEventUnsubscribe0(GetFwpmEngineHandle(), eventsHandle);
 		THROW_IF_WIN32_ERROR_MSG(fwpm_unsubscribe_error, "FwpmNetEventUnsubscribe0");
 
-		std::printf("\n  Exiting  \n");
+		std::printf("\n**  Exiting  **\n");
 
 		/*
 		FWPM_NET_EVENT_ENUM_TEMPLATE0 enum_template{};

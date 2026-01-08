@@ -231,6 +231,35 @@ std::wstring PrintCallout(const CalloutDetails& callout)
 		callout.name.empty() ? L"(no name)" : callout.name.c_str());
 }
 
+std::wstring PrintCallout(const GUID& calloutKey)
+{
+	auto found_callout = std::find_if(g_all_callouts.cbegin(), g_all_callouts.cend(),
+		[&](const CalloutDetails& callout)
+		{
+			return callout.callout_key == calloutKey;
+		});
+	if (found_callout == g_all_callouts.cend())
+	{
+		// refresh callouts and try again
+		ReadWfpCallouts();
+		found_callout = std::find_if(g_all_callouts.cbegin(), g_all_callouts.cend(),
+			[&](const CalloutDetails& callout)
+			{
+				return callout.callout_key == calloutKey;
+			});
+	}
+	if (found_callout != g_all_callouts.cend())
+	{
+		return PrintCallout(*found_callout);
+	}
+	else
+	{
+		return wil::str_printf<std::wstring>(
+			L"%ls : (unknown callout)",
+			GuidToString(calloutKey).c_str());
+	}
+}
+
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept
 try
 {

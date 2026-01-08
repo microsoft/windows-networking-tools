@@ -215,6 +215,55 @@ std::wstring SublayerToString(const SubLayerDetails& sublayer)
 		sublayer.displayName.c_str());
 }
 
+std::wstring SublayerToSimpleString(const SubLayerDetails& sublayer)
+{
+	if (std::ranges::find(BuiltInSublayers, sublayer.subLayerKey) != std::end(BuiltInSublayers))
+	{
+		if (sublayer.displayName == sublayer.description)
+		{
+			return wil::str_printf<std::wstring>(
+				L"%ls (%ls)",
+				BuiltInSublayerToString(sublayer.subLayerKey),
+				sublayer.displayName.empty() ? L"no display name or description" : sublayer.displayName.c_str());
+		}
+
+		if (!sublayer.description.empty())
+		{
+			return wil::str_printf<std::wstring>(
+				L"%ls (%ls) (%ls)",
+				BuiltInSublayerToString(sublayer.subLayerKey),
+				sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str(),
+				sublayer.description.empty() ? L"no description" : sublayer.description.c_str());
+		}
+		return wil::str_printf<std::wstring>(
+			L"%ls (%ls)",
+			BuiltInSublayerToString(sublayer.subLayerKey),
+			sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str());
+	}
+
+	if (sublayer.displayName == sublayer.description)
+	{
+		return wil::str_printf<std::wstring>(
+			L"%ls [%ls]",
+			sublayer.displayName.empty() ? L"[no display name or description]" : sublayer.displayName.c_str(),
+			GuidToString(sublayer.subLayerKey).c_str());
+	}
+
+	if (!sublayer.description.empty())
+	{
+		return wil::str_printf<std::wstring>(
+			L"%ls (%ls) [%ls]",
+			sublayer.displayName.c_str(),
+			sublayer.description.c_str(),
+			GuidToString(sublayer.subLayerKey).c_str());
+	}
+
+	return wil::str_printf<std::wstring>(
+		L"%ls [%ls]",
+		sublayer.displayName.c_str(),
+		GuidToString(sublayer.subLayerKey).c_str());
+}
+
 const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept
 try
 {

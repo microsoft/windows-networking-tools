@@ -129,6 +129,7 @@ struct CalloutDetails
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
 std::wstring GetInternalCalloutString(const CalloutDetails& callout);
 std::wstring PrintCallout(const CalloutDetails& callout);
+std::wstring PrintCallout(const GUID& calloutKey);
 
 // sublayer support
 struct SubLayerDetails
@@ -145,6 +146,7 @@ struct SubLayerDetails
 const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept;
 SubLayerDetails& FindSublayer(const GUID& subLayerKey);
 std::wstring SublayerToString(const SubLayerDetails& sublayer);
+std::wstring SublayerToSimpleString(const SubLayerDetails& sublayer);
 void PrintSublayerFilterDetails();
 
 // providers support
