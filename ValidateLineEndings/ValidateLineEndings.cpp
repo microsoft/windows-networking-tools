@@ -23,11 +23,14 @@ static std::atomic g_validation_failure_count = 0;
 static std::atomic g_validation_logged_count = 0;
 
 bool g_only_fix_form_feed_chars = false;
-bool g_only_report_damaged_crlf = false;
-bool g_only_report_disallowed_chars = false;
+bool g_only_process_damaged_crlf = false;
+bool g_only_process_disallowed_chars = false;
 
-bool g_open_file_damaged_crlf = false;
+bool g_fix_file_damaged_crlf = false;
 bool g_open_file_disallowed_chars = false;
+
+std::vector<std::wstring> g_allowed_file_extensions_for_fixing_disallowed_chars;
+std::vector<std::wstring> g_blocked_file_extensions_for_fixing_disallowed_chars;
 
 constexpr auto* g_log_filename = L"validation_failures.log";
 constexpr auto* g_log_filename_formatted = L".\\validation_failures.log";
@@ -54,6 +57,44 @@ static void log_validation_failure(
 	++g_validation_logged_count;
 }
 
+static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
+{
+	const auto is_blocked = g_blocked_file_extensions_for_fixing_disallowed_chars.cend() != std::find(
+		g_blocked_file_extensions_for_fixing_disallowed_chars.cbegin(),
+		g_blocked_file_extensions_for_fixing_disallowed_chars.cend(),
+		filepath.extension());
+	if (is_blocked)
+	{
+		printf(" - skipping the file (%ws) from fixing disallowed characters.\n", filepath.c_str());
+		return false;
+	}
+
+	const auto is_allowed = g_allowed_file_extensions_for_fixing_disallowed_chars.cend() != std::find(
+		g_allowed_file_extensions_for_fixing_disallowed_chars.cbegin(),
+		g_allowed_file_extensions_for_fixing_disallowed_chars.cend(),
+		filepath.extension());
+	if (is_allowed)
+	{
+		return true;
+	}
+
+	// else prompt the user to allow that file extension
+	printf(" * Should files with the extension (%ws) be allowed to automatically be fixed? (y/n) ",
+		filepath.extension().c_str());
+	std::string response;
+	std::getline(std::cin, response);
+	if (!response.empty() && (response[0] == 'y' || response[0] == 'Y'))
+	{
+		g_allowed_file_extensions_for_fixing_disallowed_chars.push_back(filepath.extension().wstring());
+		return true;
+	}
+	else
+	{
+		g_blocked_file_extensions_for_fixing_disallowed_chars.push_back(filepath.extension().wstring());
+		printf(" - skipping the file for fixing disallowed characters.\n");
+		return false;
+	}
+}
 void ShellExecutePath(_In_ PCWSTR path) noexcept
 {
 	SHELLEXECUTEINFOW shellexec{};
@@ -81,9 +122,6 @@ constexpr uint8_t LF = 0x0A; // '\n'
 
 void FixCrlfInFile(const filesystem::path& filepath)
 {
-	vector<uint8_t> buffer;
-	buffer.resize(BinaryFileReader::BlockSize);
-
 	WCHAR temp_filename[MAX_PATH]{};
 	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
 	if (temp_filename_error == 0)
@@ -104,21 +142,21 @@ void FixCrlfInFile(const filesystem::path& filepath)
 	std::vector<uint8_t> modified_buffer;
 	modified_buffer.resize(static_cast<uint32_t>(BinaryFileReader::BlockSize * 1.25));
 
-	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
-		// requring a CRLF
+	vector<uint8_t> buffer;
+	uint8_t previous_character{};
+	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);)
+	{
+		modified_buffer.clear();
+		previous_character = 0x00;
+
+		// require a CRLF
 		// - if a CR and the next character is not an LF, fix it
 		// - if a LF and the previous character is not a CR, fix it
-		uint8_t previous_character{};
 		for (auto iter = buffer.cbegin(); iter != buffer.cend(); ++iter)
 		{
 			const auto current_character = *iter;
 
-			if (iter == buffer.cbegin())
-			{
-				// loop again to move iter to the 2nd character
-				// without updating iter_prev
-			}
-			else if (previous_character == CR && current_character != LF)
+			if (previous_character == CR && current_character != LF)
 			{
 				// add an LF after the CR - before the current_character
 				modified_buffer.push_back(LF);
@@ -128,17 +166,34 @@ void FixCrlfInFile(const filesystem::path& filepath)
 				// add a CR before the LF (LF is the current_character)
 				modified_buffer.push_back(CR);
 			}
+
 			modified_buffer.push_back(current_character);
 			previous_character = current_character;
 		}
 
-		WriteFile(
+		if (!WriteFile(
 			temp_file_handle.get(),
 			modified_buffer.data(),
 			static_cast<DWORD>(modified_buffer.size()),
 			nullptr,
-			nullptr);
+			nullptr))
+		{
+			THROW_LAST_ERROR();
+		}
+	}
+
+	if (previous_character == CR) { // file ends with CR
 		modified_buffer.clear();
+		modified_buffer.push_back(LF);
+		if (!WriteFile(
+			temp_file_handle.get(),
+			modified_buffer.data(),
+			static_cast<DWORD>(modified_buffer.size()),
+			nullptr,
+			nullptr))
+		{
+			THROW_LAST_ERROR();
+		}
 	}
 
 	// close the handle to our temp file, and move it over to the original file
@@ -226,7 +281,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 
 	bool file_has_chars_to_be_manually_removed = false;
 	const auto log_manual_remove_chars_at_exit = wil::scope_exit([&]() {
-		if (!g_only_report_damaged_crlf && !g_only_report_disallowed_chars)
+		if (!g_only_process_damaged_crlf && !g_only_process_disallowed_chars)
 		{
 			if (file_has_chars_to_be_manually_removed) {
 				log_validation_failure(filepath, "file contains the 0x0C character that need to be removed.");
@@ -309,7 +364,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 				}
 				else
 				{
-					if (!g_only_report_damaged_crlf)
+					if (!g_only_process_damaged_crlf)
 					{
 						print_validation_failure(filepath,
 							"file contains disallowed character 0x{:02X}: line {}",
@@ -337,21 +392,27 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 		file_has_single_cr = true;
 	}
 
-	if (!g_only_report_disallowed_chars)
+	if (!g_only_process_disallowed_chars)
 	{
 		if (file_has_single_cr) {
 			print_validation_failure(filepath, "file contains CR line endings (possibly damaged CRLF).");
-			if (g_open_file_damaged_crlf)
+			if (g_fix_file_damaged_crlf)
 			{
-				FixCrlfInFile(filepath);
+				if (ShouldAutomaticallyFixFile(filepath))
+				{
+					FixCrlfInFile(filepath);
+				}
 				// ShellExecutePath(filepath.c_str());
 			}
 		}
 		else if (file_has_single_lf && file_has_crlf) {
 			print_validation_failure(filepath, "file contains mixed line endings (both LF and CRLF).");
-			if (g_open_file_damaged_crlf)
+			if (g_fix_file_damaged_crlf)
 			{
-				FixCrlfInFile(filepath);
+				if (ShouldAutomaticallyFixFile(filepath))
+				{
+					FixCrlfInFile(filepath);
+				}
 				// ShellExecutePath(filepath.c_str());
 			}
 		}
@@ -376,18 +437,19 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 void PrintHelp() noexcept
 {
 	println("Usage: ValidateLineEndings.exe");
-	println(" - Scans all files in the current directory and its subdirectories for invalid characters.");
-	println(" - Skips known directories, file extensions, and filenames.");
-	println(" - Logs files with characters that need to be removed manually to validation_failures.log.");
+	println(" - Scans all files in the current directory and its subdirectories for invalid characters");
+	println(" - Skips known directories, file extensions, and filenames");
+	println(" - Logs files with characters that need to be removed manually to validation_failures.log");
 	println();
 	println("optional parameters [specify only a single parameter]:");
-	println("  -h | --help : prints this help message.");
-	println("  -fix-form-feed: removes the form-feed character from all source files.");
-	println("  -print-skipped-files : print the list of skipped files and extensions to the console.");
-	println("  -only-report-damaged-crlf : only report files that have damaged CRLF line endings.");
-	println("  -only-report-disallowed-chars : only report files that have disallowed characters.");
-	println("  -open-file-damaged-crlf : will ShellExecute each file with a damaged CRLF to be fixed.");
-	println("  -open-file-disallowed-chars : will ShellExecute each file with disallowed characters to be fixed.");
+	println("  -h | --help : prints this help message");
+	println("  -fix-form-feed: removes the form-feed character from all source files");
+	println("  -print-skipped-files : print the list of skipped files and extensions to the console");
+	println("  -only-process-damaged-crlf : only report files that have damaged CRLF line endings");
+	println("  -only-process-disallowed-chars : only report files that have disallowed characters");
+	println("  -fix-file-damaged-crlf : will automatically fix each file with a damaged CRLF");
+	println("							will prompt to allow each unique file extension");
+	println("  -open-file-disallowed-chars : will ShellExecute each file with disallowed characters to be fixed");
 }
 int main(int argc, char** argv) {
 	if (argc == 2)
@@ -431,22 +493,22 @@ int main(int argc, char** argv) {
 		{
 			g_only_fix_form_feed_chars = true;
 		}
-		else if (arg == "-only-report-damaged-crlf")
+		else if (arg == "-only-process-damaged-crlf")
 		{
-			g_only_report_damaged_crlf = true;
+			g_only_process_damaged_crlf = true;
 		}
-		else if (arg == "-only-report-disallowed-chars")
+		else if (arg == "-only-process-disallowed-chars")
 		{
-			g_only_report_disallowed_chars = true;
+			g_only_process_disallowed_chars = true;
 		}
-		else if (arg == "-open-file-damaged-crlf")
+		else if (arg == "-fix-file-damaged-crlf")
 		{
-			g_only_report_damaged_crlf = true;
-			g_open_file_damaged_crlf = true;
+			g_only_process_damaged_crlf = true;
+			g_fix_file_damaged_crlf = true;
 		}
 		else if (arg == "-open-file-disallowed-chars")
 		{
-			g_only_report_disallowed_chars = true;
+			g_only_process_disallowed_chars = true;
 			g_open_file_disallowed_chars = true;
 		}
 		else
