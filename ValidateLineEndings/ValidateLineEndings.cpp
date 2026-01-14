@@ -485,6 +485,11 @@ int main(int argc, char** argv) {
 			{
 				printf("%ls ", p.data());
 			}
+			println("\n\nSkipped path prefixes:");
+			for (const auto& p : skipped_path_prefixes)
+			{
+				printf("%ls ", p.data());
+			}
 			printf("\n");
 			return 0;
 		}
@@ -539,7 +544,28 @@ int main(int argc, char** argv) {
 		if (filepath == g_log_filename_formatted) {
 			continue;
 		}
-		if (ranges::binary_search(skipped_paths, filepath.parent_path())) {
+
+		// must flatten all strings to lowercase for case-insensitive comparison
+		// if there are non-ascii characters, will require case-sensitive strings in our lists
+		wstring parent_path = filepath.parent_path().wstring();
+		for (auto& ch : parent_path) {
+			if (iswascii(ch)) {
+				ch = towlower(ch);
+			}
+		}
+		if (ranges::binary_search(skipped_paths, parent_path)) {
+			continue;
+		}
+
+		bool prefix_matched = false;
+		for (const auto& prefix : skipped_path_prefixes)
+		{
+			if (parent_path.starts_with(prefix)) {
+				prefix_matched = true;
+				break;
+			}
+		}
+		if (prefix_matched) {
 			continue;
 		}
 

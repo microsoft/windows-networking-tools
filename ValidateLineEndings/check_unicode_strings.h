@@ -34,6 +34,7 @@ public:
 		using namespace std::string_view_literals;
 		constexpr std::array utf16_file_extensions_without_bom{
 			L".ini"sv,
+			L".rc"sv,
 			L".xml"sv,
 		};
 
