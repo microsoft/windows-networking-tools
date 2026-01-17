@@ -1,7 +1,6 @@
 #pragma once
 
 // clang-format off
-#include <cstdio>
 #include <cstdlib>
 #include <cwchar>
 #include <map>
@@ -163,7 +162,7 @@ class ctEtwRecord
      * @brief Get message properties as a map
      * @return Map of property names to values
      */
-    std::map<std::wstring, std::wstring>
+    std::map<const std::wstring, std::wstring>
     writeMessageProperties() const;
 
     /**
@@ -254,6 +253,8 @@ class ctEtwRecord
     queryChannelName(_Out_ std::wstring&) const;
     bool
     queryKeywords(_Out_ std::vector<std::wstring>&) const;
+    bool
+    queryEventName(_Out_ std::wstring& event_name) const;
     bool
     queryTaskName(_Out_ std::wstring&) const;
     bool
@@ -377,7 +378,7 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
             for (ULONG property_count = 0; property_count < m_traceEventInfoPtr->TopLevelPropertyCount;
                  ++property_count) {
                 const auto& event_property_info = m_traceEventInfoPtr->EventPropertyInfoArray[property_count];
-                if (event_property_info.Flags != 0) {
+                if (event_property_info.Flags & PROPERTY_FLAGS::PropertyStruct) {
                     // if Flags & PropertyStruct
                     // currently not supporting deep-copying event data of structs
                     details::FailFastOnFalseIfBeingDebugged(false);
@@ -704,7 +705,7 @@ ctEtwRecord::writeRecord(std::wstring& reusable_string) const
     std::vector<BYTE> pSID;
     if (querySID(pSID)) {
         wsData += L"\n\tSID ";
-        wil::unique_hlocal_string szSID;
+        wil::unique_hlocal_string szSID = nullptr;
         if (::ConvertSidToStringSid(pSID.data(), &szSID)) {
             wsData += szSID.get();
         } else {
@@ -900,10 +901,10 @@ ctEtwRecord::writeFormattedMessage(std::wstring& reusable_string, bool include_m
     reusable_string.swap(wsData);
 }
 
-inline std::map<std::wstring, std::wstring>
+inline std::map<const std::wstring, std::wstring>
 ctEtwRecord::writeMessageProperties() const
 {
-    std::map<std::wstring, std::wstring> wsProperties;
+    std::map<const std::wstring, std::wstring> wsProperties;
 
     ULONG ulData = 0;
     if (queryTopLevelPropertyCount(&ulData) && ulData > 0) {
@@ -1417,6 +1418,29 @@ ctEtwRecord::queryKeywords(_Out_ std::vector<std::wstring>& keywords) const
 }
 
 inline bool
+ctEtwRecord::queryEventName(_Out_ std::wstring& event_name) const
+{
+    event_name.clear();
+    if (!m_initialized) {
+        return false;
+    }
+    if (m_eventHeader.Flags & EVENT_HEADER_FLAG_STRING_ONLY) {
+        return false;
+    }
+    if (!m_traceEventInfoPtr) {
+        return false;
+    }
+    if (0 == m_traceEventInfoPtr->EventNameOffset) {
+        return false;
+    }
+
+    const wchar_t* szEventName =
+        reinterpret_cast<const wchar_t*>(m_traceEventInfoBuffer.data() + m_traceEventInfoPtr->EventNameOffset);
+    event_name.assign(szEventName);
+    return true;
+}
+
+inline bool
 ctEtwRecord::queryTaskName(_Out_ std::wstring& task_name) const
 {
     task_name.clear();
@@ -1685,14 +1709,19 @@ ctEtwRecord::BuildEventPropertyString(ULONG property_index) const
         throw std::runtime_error("ctEtwRecord - ETW Property value requested is out of range");
     }
 
-    constexpr unsigned cch_StackBuffer = 100;
-    wchar_t stackBuffer[cch_StackBuffer]{};
-
     // retrieve the raw property information
     const BYTE* propertyBuffer = m_traceProperties[property_index].first.get();
     const ULONG propertySizeBytes = m_traceProperties[property_index].second;
 
-    // build a string only if the property data > 0 bytes
+    // will be set to null for unsupported property types
+    // like custom structures and arrays
+    if (propertySizeBytes == 0 || propertyBuffer == nullptr) {
+        return {};
+    }
+
+    constexpr unsigned cch_StackBuffer = 100;
+    wchar_t stackBuffer[cch_StackBuffer]{};
+
     // build the string based on the IN and OUT types
     auto eventPropertyOutType =
         static_cast<_TDH_OUT_TYPE>(m_traceEventInfoPtr->EventPropertyInfoArray[property_index].nonStructType.OutType);
@@ -1809,7 +1838,6 @@ ctEtwRecord::BuildEventPropertyString(ULONG property_index) const
             eventPropertyOutType = TDH_OUTTYPE_HEXBINARY;
         }
         return details::PrintHexBinary(eventPropertyOutType, propertyBuffer, propertySizeBytes);
-        break;
     }
 
     case TDH_INTYPE_GUID: {
@@ -1940,7 +1968,7 @@ ctEtwRecord::BuildEventPropertyString(ULONG property_index) const
     }
 
         /*
-         Field contains a little-endian 16-bit bytecount followed by a WCHAR
+         Field contains a little-endian 16-bit byte count followed by a WCHAR
          (16-bit character) string. Default OutType is STRING. Other usable
          OutTypes include XML, JSON. Field size is determined by reading the
          first two bytes of the payload, which are then interpreted as a
@@ -2030,6 +2058,9 @@ ctEtwRecord::BuildEventPropertyString(ULONG property_index) const
 inline std::wstring
 details::PrintHexBinary(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
+    if (propertyByteSize == 0) {
+        return L"<empty value>";
+    }
     constexpr unsigned cch_StackBuffer = 100;
     wchar_t stackBuffer[cch_StackBuffer]{};
 
@@ -2050,7 +2081,7 @@ details::PrintHexBinary(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffe
     } else if (TDH_OUTTYPE_SOCKETADDRESS == propertyOutType) {
         DWORD dwSize = cch_StackBuffer;
         // Winsock APIs are not const-correct
-        const int iReturn = ::WSAAddressToString(
+        const auto iReturn = ::WSAAddressToString(
             reinterpret_cast<sockaddr*>(const_cast<BYTE*>(propertyBuffer)),
             propertyByteSize,
             nullptr,
@@ -2068,9 +2099,11 @@ details::PrintHexBinary(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffe
 }
 
 inline std::wstring
-details::PrintWcharString(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
+details::PrintWcharString(_TDH_OUT_TYPE, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
-    details::FailFastOnFalseIfBeingDebugged(propertyOutType != TDH_OUTTYPE_STRING);
+    if (propertyByteSize == 0) {
+        return L"<empty value>";
+    }
     // not guaranteed to be NULL terminated, must use the byte size
     const auto* wszBuffer = reinterpret_cast<const wchar_t*>(propertyBuffer);
     const auto* wszBufferEnd = wszBuffer + (propertyByteSize / 2);
@@ -2082,9 +2115,12 @@ details::PrintWcharString(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuf
 }
 
 inline std::wstring
-details::PrintCharString(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
+details::PrintCharString(_TDH_OUT_TYPE, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
-    details::FailFastOnFalseIfBeingDebugged(propertyOutType != TDH_OUTTYPE_STRING);
+    if (propertyByteSize == 0) {
+        return L"<empty value>";
+    }
+
     // not guaranteed to be NULL terminated, must use the byte size
     const auto* szBuffer = reinterpret_cast<const char*>(propertyBuffer);
     const auto* szBufferEnd = szBuffer + propertyByteSize;
@@ -2252,7 +2288,7 @@ details::Print8BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuf
     }
 
     default: {
-        // for any other 16-bit output type, display as an unsigned short
+        // for any other 8-bit output type, display as an unsigned char
         const UCHAR prop = *propertyBuffer;
         _itow_s(prop, stackBuffer, 10);
         return stackBuffer;

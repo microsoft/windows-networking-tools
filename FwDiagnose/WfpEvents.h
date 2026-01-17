@@ -211,6 +211,284 @@ PrintNetEventType(const FWPM_NET_EVENT5* net_event)
 	}
 }
 
+std::wstring PrintIcmpType(UINT8 protocol, UINT16 type)
+{
+	if (protocol == IPPROTO_ICMP)
+	{
+		switch (type)
+		{
+		case 0: return L"Echo Reply (0)";
+		case 3: return L"Destination Unreachable (3)";
+		case 4: return L"Source Quench [Deprecated] (4)";
+		case 5: return L"Redirect (5)";
+		case 6: return L"Alternate Host Address [Deprecated] (6)";
+		case 8: return L"Echo (8)";
+		case 9: return L"Router Advertisement (9)";
+		case 10: return L"Router Solicitation (10)";
+		case 11: return L"Time Exceeded (11)";
+		case 12: return L"Parameter Problem (12)";
+		case 13: return L"Timestamp (13)";
+		case 14: return L"Timestamp Reply (14)";
+		case 15: return L"Information Request [Deprecated] (15)";
+		case 16: return L"Information Reply [Deprecated] (16)";
+		case 17: return L"Address Mask Request [Deprecated] (17)";
+		case 18: return L"Address Mask Reply [Deprecated] (18)";
+		case 19: return L"Reserved (for Security) (19)";
+		case 20: case 21: case 22: case 23: case 24:
+		case 25: case 26: case 27: case 28: case 29:
+			return L"Reserved (for Robustness Experiment) (" + std::to_wstring(type) + L")";
+		case 30: return L"Traceroute [Deprecated] (30)";
+		case 31: return L"Datagram Conversion Error [Deprecated] (31)";
+		case 32: return L"Mobile Host Redirect [Deprecated] (32)";
+		case 33: return L"IPv6 Where-Are-You [Deprecated] (33)";
+		case 34: return L"IPv6 I-Am-Here [Deprecated] (34)";
+		case 35: return L"Mobile Registration Request [Deprecated] (35)";
+		case 36: return L"Mobile Registration Reply [Deprecated] (36)";
+		case 37: return L"Domain Name Request [Deprecated] (37)";
+		case 38: return L"Domain Name Reply [Deprecated] (38)";
+		case 39: return L"SKIP [Deprecated] (39)";
+		case 40: return L"Photuris (40)";
+		case 41: return L"ICMP messages utilized by experimental mobility protocols such as Seamoby (41)";
+		case 42: return L"Extended Echo Request (42)";
+		case 43: return L"Extended Echo Reply (43)";
+		case 253: return L"RFC3692-style Experiment 1 (253)";
+		case 254: return L"RFC3692-style Experiment 2 (254)";
+		case 255: return L"Reserved (255)";
+		default:
+			if (type == 1 || type == 2 || type == 7 || type >= 44 && type <= 252)
+			{
+				return L"Unassigned (" + std::to_wstring(type) + L")";
+			}
+			return L"Unknown ICMP Type (" + std::to_wstring(type) + L")";
+		}
+	}
+	if (protocol == IPPROTO_ICMPV6)
+	{
+		switch (type)
+		{
+		case 0: return L"Reserved (0)";
+		case 1: return L"Destination Unreachable (1)";
+		case 2: return L"Packet Too Big (2)";
+		case 3: return L"Time Exceeded (3)";
+		case 4: return L"Parameter Problem (4)";
+		case 100: return L"Private experimentation (100)";
+		case 101: return L"Private experimentation (101)";
+		case 127: return L"Reserved for expansion of ICMPv6 error messages (127)";
+		case 128: return L"Echo Request (128)";
+		case 129: return L"Echo Reply (129)";
+		case 130: return L"Multicast Listener Query (130)";
+		case 131: return L"Multicast Listener Report (131)";
+		case 132: return L"Multicast Listener Done (132)";
+		case 133: return L"Router Solicitation (133)";
+		case 134: return L"Router Advertisement (134)";
+		case 135: return L"Neighbor Solicitation (135)";
+		case 136: return L"Neighbor Advertisement (136)";
+		case 137: return L"Redirect Message (137)";
+		case 138: return L"Router Renumbering (138)";
+		case 139: return L"ICMP Node Information Query (139)";
+		case 140: return L"ICMP Node Information Response (140)";
+		case 141: return L"Inverse Neighbor Discovery Solicitation Message (141)";
+		case 142: return L"Inverse Neighbor Discovery Advertisement Message (142)";
+		case 143: return L"Version 2 Multicast Listener Report (143)";
+		case 144: return L"Home Agent Address Discovery Request Message (144)";
+		case 145: return L"Home Agent Address Discovery Reply Message (145)";
+		case 146: return L"Mobile Prefix Solicitation (146)";
+		case 147: return L"Mobile Prefix Advertisement (147)";
+		case 148: return L"Certification Path Solicitation Message (148)";
+		case 149: return L"Certification Path Advertisement Message (149)";
+		case 150: return L"ICMP messages utilized by experimental mobility protocols such as Seamoby (150)";
+		case 151: return L"Multicast Router Advertisement (151)";
+		case 152: return L"Multicast Router Solicitation (152)";
+		case 153: return L"Multicast Router Termination (153)";
+		case 154: return L"FMIPv6 Messages (154)";
+		case 155: return L"RPL Control Message (155)";
+		case 156: return L"ILNPv6 Locator Update Message (156)";
+		case 157: return L"Duplicate Address Request (157)";
+		case 158: return L"Duplicate Address Confirmation (158)";
+		case 159: return L"MPL Control Message (159)";
+		case 160: return L"Extended Echo Request (160)";
+		case 161: return L"Extended Echo Reply (161)";
+		case 200: return L"Private experimentation (200)";
+		case 201: return L"Private experimentation (201)";
+		case 255: return L"Reserved for expansion of ICMPv6 informational messages (255)";
+		default:
+			if ((type >= 5 && type <= 99) || (type >= 102 && type <= 126) || (type >= 162 && type <= 199) || (type >= 202 && type <= 254))
+			{
+				return L"Unassigned (" + std::to_wstring(type) + L")";
+			}
+			return L"Unknown ICMPv6 Type (" + std::to_wstring(type) + L")";
+		}
+	}
+	FAIL_FAST();
+}
+
+std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
+{
+	if (protocol == IPPROTO_ICMP)
+	{
+		switch (type)
+		{
+		case 3: // Destination Unreachable
+			switch (code)
+			{
+			case 0: return L"Net Unreachable (0)";
+			case 1: return L"Host Unreachable (1)";
+			case 2: return L"Protocol Unreachable (2)";
+			case 3: return L"Port Unreachable (3)";
+			case 4: return L"Fragmentation Needed and Don't Fragment was Set (4)";
+			case 5: return L"Source Route Failed (5)";
+			case 6: return L"Destination Network Unknown (6)";
+			case 7: return L"Destination Host Unknown (7)";
+			case 8: return L"Source Host Isolated (8)";
+			case 9: return L"Communication with Destination Network is Administratively Prohibited (9)";
+			case 10: return L"Communication with Destination Host is Administratively Prohibited (10)";
+			case 11: return L"Destination Network Unreachable for Type of Service (11)";
+			case 12: return L"Destination Host Unreachable for Type of Service (12)";
+			case 13: return L"Communication Administratively Prohibited (13)";
+			case 14: return L"Host Precedence Violation (14)";
+			case 15: return L"Precedence cutoff in effect (15)";
+			}
+			break;
+		case 5: // Redirect
+			switch (code)
+			{
+			case 0: return L"Redirect Datagram for the Network (0)";
+			case 1: return L"Redirect Datagram for the Host (1)";
+			case 2: return L"Redirect Datagram for the Type of Service and Network (2)";
+			case 3: return L"Redirect Datagram for the Type of Service and Host (3)";
+			}
+			break;
+		case 9: // Router Advertisement
+			switch (code)
+			{
+			case 0: return L"Normal router advertisement (0)";
+			case 16: return L"Does not route common traffic (16)";
+			}
+			break;
+		case 11: // Time Exceeded
+			switch (code)
+			{
+			case 0: return L"Time to Live exceeded in Transit (0)";
+			case 1: return L"Fragment Reassembly Time Exceeded (1)";
+			}
+			break;
+		case 12: // Parameter Problem
+			switch (code)
+			{
+			case 0: return L"Pointer indicates the error (0)";
+			case 1: return L"Missing a Required Option (1)";
+			case 2: return L"Bad Length (2)";
+			}
+			break;
+		case 40: // Photuris
+			switch (code)
+			{
+			case 0: return L"Reserved (0)";
+			case 1: return L"Unknown Security Parameters Index (1)";
+			case 2: return L"Valid Security Parameters, but Authentication Failed (2)";
+			case 3: return L"Valid Security Parameters, but Decryption Failed (3)";
+			}
+			break;
+		}
+		return L"Unknown Code (" + std::to_wstring(code) + L")";
+	}
+	if (protocol == IPPROTO_ICMPV6)
+	{
+		switch (type)
+		{
+		case 1: // Destination Unreachable
+			switch (code)
+			{
+			case 0: return L"No route to destination (0)";
+			case 1: return L"Communication with destination administratively prohibited (1)";
+			case 2: return L"Beyond scope of source address (2)";
+			case 3: return L"Address unreachable (3)";
+			case 4: return L"Port unreachable (4)";
+			case 5: return L"Source address failed ingress/egress policy (5)";
+			case 6: return L"Reject route to destination (6)";
+			case 7: return L"Error in Source Routing Header (7)";
+			case 8: return L"Headers too long (8)";
+			}
+			break;
+		case 3: // Time Exceeded
+			switch (code)
+			{
+			case 0: return L"Hop limit exceeded in transit (0)";
+			case 1: return L"Fragment reassembly time exceeded (1)";
+			}
+			break;
+		case 4: // Parameter Problem
+			switch (code)
+			{
+			case 0: return L"Erroneous header field encountered (0)";
+			case 1: return L"Unrecognized Next Header type encountered (1)";
+			case 2: return L"Unrecognized IPv6 option encountered (2)";
+			case 3: return L"IPv6 First Fragment has incomplete IPv6 Header Chain (3)";
+			}
+			break;
+		case 138: // Router Renumbering
+			switch (code)
+			{
+			case 0: return L"Router Renumbering Command (0)";
+			case 1: return L"Router Renumbering Result (1)";
+			case 255: return L"Sequence Number Reset (255)";
+			}
+			break;
+		case 139: // ICMP Node Information Query
+			switch (code)
+			{
+			case 0: return L"Data field contains an IPv6 address (0)";
+			case 1: return L"Data field contains a name (1)";
+			case 2: return L"Data field contains an IPv4 address (2)";
+			}
+			break;
+		case 140: // ICMP Node Information Response
+			switch (code)
+			{
+			case 0: return L"A successful reply (0)";
+			case 1: return L"The Responder refuses to supply the answer (1)";
+			case 2: return L"The Qtype of the Query is unknown to the Responder (2)";
+			}
+			break;
+		case 157: // Duplicate Address Request
+		{
+			switch (code)
+			{
+			case 0: return L"DAR message (0)";
+			case 1: return L"EDAR message with 64-bit ROVR field (1)";
+			case 2: return L"EDAR message with 128-bit ROVR field (2)";
+			case 3: return L"EDAR message with 192-bit ROVR field (3)";
+			case 4: return L"EDAR message with 256-bit ROVR field (4)";
+			}
+			if (code >= 5 && code <= 15)
+			{
+				return L"Unassigned (" + std::to_wstring(code) + L")";
+			}
+			break;
+		}
+		case 158: // Duplicate Address Confirmation
+			switch (code)
+			{
+			case 0: return L"DAC message (0)";
+			case 1: return L"EDAC message with 64-bit ROVR field (1)";
+			case 2: return L"EDAC message with 128-bit ROVR field (2)";
+			case 3: return L"EDAC message with 192-bit ROVR field (3)";
+			case 4: return L"EDAC message with 256-bit ROVR field (4)";
+			}
+			if (code >= 5 && code <= 15)
+			{
+				return L"Unassigned (" + std::to_wstring(code) + L")";
+			}
+			break;
+		}
+		return L"Unknown Code (" + std::to_wstring(code) + L")";
+	}
+	else
+	{
+		FAIL_FAST();
+	}
+}
+
 inline
 std::wstring
 PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
@@ -299,7 +577,9 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			if (net_event->header.ipProtocol == IPPROTO_ICMP || net_event->header.ipProtocol == IPPROTO_ICMPV6)
 			{
-				// TODO: ICMP/ICMPv6 does not have ports - but the port fields are used to communicate Type and Code
+				// ICMP/ICMPv6 does not have ports - but the port fields are used to communicate Type and Code
+				// LocalPort == ICMP Type
+				// RemotePort == ICMP Code
 			}
 			else
 			{
@@ -340,7 +620,9 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			if (net_event->header.ipProtocol == IPPROTO_ICMP || net_event->header.ipProtocol == IPPROTO_ICMPV6)
 			{
-				// TODO: ICMP/ICMPv6 does not have ports - but the port fields are used to communicate Type and Code
+				// ICMP/ICMPv6 does not have ports - but the port fields are used to communicate Type and Code
+				// LocalPort == ICMP Type
+				// RemotePort == ICMP Code
 			}
 			else
 			{
@@ -348,6 +630,23 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			}
 		}
 		result += L"\n";
+	}
+
+	if (net_event->header.ipProtocol == IPPROTO_ICMP || net_event->header.ipProtocol == IPPROTO_ICMPV6)
+	{
+		// ICMP/ICMPv6 does not have ports - but the port fields are used to communicate Type and Code
+		// LocalPort == ICMP Type
+		// RemotePort == ICMP Code
+		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
+		{
+			result += L"    ICMP Type: " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
+			result += L"\n";
+		}
+		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
+		{
+			result += L"    ICMP Code: " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
+			result += L"\n";
+		}
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_APP_ID_SET)
