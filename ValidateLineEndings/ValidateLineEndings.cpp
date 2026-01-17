@@ -27,7 +27,7 @@ bool g_only_process_damaged_crlf = false;
 bool g_only_process_disallowed_chars = false;
 
 bool g_fix_file_damaged_crlf = false;
-bool g_open_file_disallowed_chars = false;
+bool g_fix_disallowed_chars = false;
 
 std::vector<std::wstring> g_allowed_file_extensions_for_fixing_disallowed_chars;
 std::vector<std::wstring> g_blocked_file_extensions_for_fixing_disallowed_chars;
@@ -65,7 +65,7 @@ static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
 		filepath.extension());
 	if (is_blocked)
 	{
-		printf(" - skipping the file (%ws) from fixing disallowed characters.\n", filepath.c_str());
+		std::printf(" - skipping the file (%ws) from fixing disallowed characters.\n", filepath.c_str());
 		return false;
 	}
 
@@ -79,8 +79,9 @@ static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
 	}
 
 	// else prompt the user to allow that file extension
-	printf(" * Should files with the extension (%ws) be allowed to automatically be fixed? (y/n) ",
+	std::printf(" * Should files with the extension (%ws) be allowed to automatically be fixed? (y/n) ",
 		filepath.extension().c_str());
+
 	std::string response;
 	std::getline(std::cin, response);
 	if (!response.empty() && (response[0] == 'y' || response[0] == 'Y'))
@@ -91,10 +92,11 @@ static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
 	else
 	{
 		g_blocked_file_extensions_for_fixing_disallowed_chars.push_back(filepath.extension().wstring());
-		printf(" - skipping the file for fixing disallowed characters.\n");
+		std::printf(" - skipping the file for fixing disallowed characters.\n");
 		return false;
 	}
 }
+
 void ShellExecutePath(_In_ PCWSTR path) noexcept
 {
 	SHELLEXECUTEINFOW shellexec{};
@@ -105,14 +107,14 @@ void ShellExecutePath(_In_ PCWSTR path) noexcept
 	if (!ShellExecuteExW(&shellexec))
 	{
 		const auto gle = GetLastError();
-		printf("ShellExecuteEx failed - gle 0x%x ShellError 0x%p\n", gle, shellexec.hInstApp);
+		std::printf("ShellExecuteEx failed - gle 0x%x ShellError 0x%p\n", gle, shellexec.hInstApp);
 	}
 	else
 	{
-		printf("Hit Enter key after fixing the files .. ");
+		std::printf("Hit Enter key after fixing the files .. ");
 		std::string str;
 		std::getline(std::cin, str);
-		printf(" .. resuming\n");
+		std::printf(" .. resuming\n");
 	}
 }
 
@@ -120,6 +122,69 @@ constexpr uint8_t FORM_FEED = 0x0C;
 constexpr uint8_t CR = 0x0D; // '\r'
 constexpr uint8_t LF = 0x0A; // '\n'
 
+void FixUtf16BomInFile(const filesystem::path& filepath)
+{
+	WCHAR temp_filename[MAX_PATH]{};
+	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
+	if (temp_filename_error == 0)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed GetTempFileName: {}", gle);
+		return;
+	}
+
+	wil::unique_hfile temp_file_handle{ CreateFile(temp_filename, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) };
+	if (!temp_file_handle)
+	{
+		const auto gle = GetLastError();
+		println(stderr, "Failed CreateFile: {}", gle);
+		return;
+	}
+
+	const auto always_delete_temp_file = wil::scope_exit([&] {
+		DeleteFile(temp_filename);
+		});
+
+	// write the BOM
+	std::vector<uint8_t> modified_buffer;
+	modified_buffer.push_back(0xFF);
+	modified_buffer.push_back(0xFE);
+	if (!WriteFile(
+		temp_file_handle.get(),
+		modified_buffer.data(),
+		static_cast<DWORD>(modified_buffer.size()),
+		nullptr,
+		nullptr))
+	{
+		THROW_LAST_ERROR();
+	}
+
+	// now write the rest of the file
+	vector<uint8_t> buffer;
+	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);)
+	{
+		if (!WriteFile(
+			temp_file_handle.get(),
+			buffer.data(),
+			static_cast<DWORD>(buffer.size()),
+			nullptr,
+			nullptr))
+		{
+			THROW_LAST_ERROR();
+		}
+	}
+
+	// close the handle to our temp file, and move it over to the original file
+	temp_file_handle.reset();
+
+	std::printf("Replacing %ws\n", filepath.c_str());
+	if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
+	{
+		const auto gle = GetLastError();
+		std::printf("Failed MoveFileEx(%ws, %ws) : %d\n", temp_filename, filepath.c_str(), gle);
+		return;
+	}
+}
 void FixCrlfInFile(const filesystem::path& filepath)
 {
 	WCHAR temp_filename[MAX_PATH]{};
@@ -138,6 +203,10 @@ void FixCrlfInFile(const filesystem::path& filepath)
 		println(stderr, "Failed CreateFile: {}", gle);
 		return;
 	}
+
+	const auto always_delete_temp_file = wil::scope_exit([&] {
+		DeleteFile(temp_filename);
+		});
 
 	std::vector<uint8_t> modified_buffer;
 	modified_buffer.resize(static_cast<uint32_t>(BinaryFileReader::BlockSize * 1.25));
@@ -199,14 +268,13 @@ void FixCrlfInFile(const filesystem::path& filepath)
 	// close the handle to our temp file, and move it over to the original file
 	temp_file_handle.reset();
 
-	printf("Replacing %ws\n", filepath.c_str());
+	std::printf("Replacing %ws\n", filepath.c_str());
 	if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
 	{
 		const auto gle = GetLastError();
-		printf("Failed MoveFileEx(%ws, %ws) : %d", temp_filename, filepath.c_str(), gle);
+		std::printf("Failed MoveFileEx(%ws, %ws) : %d\n", temp_filename, filepath.c_str(), gle);
 		return;
 	}
-	DeleteFile(temp_filename);
 }
 void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
 {
@@ -230,12 +298,16 @@ void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
 		return;
 	}
 
+	const auto always_delete_temp_file = wil::scope_exit([&] {
+		DeleteFile(temp_filename);
+		});
+
 	bool file_fixed = false;
 	bool bom_checked = false;
 	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
 		if (!bom_checked)
 		{
-			if (Utf16Checker::Utf16Bom(buffer) != Utf16Checker::BomType::None)
+			if (Utf16Checker::Utf16Bom(buffer) != BomType::None)
 			{
 				return; // skip UTF-16 files
 			}
@@ -261,16 +333,14 @@ void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
 
 	if (file_fixed)
 	{
-		printf("Replacing %ws\n", filepath.c_str());
+		std::printf("Replacing %ws\n", filepath.c_str());
 		if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
 		{
 			const auto gle = GetLastError();
-			printf("Failed MoveFileEx(%ws, %ws) : %d", temp_filename, filepath.c_str(), gle);
+			std::printf("Failed MoveFileEx(%ws, %ws) : %d\n", temp_filename, filepath.c_str(), gle);
 			return;
 		}
 	}
-
-	DeleteFile(temp_filename);
 }
 
 static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
@@ -289,48 +359,62 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 		}
 		});
 
+	// first get the BOM type
+	BinaryFileReader bom_check_file{ filepath };
+	if (!bom_check_file.read_next_block(buffer))
+	{
+		// file is empty
+		return;
+	}
+	BomType bom_type = GetBomType(buffer);
+	bom_check_file.close_handle();
+
+	// not scanning known UTF16 files
+	if (bom_type == BomType::UTF16_LE)
+	{
+		if (!Utf16Checker::IsUtf16Allowed(filepath))
+		{
+			log_validation_failure(filepath, "file contains UTF-16 LE BOM - skipping");
+		}
+		return;
+	}
+	if (bom_type == BomType::UTF16_BE)
+	{
+		if (!Utf16Checker::IsUtf16Allowed(filepath))
+		{
+			log_validation_failure(filepath, "file contains UTF-16 BE BOM - skipping");
+		}
+		return;
+	}
+
+	// if the file looks like a UTF16LE formatted file - give it a BOM
+	// then exit - not supporting scanning of UTF16 files
+	if (bom_type == BomType::None_UTF16_LE_Formatted)
+	{
+		if (g_fix_file_damaged_crlf)
+		{
+			std::printf("%ws looks to have a UTF16-LE text pattern\n", filepath.c_str());
+			if (ShouldAutomaticallyFixFile(filepath))
+			{
+				FixUtf16BomInFile(filepath);
+			}
+		}
+		else
+		{
+			std::printf("%ws looks to have a UTF16-LE text pattern - skipping (specify -fix-damaged-crlf to automatically fix it)\n", filepath.c_str());
+		}
+		return;
+	}
+
 	size_t file_offset = 0;
 	size_t current_line = 1;
 	size_t disallowed_character_count = 0;
 	Utf8Checker utf8_checker;
 	uint8_t previous_ch = '\0';
-	bool has_utf8_bom = false;
-	bool bom_checked = false;
 	for (BinaryFileReader binary_file{ filepath }; binary_file.read_next_block(buffer);) {
-		if (!bom_checked)
-		{
-			has_utf8_bom = Utf8Checker::HasUtf8Bom(buffer);
-			switch (Utf16Checker::Utf16Bom(buffer))
-			{
-			case Utf16Checker::BomType::UTF16_LE:
-				if (filepath.has_extension() &&
-					(filepath.extension() == L".idl"))
-				{
-					// skip logging for .idl files
-				}
-				else
-				{
-					log_validation_failure(filepath, "file contains UTF-16 LE BOM - skipping");
-				}
-				return;
-			case Utf16Checker::BomType::UTF16_BE:
-				if (filepath.has_extension() &&
-					(filepath.extension() == L".idl"))
-				{
-					// skip logging for .idl files
-				}
-				else
-				{
-					log_validation_failure(filepath, "file contains UTF-16 BE BOM - skipping");
-				}
-				return;
-			}
-			bom_checked = true;
-		}
-
 		for (const auto& ch : buffer) {
 			++file_offset;
-			if (file_offset <= 3 && has_utf8_bom) {
+			if (file_offset <= 3 && bom_type == BomType::UTF8) {
 				// skip UTF-8 BOM characters
 				continue;
 			}
@@ -370,7 +454,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 							"file contains disallowed character 0x{:02X}: line {}",
 							static_cast<unsigned int>(ch),
 							current_line);
-						if (g_open_file_disallowed_chars)
+						if (g_fix_disallowed_chars)
 						{
 							ShellExecutePath(filepath.c_str());
 						}
@@ -443,13 +527,13 @@ void PrintHelp() noexcept
 	println();
 	println("optional parameters [specify only a single parameter]:");
 	println("  -h | --help : prints this help message");
-	println("  -fix-form-feed: removes the form-feed character from all source files");
 	println("  -print-skipped-files : print the list of skipped files and extensions to the console");
-	println("  -only-process-damaged-crlf : only report files that have damaged CRLF line endings");
-	println("  -only-process-disallowed-chars : only report files that have disallowed characters");
-	println("  -fix-file-damaged-crlf : will automatically fix each file with a damaged CRLF");
-	println("							will prompt to allow each unique file extension");
-	println("  -open-file-disallowed-chars : will ShellExecute each file with disallowed characters to be fixed");
+	println("  -fix-form-feed: removes the form-feed character from all source files");
+	println("  -fix-damaged-crlf : will automatically fix each file with a damaged CRLF");
+	println("                      will prompt to allow fixing each file extension");
+	println("  -fix-disallowed-chars : will ShellExecute each file with disallowed characters to be fixed");
+	println("  -process-damaged-crlf : only report files that have damaged CRLF line endings");
+	println("  -process-disallowed-chars : only report files that have disallowed characters");
 }
 int main(int argc, char** argv) {
 	if (argc == 2)
@@ -468,29 +552,29 @@ int main(int argc, char** argv) {
 			println("\nSkipped directories:");
 			for (const auto& dir : skipped_directories)
 			{
-				printf("%ls ", dir.data());
+				std::printf("%ls ", dir.data());
 			}
 			println("\n\nSkipped extensions:");
 			for (const auto& ext : skipped_extensions)
 			{
-				printf("%ls ", ext.data());
+				std::printf("%ls ", ext.data());
 			}
 			println("\n\nSkipped filenames:");
 			for (const auto& fname : skipped_filenames)
 			{
-				printf("%ls ", fname.data());
+				std::printf("%ls ", fname.data());
 			}
 			println("\n\nSkipped paths:");
 			for (const auto& p : skipped_paths)
 			{
-				printf("%ls ", p.data());
+				std::printf("%ls ", p.data());
 			}
 			println("\n\nSkipped path prefixes:");
 			for (const auto& p : skipped_path_prefixes)
 			{
-				printf("%ls ", p.data());
+				std::printf("%ls ", p.data());
 			}
-			printf("\n");
+			std::printf("\n");
 			return 0;
 		}
 
@@ -498,23 +582,23 @@ int main(int argc, char** argv) {
 		{
 			g_only_fix_form_feed_chars = true;
 		}
-		else if (arg == "-only-process-damaged-crlf")
+		else if (arg == "-process-damaged-crlf")
 		{
 			g_only_process_damaged_crlf = true;
 		}
-		else if (arg == "-only-process-disallowed-chars")
+		else if (arg == "-process-disallowed-chars")
 		{
 			g_only_process_disallowed_chars = true;
 		}
-		else if (arg == "-fix-file-damaged-crlf")
+		else if (arg == "-fix-damaged-crlf")
 		{
 			g_only_process_damaged_crlf = true;
 			g_fix_file_damaged_crlf = true;
 		}
-		else if (arg == "-open-file-disallowed-chars")
+		else if (arg == "-fix-disallowed-chars")
 		{
 			g_only_process_disallowed_chars = true;
-			g_open_file_disallowed_chars = true;
+			g_fix_disallowed_chars = true;
 		}
 		else
 		{
@@ -600,6 +684,11 @@ int main(int argc, char** argv) {
 			continue;
 		}
 
+		// separately skipping .log files, as needed
+		if (extension == L".log") {
+			continue; // skip .log files
+		}
+
 		if (g_only_fix_form_feed_chars)
 		{
 			if (ranges::binary_search(extensions_to_fix_form_feed, extension))
@@ -620,7 +709,7 @@ int main(int argc, char** argv) {
 	if (!g_only_fix_form_feed_chars)
 	{
 		println(stdout, " - Found {} files that have invalid characters that must be resolved.", g_validation_failure_count.load());
-		println(stdout, " - Logged to file {} files that have flagged characters to be removed.", g_validation_logged_count.load());
+		println(stdout, " - Logged to file {} files that are UTF16 that may need to be reviewed.", g_validation_logged_count.load());
 		return g_validation_failure_count;
 	}
 

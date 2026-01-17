@@ -26,11 +26,18 @@ public:
 		return !buffer.empty();
 	}
 
-	~BinaryFileReader() {
+	void close_handle()
+	{
 		if (m_file && fclose(m_file) != 0) {
 			std::println(stderr, "fclose() failed.");
 			abort();
 		}
+		m_file = nullptr;
+	}
+
+	~BinaryFileReader()
+	{
+		close_handle();
 	}
 
 	BinaryFileReader(const BinaryFileReader&) = delete;

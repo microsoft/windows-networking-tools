@@ -4,13 +4,40 @@
 #include <string_view>
 #include <vector>
 
+enum class BomType {
+	None,
+	UTF8,
+	UTF16_LE,
+	UTF16_BE,
+	None_UTF16_LE_Formatted
+};
+
 class Utf16Checker {
 public:
-	enum class BomType {
-		None,
-		UTF16_LE,
-		UTF16_BE
-	};
+	static bool IsUtf16Allowed(const std::filesystem::path& filepath) noexcept
+	{
+		using namespace std::string_view_literals;
+		static constexpr std::array utf16_file_extensions_allowed{
+			L""sv,
+			L".cs"sv,
+			L".csproj"sv,
+			L".csv"sv,
+			L".idl"sv,
+			L".ini"sv,
+			L".rc"sv,
+			L".rdp"sv,
+			L".wtl"sv,
+			L".xml"sv,
+		};
+		static_assert(std::ranges::is_sorted(utf16_file_extensions_allowed));
+
+		return (
+			filepath.has_extension()
+			&&
+			std::ranges::binary_search(
+				utf16_file_extensions_allowed,
+				filepath.extension().wstring()));
+	}
 
 	static BomType Utf16Bom(std::vector<uint8_t>& buffer) noexcept
 	{
@@ -31,24 +58,9 @@ public:
 
 	static bool NullByteAsPartOfUtf16Encoding(const std::filesystem::path& filepath, uint8_t ch) noexcept
 	{
-		using namespace std::string_view_literals;
-		constexpr std::array utf16_file_extensions_without_bom{
-			L".ini"sv,
-			L".rc"sv,
-			L".xml"sv,
-		};
-
-		if (filepath.has_extension() &&
-			std::ranges::find(
-				utf16_file_extensions_without_bom,
-				filepath.extension().wstring()) != utf16_file_extensions_without_bom.end()) {
-			if (ch == 0x00) {
-				// UTF-16 file without BOM - allow null bytes as part of the multibyte encoding
-				return true;
-			}
-		}
-
-		return false;
+		// UTF-16 file without BOM for known file types
+		// - allow null bytes as part of the multibyte encoding
+		return ((ch == 0x00) && IsUtf16Allowed(filepath));
 	}
 };
 
@@ -169,3 +181,35 @@ private:
 		previous = ch;
 	}
 };
+
+BomType GetBomType(std::vector<uint8_t>& buffer) noexcept
+{
+	if (Utf8Checker::HasUtf8Bom(buffer))
+	{
+		return BomType::UTF8;
+	}
+
+	const auto utf16_bom = Utf16Checker::Utf16Bom(buffer);
+	if (utf16_bom == BomType::UTF16_LE || utf16_bom == BomType::UTF16_BE)
+	{
+		return utf16_bom;
+	}
+
+	// check for UTF-16 LE formatted file without BOM
+	bool has_utf16_le_pattern = true;
+	for (auto count = 0; count < buffer.size(); ++count)
+	{
+		// quick check for a UTF16 formatted string: every other char is 0x00
+		if (count % 2 == 1)
+		{
+			if (buffer[count] != 0)
+			{
+				has_utf16_le_pattern = false;
+				break;
+			}
+		}
+	}
+
+	return has_utf16_le_pattern ? BomType::None_UTF16_LE_Formatted : BomType::None;
+}
+

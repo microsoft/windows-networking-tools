@@ -20,6 +20,7 @@ static_assert(std::ranges::is_sorted(skipped_directories));
 
 // not case-sensitive so can be mem-compared, and thus sorted for binary search
 static constexpr std::array skipped_extensions{
+	L""sv,
 	L".1"sv,
 	L".2"sv,
 	L".a"sv,
@@ -35,6 +36,7 @@ static constexpr std::array skipped_extensions{
 	L".asm"sv,
 	L".asset"sv,
 	L".avi"sv,
+	L".bc"sv,
 	L".bcd_"sv,
 	L".bin"sv,
 	L".bla"sv,
@@ -50,7 +52,9 @@ static constexpr std::array skipped_extensions{
 	L".cache"sv,
 	L".cat"sv,
 	L".cbs"sv,
+	L".cdf-ms"sv,
 	L".cer"sv,
+	L".cfg"sv,
 	L".chm"sv,
 	L".cip"sv,
 	L".clg"sv,
@@ -61,6 +65,7 @@ static constexpr std::array skipped_extensions{
 	L".dat"sv,
 	L".data"sv,
 	L".db"sv,
+	L".dbf"sv,
 	L".dbmdl"sv,
 	L".dds"sv,
 	L".def"sv,
@@ -87,11 +92,13 @@ static constexpr std::array skipped_extensions{
 	L".exe_"sv,
 	L".exp"sv,
 	L".fd"sv,
+	L".ffu"sv,
 	L".fig"sv,
 	L".fil"sv,
 	L".foo"sv,
 	L".fpie"sv,
 	L".fv"sv,
+	L".g4"sv,
 	L".gif"sv,
 	L".good"sv,
 	L".grl"sv,
@@ -107,12 +114,14 @@ static constexpr std::array skipped_extensions{
 	L".ibd"sv,
 	L".ico"sv,
 	L".ilk"sv,
+	L".imaginghelper"sv,
 	L".imb"sv,
 	L".imd"sv,
 	L".in"sv,
 	L".inc"sv,
 	L".inf"sv,
 	L".inx"sv,
+	L".iobj"sv,
 	L".ipch"sv,
 	L".ipynb"sv,
 	L".ism"sv,
@@ -175,6 +184,7 @@ static constexpr std::array skipped_extensions{
 	L".o"sv,
 	L".obj"sv,
 	L".ogg"sv,
+	L".old"sv,
 	L".one"sv,
 	L".onnx"sv,
 	L".out"sv,
@@ -187,12 +197,15 @@ static constexpr std::array skipped_extensions{
 	L".pbit"sv,
 	L".pbix"sv,
 	L".pch"sv,
+	L".pchast"sv,
 	L".pck"sv,
 	L".pdb"sv,
 	L".pdf"sv,
 	L".pfi"sv,
 	L".pfx"sv,
 	L".physicsmaterial2d"sv,
+	L".pl"sv,
+	L".pm"sv,
 	L".png"sv,
 	L".pngx"sv,
 	L".po"sv,
@@ -219,6 +232,8 @@ static constexpr std::array skipped_extensions{
 	L".renametozip"sv,
 	L".res"sv,
 	L".resources"sv,
+	L".rlib"sv,
+	L".rmeta"sv,
 	L".rtf"sv,
 	L".scc"sv,
 	L".sdb"sv,
@@ -226,6 +241,8 @@ static constexpr std::array skipped_extensions{
 	L".sdf"sv,
 	L".sdi"sv,
 	L".sdi_"sv,
+	L".shp"sv,
+	L".shx"sv,
 	L".snk"sv,
 	L".spd"sv,
 	L".spkg"sv,
@@ -236,6 +253,7 @@ static constexpr std::array skipped_extensions{
 	L".sym"sv,
 	L".sys"sv,
 	L".table"sv,
+	L".testhelper"sv,
 	L".tiff"sv,
 	L".tlb"sv,
 	L".trc"sv,
@@ -247,6 +265,7 @@ static constexpr std::array skipped_extensions{
 	L".vbs"sv,
 	L".vf"sv,
 	L".vhd"sv,
+	L".vhdx"sv,
 	L".vsd"sv,
 	L".vsdm"sv,
 	L".vsdx"sv,
@@ -267,6 +286,7 @@ static constexpr std::array skipped_extensions{
 	L".woff2"sv,
 	L".wprp"sv,
 	L".wsf"sv,
+	L".xbf"sv,
 	L".xla"sv,
 	L".xls"sv,
 	L".xlsx"sv,
@@ -287,6 +307,7 @@ static constexpr std::array skipped_filenames{
 	L".gitignore"sv,
 	L"_readme_first"sv,
 	L"bcd_"sv,
+	L"bcd_overlaylevel_3"sv,
 	L"bootstat"sv,
 	L"builder.resources"sv,
 	L"charprops-bmp"sv,
@@ -299,10 +320,12 @@ static constexpr std::array skipped_filenames{
 	L"mp3enc.lib.bak"sv,
 	L"mylock"sv,
 	L"nofile"sv,
+	L"output"sv,
 	L"pagefile"sv,
 	L"rca09728"sv,
 	L"rca22620"sv,
 	L"rca29348"sv,
+	L"rca36688"sv,
 	L"rca45952"sv,
 	L"rca88212"sv,
 	L"readme"sv,
@@ -314,7 +337,10 @@ static constexpr std::array skipped_filenames{
 	L"scratch"sv,
 	L"software"sv,
 	L"sources"sv,
+	L"stub512.w"sv,
 	L"system"sv,
+	L"system-empty"sv,
+	L"system-no-wpa"sv,
 	L"testsignature_bad"sv,
 	L"testsignature_good"sv,
 	L"verifyfile"sv,
@@ -322,50 +348,82 @@ static constexpr std::array skipped_filenames{
 static_assert(std::ranges::is_sorted(skipped_filenames));
 
 static constexpr std::array skipped_paths{
+	// under /minkernel/
 	L".\\boot\\environ\\app\\pwboot"sv,
 	L".\\boot\\firmware\\intel\\pinolem\\afu"sv,
 	L".\\boot\\firmware\\woa\\ti\\vegas2"sv,
+	
+	// under /onecore/base/
+	L".\\cbs\\unittests\\ref\\rebaseph\\negativemultiplepackages"sv,
 	L".\\ci\\test\\upolicymgmt\\testdata"sv,
+
+	// under /onecore/base/
 	L".\\compress\\msdelta2\\unittests\\api\\data\\set1"sv,
 	L".\\compress\\msdelta2\\unittests\\api\\data\\set2"sv,
 	L".\\compress\\msdelta\\bugs\\1"sv,
 	L".\\compress\\msdelta\\scripts"sv,
+
+	// under /minkernel/
 	L".\\devices\\devfilter\\fuzztest\\grammartest\\seeds"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\cntfs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\cntfs_dfs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\cntfs_remote"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\efs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\fat"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\fat32"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\fat32_dfs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\fat32_remote"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\fat_dfs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\fat_remote"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\ntfs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\ntfs_dfs"sv,
-	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\ntfs_remote"sv,
+
+	// under /base/
 	L".\\fs\\test\\nfs\\server\\cattests\\unixutils"sv,
 	L".\\fs\\test\\nfs\\server\\xrttests\\unixutils"sv,
+
+	// under /minkernel/
 	L".\\ium\\tests\\iumtests\\hpstress\\res"sv,
+
+	// under /onecore/base/
 	L".\\ngscb\\cornerstone\\tests\\helperlib\\testdata"sv,
 	L".\\ngscb\\hassrv\\tcglogparser\\functionaltests\\data"sv,
 	L".\\ngscb\\internaltools\\tbsloggenerator\\test\\logs"sv,
 	L".\\ngscb\\tpm\\vtpm\\win32um\\fuzzing\\fuzzer\\vtpminitfuzzer\\corpus"sv,
+
+	// under /minkernel/
 	L".\\ntos\\rtl\\test_lz4"sv,
+
+	// under /base/
 	L".\\ntsetup\\migration\\migcore\\testplatform\\common\\main"sv,
 	L".\\ntsetup\\migration\\migcore\\testplatform\\x86\\main"sv,
 	L".\\ntsetup\\migshared\\migutil\\test\\data"sv,
+
+	// under /base/
 	L".\\ptp\\provision\\bepa\\bootos"sv,
+
+	// under /onecore/base/
+	L".\\servicing\\unittests\\packages\\offlinetests\\overlappingcomponents"sv,
+
+	// under /minkernel/
 	L".\\tests\\ucrt\\crtlibc\\test\\clib\\libauto\\data"sv,
 	L".\\tests\\ucrt\\crtlibc\\test\\clib\\safeint\\arith_u_op_safeint_t"sv,
+
+	// under /onecore/base/
+	L".\\wcp\\unittests\\data\\com_store"sv,
+	L".\\wcp\\unittests\\data\\pcmc_test"sv,
+	L".\\wcp\\unittests\\data\\xml"sv,
 };
 static_assert(std::ranges::is_sorted(skipped_paths));
 
 static constexpr std::array skipped_path_prefixes{
+	// under /onecore/base/
 	L".\\cbs\\mobile\\unittests\\packages\\"sv,
+	L".\\cbs\\tests\\data\\driverservicing\\"sv,
+	L".\\cbs\\tests\\data\\packages\\"sv,
+	L".\\cbs\\tests\\data\\sessionservicing\\mpp_withcriticaldoq_poq"sv,
 	L".\\cbs\\unittests\\packages\\"sv,
+
+	// under /onecore/base/
 	L".\\compress\\msdelta2\\UnitTests\\api\\data\\"sv,
+
+	// under /base/
+	L".\\fs\\test\\cmdlineutilities\\robocopy\\out\\"sv,
+
+	// under /onecore/base/
+	L".\\servicing\\test\\testinput\\data\\"sv,
+	L".\\servicing\\unittests\\packages\\cimrecipetest"sv,
+
+	// under /onecore/base/
+	L".\\wcp\\unittests\\data\\com_store\\"sv,
 };
 static_assert(std::ranges::is_sorted(skipped_path_prefixes));
 
