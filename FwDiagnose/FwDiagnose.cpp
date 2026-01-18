@@ -9,6 +9,7 @@
 #include <Windows.h>
 #include <oaidl.h>
 #include <combaseapi.h>
+#include <userenv.h>
 #include <netfw.h>
 
 #include "FwDiagnose.h"
@@ -17,12 +18,114 @@
 #include "NormalizedFirewallRule.h"
 #include "WfpCounters.h"
 
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.ApplicationModel.h>
+#include <winrt/Windows.Management.Deployment.h>
 #include <wil/stl.h>
 #include <wil/registry.h>
 #include <wil/com.h>
 #include <wil/result.h>
 
 #include "WfpEvents.h"
+
+void EnumPackages()
+{
+    const winrt::Windows::Management::Deployment::PackageManager packageManager;
+    const auto packages = packageManager.FindPackages();
+
+	for (auto package : packages)
+	{
+		std::wcout << L"Package: " << package.Id().Name().c_str() << std::endl;
+		std::wcout << L"  Version: " << package.Id().Version().Major << L"."
+			<< package.Id().Version().Minor << L"."
+			<< package.Id().Version().Build << L"."
+			<< package.Id().Version().Revision << std::endl;
+		std::wcout << L"  Architecture: " << static_cast<uint16_t>(package.Id().Architecture()) << std::endl;
+		std::wcout << L"  ResourceId: " << package.Id().ResourceId().c_str() << std::endl;
+		std::wcout << L"  Publisher: " << package.Id().Publisher().c_str() << std::endl;
+		std::wcout << L"  PublisherId: " << package.Id().PublisherId().c_str() << std::endl;
+		std::wcout << L"  FullName: " << package.Id().FullName().c_str() << std::endl;
+		std::wcout << L"  FamilyName: " << package.Id().FamilyName().c_str() << std::endl;
+
+		PSID appcontainer_sid_from_full_name{};
+		HRESULT hr = DeriveAppContainerSidFromAppContainerName(package.Id().FullName().c_str(), &appcontainer_sid_from_full_name);
+		if (FAILED(hr))
+		{
+			std::printf("  -- Failed to derive AppContainer SID from FullName : 0x%x\n", hr);
+		}
+		PSID appcontainer_sid_from_family_name{};
+		hr = DeriveAppContainerSidFromAppContainerName(package.Id().FamilyName().c_str(), &appcontainer_sid_from_family_name);
+		if (FAILED(hr))
+		{
+			std::printf("  -- Failed to derive AppContainer SID from FamilyName : 0x%x\n", hr);
+		}
+
+		if (!appcontainer_sid_from_full_name && !appcontainer_sid_from_family_name)
+		{
+			std::wcout << L"  [No AppContainer SID available]" << std::endl;
+		}
+		else if (appcontainer_sid_from_full_name && appcontainer_sid_from_family_name)
+		{
+			if (EqualSid(appcontainer_sid_from_full_name, appcontainer_sid_from_family_name))
+			{
+				std::wcout << L"  [AppContainer SIDs from FullName and FamilyName match]" << std::endl;
+			}
+			else
+			{
+				std::wcout << L"  [AppContainer SIDs from FullName and FamilyName DO NOT match]" << std::endl;
+			}
+
+			LPWSTR sid_string{};
+			if (ConvertSidToStringSidW(appcontainer_sid_from_full_name, &sid_string))
+			{
+				std::wcout << L"  AppContainer SID (from FullName): " << sid_string << std::endl;
+				LocalFree(sid_string);
+			}
+			else
+			{
+				std::wcout << L"  -- Failed to convert AppContainer SID (from FullName) to string." << std::endl;
+			}
+			sid_string = nullptr;
+			if (ConvertSidToStringSidW(appcontainer_sid_from_family_name, &sid_string))
+			{
+				std::wcout << L"  AppContainer SID (from FamilyName): " << sid_string << std::endl;
+				LocalFree(sid_string);
+			}
+			else
+			{
+				std::wcout << L"  -- Failed to convert AppContainer SID (from FamilyName) to string." << std::endl;
+			}
+		}
+		else if (appcontainer_sid_from_full_name && !appcontainer_sid_from_family_name)
+		{
+			std::wcout << L"  [Only AppContainer SID from FullName is available]" << std::endl;
+			LPWSTR sid_string{};
+			if (ConvertSidToStringSidW(appcontainer_sid_from_full_name, &sid_string))
+			{
+				std::wcout << L"  AppContainer SID (from FullName): " << sid_string << std::endl;
+				LocalFree(sid_string);
+			}
+			else
+			{
+				std::wcout << L"  -- Failed to convert AppContainer SID (from FullName) to string." << std::endl;
+			}
+		}
+		else if (!appcontainer_sid_from_full_name && appcontainer_sid_from_family_name)
+		{
+			std::wcout << L"  [Only AppContainer SID from FamilyName is available]" << std::endl;
+			LPWSTR sid_string{};
+			if (ConvertSidToStringSidW(appcontainer_sid_from_family_name, &sid_string))
+			{
+				std::wcout << L"  AppContainer SID (from FamilyName): " << sid_string << std::endl;
+				LocalFree(sid_string);
+			}
+			else
+			{
+				std::wcout << L"  -- Failed to convert AppContainer SID (from FamilyName) to string." << std::endl;
+			}
+		}
+	}
+}
 
 // not static - shared with other files
 static bool g_debugPrint = false;
@@ -136,6 +239,8 @@ int __cdecl main(int argc, char* argv[]) try
 {
 	const auto coInit = wil::CoInitializeEx();
 	const auto wmi_supported = InitializeWfpPerfCounters();
+
+	EnumPackages();
 
 	std::vector<std::string> args;
 	for (int i = 1; i < argc; ++i)
