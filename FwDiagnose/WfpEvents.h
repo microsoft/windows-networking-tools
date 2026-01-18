@@ -85,13 +85,13 @@ DirectionToString(UINT32 direction)
 	switch (direction)
 	{
 	case 0x00003900L: // FWP_DIRECTION_IN:
-		return L"In (0x00003900L)";
+		return L"In";
 
 	case 0x00003901L: // FWP_DIRECTION_OUT:
-		return L"Out (0x00003901L)";
+		return L"Out";
 
 	case 0x00003902L: // FWP_DIRECTION_FORWARD:
-		return L"Forward (0x00003902L)";
+		return L"Forward";
 	}
 
 	return L"(unknown FWP_DIRECTION - " + std::to_wstring(direction) + L")";
@@ -103,14 +103,14 @@ ProfileToString(UINT32 profile)
 {
 	switch (profile)
 	{
-	case NL_INTERFACE_NETWORK_CATEGORY_STATE::NlincCategoryUnknown:
-		return L"Unknown (0)";
-	case NL_INTERFACE_NETWORK_CATEGORY_STATE::NlincPublic:
-		return L"Public (1)";
-	case NL_INTERFACE_NETWORK_CATEGORY_STATE::NlincPrivate:
-		return L"Private (2)";
-	case NL_INTERFACE_NETWORK_CATEGORY_STATE::NlincDomainAuthenticated:
-		return L"DomainAuthenticated (3)";
+	case NlincCategoryUnknown:
+		return L"Unknown";
+	case NlincPublic:
+		return L"Public";
+	case NlincPrivate:
+		return L"Private";
+	case NlincDomainAuthenticated:
+		return L"DomainAuthenticated";
 	}
 
 	return L"(unknown Profile - " + std::to_wstring(profile) + L")";
@@ -211,7 +211,11 @@ PrintNetEventType(const FWPM_NET_EVENT5* net_event)
 	}
 }
 
-std::wstring PrintIcmpType(UINT8 protocol, UINT16 type)
+// leveraged information from https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
+// and https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml
+inline
+std::wstring
+PrintIcmpType(UINT8 protocol, UINT16 type)
 {
 	if (protocol == IPPROTO_ICMP)
 	{
@@ -259,8 +263,8 @@ std::wstring PrintIcmpType(UINT8 protocol, UINT16 type)
 			{
 				return L"Unassigned (" + std::to_wstring(type) + L")";
 			}
-			return L"Unknown ICMP Type (" + std::to_wstring(type) + L")";
 		}
+		return L"Unknown ICMP Type (" + std::to_wstring(type) + L")";
 	}
 	if (protocol == IPPROTO_ICMPV6)
 	{
@@ -316,19 +320,21 @@ std::wstring PrintIcmpType(UINT8 protocol, UINT16 type)
 			{
 				return L"Unassigned (" + std::to_wstring(type) + L")";
 			}
-			return L"Unknown ICMPv6 Type (" + std::to_wstring(type) + L")";
 		}
 	}
-	FAIL_FAST();
+	return L"Unknown ICMPv6 Type (" + std::to_wstring(type) + L")";
 }
 
-std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
+inline
+std::wstring
+PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 {
 	if (protocol == IPPROTO_ICMP)
 	{
 		switch (type)
 		{
 		case 3: // Destination Unreachable
+		{
 			switch (code)
 			{
 			case 0: return L"Net Unreachable (0)";
@@ -349,7 +355,9 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 15: return L"Precedence cutoff in effect (15)";
 			}
 			break;
+		}
 		case 5: // Redirect
+		{
 			switch (code)
 			{
 			case 0: return L"Redirect Datagram for the Network (0)";
@@ -358,21 +366,27 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 3: return L"Redirect Datagram for the Type of Service and Host (3)";
 			}
 			break;
+		}
 		case 9: // Router Advertisement
+		{
 			switch (code)
 			{
 			case 0: return L"Normal router advertisement (0)";
 			case 16: return L"Does not route common traffic (16)";
 			}
 			break;
+		}
 		case 11: // Time Exceeded
+		{
 			switch (code)
 			{
 			case 0: return L"Time to Live exceeded in Transit (0)";
 			case 1: return L"Fragment Reassembly Time Exceeded (1)";
 			}
 			break;
+		}
 		case 12: // Parameter Problem
+		{
 			switch (code)
 			{
 			case 0: return L"Pointer indicates the error (0)";
@@ -380,16 +394,37 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 2: return L"Bad Length (2)";
 			}
 			break;
+		}
 		case 40: // Photuris
+		{
 			switch (code)
 			{
-			case 0: return L"Reserved (0)";
-			case 1: return L"Unknown Security Parameters Index (1)";
-			case 2: return L"Valid Security Parameters, but Authentication Failed (2)";
-			case 3: return L"Valid Security Parameters, but Decryption Failed (3)";
+			case 0: return L"Bad SPI (0)";
+			case 1: return L"Authentication Failed (1)";
+			case 2: return L"Decompression Failed (2)";
+			case 3: return L"Decryption Failed (3)";
+			case 4: return L"Need Authentication (4)";
+			case 5: return L"Need Authorization (5)";
 			}
 			break;
 		}
+		case 43: // Extended Echo Reply
+		{
+			switch (code)
+			{
+			case 0: return L"No Error (0)";
+			case 1: return L"Malformed Query (1)";
+			case 2: return L"No Such Interface (2)";
+			case 3: return L"No Such Table Entry (3)";
+			case 4: return L"Multiple Interfaces Satisfy Query (4)";
+			}
+			if (code >= 5 && code <= 255)
+			{
+				return L"Unassigned (" + std::to_wstring(code) + L")";
+			}
+			break;
+		}
+		} // switch (type)
 		return L"Unknown Code (" + std::to_wstring(code) + L")";
 	}
 	if (protocol == IPPROTO_ICMPV6)
@@ -397,6 +432,7 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		switch (type)
 		{
 		case 1: // Destination Unreachable
+		{
 			switch (code)
 			{
 			case 0: return L"No route to destination (0)";
@@ -408,25 +444,39 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 6: return L"Reject route to destination (6)";
 			case 7: return L"Error in Source Routing Header (7)";
 			case 8: return L"Headers too long (8)";
+			case 9: return L"Error in P-Route (9)";
 			}
 			break;
+		}
 		case 3: // Time Exceeded
+		{
 			switch (code)
 			{
 			case 0: return L"Hop limit exceeded in transit (0)";
 			case 1: return L"Fragment reassembly time exceeded (1)";
 			}
 			break;
+		}
 		case 4: // Parameter Problem
+		{
 			switch (code)
 			{
 			case 0: return L"Erroneous header field encountered (0)";
 			case 1: return L"Unrecognized Next Header type encountered (1)";
 			case 2: return L"Unrecognized IPv6 option encountered (2)";
 			case 3: return L"IPv6 First Fragment has incomplete IPv6 Header Chain (3)";
+			case 4: return L"SR Upper-layer Header Error (4)";
+			case 5: return L"Unrecognized Next Header type encountered by intermediate node (5)";
+			case 6: return L"Extension header too big (6)";
+			case 7: return L"Extension header chain too long (7)";
+			case 8: return L"Too many extension headers (8)";
+			case 9: return L"Too many options in extension header (9)";
+			case 10: return L"Option too big (10)";
 			}
 			break;
+		}
 		case 138: // Router Renumbering
+		{
 			switch (code)
 			{
 			case 0: return L"Router Renumbering Command (0)";
@@ -434,7 +484,9 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 255: return L"Sequence Number Reset (255)";
 			}
 			break;
+		}
 		case 139: // ICMP Node Information Query
+		{
 			switch (code)
 			{
 			case 0: return L"Data field contains an IPv6 address (0)";
@@ -442,7 +494,9 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 2: return L"Data field contains an IPv4 address (2)";
 			}
 			break;
+		}
 		case 140: // ICMP Node Information Response
+		{
 			switch (code)
 			{
 			case 0: return L"A successful reply (0)";
@@ -450,6 +504,7 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			case 2: return L"The Qtype of the Query is unknown to the Responder (2)";
 			}
 			break;
+		}
 		case 157: // Duplicate Address Request
 		{
 			switch (code)
@@ -467,6 +522,7 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			break;
 		}
 		case 158: // Duplicate Address Confirmation
+		{
 			switch (code)
 			{
 			case 0: return L"DAC message (0)";
@@ -481,6 +537,35 @@ std::wstring PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 			}
 			break;
 		}
+		case 160:
+		{
+			switch (code)
+			{
+			case 0: return L"No Error (0)";
+			}
+			if (code >= 1 && code <= 255)
+			{
+				return L"Unassigned (" + std::to_wstring(code) + L")";
+			}
+			break;
+		}
+		case 161:
+		{
+			switch (code)
+			{
+			case 0: return L"No Error (0)";
+			case 1: return L"Malformed Query (1)";
+			case 2: return L"No Such Interface (2)";
+			case 3: return L"No Such Table Entry (3)";
+			case 4: return L"Multiple Interfaces Satisfy Query (4)";
+			}
+			if (code >= 5 && code <= 255)
+			{
+				return L"Unassigned (" + std::to_wstring(code) + L")";
+			}
+			break;
+		}
+		} // switch (type)
 		return L"Unknown Code (" + std::to_wstring(code) + L")";
 	}
 	else
@@ -508,12 +593,85 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		std::to_wstring(local_time.wHour) + L":" +
 		std::to_wstring(local_time.wMinute) + L":" +
 		std::to_wstring(local_time.wSecond) + L"\n";
-
+	/*
 	result += L"    Flags: 0x" + std::to_wstring(net_event->header.flags) + L"\n";
-	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET)
+	UINT32 flags = net_event->header.flags;
+	if (flags & FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET)
 	{
-		result += L"    Processed as part of a Reauth event\n";
+		result += L"           IP-Protocol-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET;
 	}
+	if (flags & FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET)
+	{
+		result += L"           Local-Address-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET)
+	{
+		result += L"           Remote-Address-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
+	{
+		result += L"           Local-Port-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
+	{
+		result += L"           Remote-Port-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_APP_ID_SET)
+	{
+		result += L"           App-ID-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_APP_ID_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_USER_ID_SET)
+	{
+		result += L"           User-ID-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_USER_ID_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_SCOPE_ID_SET)
+	{
+		result += L"           Scope-ID-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_SCOPE_ID_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_IP_VERSION_SET)
+	{
+		result += L"           IP-Version-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_IP_VERSION_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET)
+	{
+		result += L"           Reauth-Reason-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET)
+	{
+		result += L"           Package-ID-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET)
+	{
+		result += L"           Enterprise-ID-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_POLICY_FLAGS_SET)
+	{
+		result += L"           Policy-Flags-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_POLICY_FLAGS_SET;
+	}
+	if (flags & FWPM_NET_EVENT_FLAG_EFFECTIVE_NAME_SET)
+	{
+		result += L"           Effective-Name-set\n";
+		flags &= ~FWPM_NET_EVENT_FLAG_EFFECTIVE_NAME_SET;
+	}
+
+	if (flags != 0)
+	{
+		result += L"           (unknown flags remaining: 0x" + std::to_wstring(flags) + L")\n";
+	}
+    */
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_IP_VERSION_SET)
 	{
@@ -642,10 +800,39 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			result += L"    ICMP Type: " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
 			result += L"\n";
 		}
+		else
+		{
+		    if (net_event->header.localPort != 0)
+		    {
+		        result += L"    ICMP Type (event flag not set): " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
+		        result += L"\n";
+		    }
+		}
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
 		{
 			result += L"    ICMP Code: " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
 			result += L"\n";
+		}
+		else
+		{
+		    if (net_event->header.localPort != 0)
+		    {
+		        result += L"    ICMP Type (event flag not set): " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
+		        result += L"\n";
+		    }
+		}
+		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
+		{
+			result += L"    ICMP Code: " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
+			result += L"\n";
+		}
+		else
+		{
+		    if (net_event->header.remotePort != 0)
+		    {
+		        result += L"    ICMP Code (event flag not set): " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
+		        result += L"\n";
+		    }
 		}
 	}
 
@@ -1012,6 +1199,7 @@ inline std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP
 {
 	std::wstring result;
 
+	result += L"    Direction: " + DirectionToString(event->msFwpDirection) + L"\n";
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	result += L"    LayerId: " + std::to_wstring(event->layerId) + L"\n";
 
@@ -1036,8 +1224,6 @@ inline std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP
 		// writing out that it's not loopback isn't useful
 		result += L"    IsLoopback: True\n";
 	}
-
-	result += L"    MsFwpDirection: " + DirectionToString(event->msFwpDirection) + L"\n";
 
 	if (event->vSwitchId.size > 0 && event->vSwitchId.data)
 	{
@@ -1140,6 +1326,7 @@ inline std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALL
 {
 	std::wstring result;
 
+	result += L"    Direction: " + DirectionToString(event->msFwpDirection) + L"\n";
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	result += L"    LayerId: " + std::to_wstring(event->layerId) + L"\n";
 	if (event->reauthReason != 0)
@@ -1163,8 +1350,6 @@ inline std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALL
 		// writing out that it's not loopback isn't useful
 		result += L"    IsLoopback: True\n";
 	}
-
-	result += L"    MsFwpDirection: " + DirectionToString(event->msFwpDirection) + L"\n";
 
 	return result;
 }
@@ -1257,6 +1442,7 @@ inline std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_D
 	}
 	result += L"\n";
 
+	result += L"    Direction: " + DirectionToString(event->msFwpDirection) + L"\n";
 	result += L"    MediaType: " + std::to_wstring(event->mediaType) + L"\n";
 	result += L"    IfType: " + std::to_wstring(event->ifType) + L"\n";
 	result += L"    EtherType: 0x" + std::to_wstring(event->etherType) + L"\n";
@@ -1287,8 +1473,6 @@ inline std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_D
 		// writing out that it's not loopback isn't useful
 		result += L"    IsLoopback: True\n";
 	}
-
-	result += L"    MsFwpDirection: " + DirectionToString(event->msFwpDirection) + L"\n";
 
 	if (event->vSwitchId.size > 0 && event->vSwitchId.data)
 	{
