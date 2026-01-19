@@ -239,6 +239,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AppContainers.cpp" />
     <ClCompile Include="FirewallRules.cpp" />
     <ClCompile Include="FwDiagnose.cpp" />
     <ClCompile Include="WfpCallouts.cpp" />
@@ -258,6 +259,7 @@
     <ClInclude Include="..\ctl\ctWmiInstance.hpp" />
     <ClInclude Include="..\ctl\ctWmiService.hpp" />
     <ClInclude Include="..\ctl\ctWmiVariant.hpp" />
+    <ClInclude Include="AppContainers.h" />
     <ClInclude Include="firewall.h" />
     <ClInclude Include="FirewallRules.h" />
     <ClInclude Include="FwDiagnose.h" />

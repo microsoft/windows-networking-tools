@@ -261,6 +261,11 @@ std::wstring PrintCallout(const GUID& calloutKey)
 }
 
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept
+{
+	return g_all_callouts;
+}
+
+void LoadWfpCallouts() noexcept
 try
 {
 	g_all_callouts.clear();
@@ -409,13 +414,10 @@ try
 			found_callout->driver_name = std::move(callout.driver_name);
 		}
 	}
-
-	return g_all_callouts;
 }
 catch (const std::exception& e)
 {
 	std::printf("*** Exception occurred while reading callouts : %hs\n", e.what());
-	return g_all_callouts;
 }
 
 static PCWSTR BuiltInCalloutsToString(const GUID& guid) noexcept

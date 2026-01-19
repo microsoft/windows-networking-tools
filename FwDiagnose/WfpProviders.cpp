@@ -132,6 +132,10 @@ std::wstring ProviderToString(const ProviderDetails& provider)
 }
 
 const std::vector<ProviderDetails>& ReadWfpProviders() noexcept
+{
+	return g_all_providers;
+}
+void LoadWfpProviders() noexcept
 try
 {
 	g_all_providers.clear();
@@ -217,13 +221,10 @@ try
 			// should never get here
 			FAIL_FAST();
 		});
-
-	return g_all_providers;
 }
 catch (const std::exception& e)
 {
 	std::printf("*** Exception occurred while reading providers : %hs\n", e.what());
-	return g_all_providers;
 }
 
 ProviderDetails& FindProvider(const GUID& providerKey)

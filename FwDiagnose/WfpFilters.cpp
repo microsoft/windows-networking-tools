@@ -21,8 +21,12 @@ static std::vector<FilterDetails> g_all_filters;
 * 
 static std::wstring FwpmConditionFieldToString(const GUID& fieldKey) noexcept;
 */
-
-const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
+const std::vector<FilterDetails>& ReadWfpFilters() noexcept
+{
+	return g_all_filters;
+}
+void LoadWfpFilters() noexcept
+try
 {
 	g_all_filters.clear();
 
@@ -31,7 +35,7 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 	auto fwpm_error = FwpmFilterCreateEnumHandle0(engine_handle, nullptr, &enum_handle);
 	if (fwpm_error != ERROR_SUCCESS)
 	{
-		if (verbose_output)
+		if (VerboseOutputEnabled())
 		{
 			std::printf("*** FwpmFilterCreateEnumHandle0 failed: %lu\n", fwpm_error);
 		}
@@ -51,7 +55,7 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 		fwpm_error = FwpmFilterEnum0(engine_handle, enum_handle, entries_quested, &entries, &numEntriesReturned);
 		if (fwpm_error != ERROR_SUCCESS)
 		{
-			if (verbose_output)
+			if (VerboseOutputEnabled())
 			{
 				std::printf("*** FwpmFilterEnum0 failed: %lu\n", fwpm_error);
 			}
@@ -126,7 +130,7 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 			}
 			catch (...)
 			{
-				if (verbose_output)
+				if (VerboseOutputEnabled())
 				{
 					std::printf(
 						"   Filter %ls in unknown sublayer %ls\n",
@@ -153,7 +157,7 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 				}
 				catch (...)
 				{
-					if (verbose_output)
+					if (VerboseOutputEnabled())
 					{
 
 						std::printf(
@@ -170,8 +174,10 @@ const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output)
 			break;
 		}
 	}
-
-	return g_all_filters;
+}
+catch (...)
+{
+	std::printf("*** Exception occurred while reading filters (0x%x)\n", wil::ResultFromCaughtException());
 }
 
 const std::vector<FilterDetails>& SortFilterDetailsByFilterId()
@@ -206,7 +212,7 @@ const FilterDetails& FindFilterByFilterId(UINT64 filter_id)
 			}
 
 			// if the filter ID wasn't found, we need to refresh the filters and try again
-			ReadWfpFilters(false);
+			LoadWfpFilters();
 			SortFilterDetailsByFilterId();
 			retried_when_not_found = true;
 		}

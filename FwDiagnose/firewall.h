@@ -47,7 +47,7 @@ extern "C" {
 		FW_STORE_TYPE_TENANT_RESTRICTIONS = FW_STORE_TYPE_NOT_USED_VALUE_12
 	};
 
-	enum FW_PROFILE_TYPE
+	enum FW_PROFILE_TYPE : uint32_t
 	{
 		FW_PROFILE_TYPE_INVALID = 0,
 		FW_PROFILE_TYPE_DOMAIN = 0x001,
@@ -243,7 +243,7 @@ extern "C" {
 		FW_IPV6_RANGE_LIST V6Ranges;
 	};
 
-	enum FW_RULE_STATUS
+	enum FW_RULE_STATUS : uint32_t
 	{
 		FW_RULE_STATUS_OK = 0x00010000,
 		// The rule was parsed successfully from the store.

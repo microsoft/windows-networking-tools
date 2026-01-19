@@ -15,6 +15,7 @@
 #include "firewall.h"
 #include "FirewallRules.h"
 #include "NormalizedFirewallRule.h"
+#include "AppContainers.h"
 
 #include <wil/stl.h>
 #include <wil/resource.h>
@@ -40,26 +41,1256 @@ static void PrintDeletionHeader(PCSTR str) noexcept
 }
 static PCSTR DeletionPrompt = "Delete all duplicates of this rule";
 
-// Load the necessary functions from the FirewallAPI DLL
-// as documented https://learn.microsoft.com/en-us/windows/win32/ics/firewall-functions
-void LoadFirewallFunctions()
+
+static FirewallPolicyObjects g_policy_objects[] =
 {
-	g_FirewallApiModule = LoadLibraryW(L"FirewallAPI.dll");
-	THROW_LAST_ERROR_IF(!g_FirewallApiModule);
-	g_FWOpenPolicyStore = reinterpret_cast<decltype(FWOpenPolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWOpenPolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	THROW_LAST_ERROR_IF_NULL(g_FWOpenPolicyStore);
-	g_FWClosePolicyStore = reinterpret_cast<decltype(FWClosePolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWClosePolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	THROW_LAST_ERROR_IF_NULL(g_FWClosePolicyStore);
-	g_FWEnumFirewallRules = reinterpret_cast<decltype(FWEnumFirewallRules)*>(GetProcAddress(g_FirewallApiModule, "FWEnumFirewallRules"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	THROW_LAST_ERROR_IF_NULL(g_FWEnumFirewallRules);
-	g_FWDeleteFirewallRule = reinterpret_cast<decltype(FWDeleteFirewallRule)*>(GetProcAddress(g_FirewallApiModule, "FWDeleteFirewallRule"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
-	THROW_LAST_ERROR_IF_NULL(g_FWDeleteFirewallRule);
-}
+	{.parent_rule = nullptr, .type_string = "Local", .type = FW_STORE_TYPE_LOCAL, .normalizedRules = {}},
+	// { .type= FW_STORE_TYPE_DYNAMIC, .type_string= "Dynamic", .normalizedRules = {}},
+	{.parent_rule = nullptr, .type_string = "Group Policy", .type = FW_STORE_TYPE_GPO, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Group Policy (RSOP)", .type = FW_STORE_TYPE_GP_RSOP, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Windows Service Hardening (Static)", .type = FW_STORE_TYPE_WSH_STATIC, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Windows Service Hardening (Configurable)", .type = FW_STORE_TYPE_WSH_CONFIGURABLE, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Interface-Isolation", .type = FW_STORE_TYPE_IF_ISO, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Interface-Isolation (Dynamic)", .type = FW_STORE_TYPE_IF_ISO_DYNAMIC, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Application-Isolation", .type = FW_STORE_TYPE_APP_ISO, .normalizedRules = {} },
+	{.parent_rule = nullptr, .type_string = "Mobile-Device-Management (MDM)" , .type = FW_STORE_TYPE_MDM, .normalizedRules = {}},
+	{.parent_rule = nullptr, .type_string = "Tenant Restrictions", .type = FW_STORE_TYPE_TENANT_RESTRICTIONS, .normalizedRules = {} }
+};
+
+namespace details
+{
+	// Load the necessary functions from the FirewallAPI DLL
+	// as documented https://learn.microsoft.com/en-us/windows/win32/ics/firewall-functions
+	static void LoadFirewallFunctions()
+	{
+		g_FirewallApiModule = LoadLibraryW(L"FirewallAPI.dll");
+		THROW_LAST_ERROR_IF(!g_FirewallApiModule);
+		g_FWOpenPolicyStore = reinterpret_cast<decltype(FWOpenPolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWOpenPolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
+		THROW_LAST_ERROR_IF_NULL(g_FWOpenPolicyStore);
+		g_FWClosePolicyStore = reinterpret_cast<decltype(FWClosePolicyStore)*>(GetProcAddress(g_FirewallApiModule, "FWClosePolicyStore"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
+		THROW_LAST_ERROR_IF_NULL(g_FWClosePolicyStore);
+		g_FWEnumFirewallRules = reinterpret_cast<decltype(FWEnumFirewallRules)*>(GetProcAddress(g_FirewallApiModule, "FWEnumFirewallRules"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
+		THROW_LAST_ERROR_IF_NULL(g_FWEnumFirewallRules);
+		g_FWDeleteFirewallRule = reinterpret_cast<decltype(FWDeleteFirewallRule)*>(GetProcAddress(g_FirewallApiModule, "FWDeleteFirewallRule"));  // NOLINT(clang-diagnostic-cast-function-type-strict)
+		THROW_LAST_ERROR_IF_NULL(g_FWDeleteFirewallRule);
+	}
+
+	static HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
+	{
+		if (g_policyStore)
+		{
+			const auto close_error = g_FWClosePolicyStore(g_policyStore);
+			if (close_error != ERROR_SUCCESS)
+			{
+				std::printf("  *** Failed to close previous firewall policy store. Error: 0x%lx\n", close_error);
+			}
+			g_policyStore = nullptr;
+		}
+
+		ChronoTimer timer;
+		timer.start("OpenPolicyStore");
+		const auto openStoreError = g_FWOpenPolicyStore(
+			FW_CURRENT_BINARY_VERSION,
+			nullptr,
+			policy.type,
+			CleanBrokenRulesEnabled() ? FW_POLICY_ACCESS_RIGHT_READ_WRITE : FW_POLICY_ACCESS_RIGHT_READ,
+			FW_POLICY_STORE_FLAGS_NONE,
+			&g_policyStore);
+		if (openStoreError != ERROR_SUCCESS)
+		{
+			if (openStoreError == ERROR_ACCESS_DENIED)
+			{
+				std::printf("\n  Administrative privileges required - try running from an elevated Administrator command prompt\n");
+			}
+			else if (openStoreError == ERROR_FILE_NOT_FOUND)
+			{
+				// std::printf("\n  The %s Firewall Policy Store does not exist on this system.", policy.type_string);
+			}
+			else
+			{
+				std::printf("\n  Failed to open firewall policy store. Error: 0x%lx\n", openStoreError);
+			}
+			return HRESULT_FROM_WIN32(openStoreError);
+		}
+		timer.end();
+
+		timer.start("EnumFirewallRules");
+		DWORD num_rules = 0;
+		const auto enumRulesError = g_FWEnumFirewallRules(
+			g_policyStore,
+			static_cast<DWORD>(FW_RULE_STATUS_CLASS_ALL),
+			FW_PROFILE_TYPE_ALL,
+			FW_ENUM_RULES_FLAG_INCLUDE_METADATA,
+			&num_rules,
+			&policy.parent_rule);
+		if (enumRulesError != ERROR_SUCCESS)
+		{
+			std::printf("  Failed to enumerate firewall rules. Error: 0x%lx\n", enumRulesError);
+			THROW_WIN32(enumRulesError);
+		}
+		timer.end();
+
+		// cannot FWFreeFirewallRules - we keep those pointers around to read later
+
+		timer.start("Normalizing Firewall rules into a vector");
+		FW_RULE* rule_iterator = policy.parent_rule;
+		while (rule_iterator)
+		{
+			policy.normalizedRules.emplace_back(NormalizedFirewallRule::BuildFromFWRule(rule_iterator));
+			rule_iterator = rule_iterator->pNext;
+		}
+		timer.end();
+
+		FAIL_FAST_IF(num_rules != policy.normalizedRules.size());
+
+		// std::printf("  * Found a total of %zu Firewall rules\n", policy.normalizedRules.size());
+		if (!policy.normalizedRules.empty())
+		{
+			timer.start("Sorting Firewall rules");
+			std::ranges::sort(
+				policy.normalizedRules,
+				[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+				{
+					return RuleDetailsComparison(lhs, rhs) < 0;
+				}
+			);
+			timer.end();
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+			}
+		}
+
+		return S_OK;
+	}
+
+	static void PrintRulesSortedOnFilterCounts(std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		if (!normalized_rules.empty())
+		{
+			// sort vectors of rules/filters by name so can do a binary search for rules by name
+			std::ranges::sort(
+				normalized_rules,
+				[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+				{
+					return lhs.ruleName < rhs.ruleName;
+				}
+			);
+			SortFilterDetailsByName();
+
+			size_t rule_name_count = 0;
+			decltype(normalized_rules.begin()) previous_iter{};
+			for (auto iter = normalized_rules.begin(); iter != normalized_rules.end(); ++iter)
+			{
+				if (iter == normalized_rules.begin())
+				{
+					previous_iter = iter;
+					continue;
+				}
+
+				const auto& rule_name = iter->ruleName;
+				const auto& previous_rule_name = previous_iter->ruleName;
+				if (rule_name == previous_rule_name)
+				{
+					if (rule_name_count == 0)
+					{
+						// first time we have seen this duplicate
+						rule_name_count = 2;
+					}
+					else
+					{
+						// have already seen this duplicate before
+						++rule_name_count;
+					}
+				}
+				else
+				{
+					// found a new unique firewall rule - check how many filters exist for the previous rule name
+					previous_iter->filter_count = CountFiltersByName(previous_rule_name);
+					previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
+					previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
+					rule_name_count = 0;
+				}
+
+				previous_iter = iter;
+			}
+
+			// resort rules by # of filters
+			std::ranges::sort(
+				normalized_rules,
+				[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+				{
+					return lhs.filter_count > rhs.filter_count;
+				}
+			);
+
+			// write out the top x rules referenced by filters
+			const auto rule_count = VerboseOutputEnabled() ? 10u : 3u;
+
+			std::printf("\n");
+			std::printf("  * Top %u rules based off of total numbers of filters\n", rule_count);
+			size_t rules_printed = 0;
+			for (const auto& rule_details : normalized_rules)
+			{
+				if (rule_details.filter_count == 0)
+				{
+					// remaining rules are not referenced by any filters
+					break;
+				}
+
+				if (rule_details.duplicate_rule_count > 1)
+				{
+					std::printf("    [%zu] '%ls' [ %zu rules match this name ]\n",
+						rule_details.filter_count,
+						rule_details.ruleName.value.c_str(),
+						rule_details.duplicate_rule_count);
+				}
+				else
+				{
+					std::printf("    [%zu] '%ls'\n",
+						rule_details.filter_count,
+						rule_details.ruleName.value.c_str());
+				}
+
+				++rules_printed;
+				if (rules_printed >= rule_count)
+				{
+					break;
+				}
+			}
+
+			// resort rules by # of filters conditions
+			std::ranges::sort(
+				normalized_rules,
+				[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+				{
+					return lhs.filter_condition_count > rhs.filter_condition_count;
+				}
+			);
+			// write out the top 10 rules referenced by filters
+			std::printf("\n");
+			std::printf("  * Top %u Firewall rules based off of filter conditions/rule\n", rule_count);
+			rules_printed = 0;
+			for (const auto& rule_details : normalized_rules)
+			{
+				if (rule_details.filter_condition_count == 0)
+				{
+					// remaining rules are not referenced by any filters
+					break;
+				}
+
+				if (rule_details.duplicate_rule_count > 1)
+				{
+					std::printf("    [%zu] '%ls' [ %zu rules match this name ]\n",
+						rule_details.filter_condition_count,
+						rule_details.ruleName.value.c_str(),
+						rule_details.duplicate_rule_count);
+				}
+				else
+				{
+					std::printf("    [%zu] '%ls'\n",
+						rule_details.filter_condition_count,
+						rule_details.ruleName.value.c_str());
+				}
+				++rules_printed;
+				if (rules_printed >= rule_count)
+				{
+					break;
+				}
+			}
+		}
+	}
+
+	static std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		std::vector<std::wstring> verbose_output_of_duplicate_strings;
+		std::vector<DuplicateRuleDetails> duplicate_rules;
+		for (auto currentIterator = normalized_rules.begin(); currentIterator != normalized_rules.end();)
+		{
+			// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
+			currentIterator = std::adjacent_find(
+				currentIterator,
+				normalized_rules.end(),
+				[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+				{
+					return RuleDetailsComparison(lhs, rhs) == 0;
+				}
+			);
+
+			if (currentIterator == normalized_rules.end())
+			{
+				// if adjacent_find returns the end iterator, there are no more adjacent entries that match
+				// in which case we should break out of the for loop
+				break;
+			}
+
+			const auto duplicate_rule_begin = currentIterator;
+
+			// currentIterator is currently pointing to the first of x number of duplicate rules
+			// iterate through normalized_rules until we hit the end of the vector
+			// or until RuleDetailsComparison returns false (i.e., we found the iterator past the last duplicate)
+			while (currentIterator != normalized_rules.end())
+			{
+				if (currentIterator + 1 == normalized_rules.end())
+				{
+					break;
+				}
+
+				if (RuleDetailsComparison(*currentIterator, *(currentIterator + 1)) != 0)
+				{
+					break;
+				}
+
+				++currentIterator;
+			}
+
+			// incrementing currentIterator so it points to next-rule-past the one that matched
+			// unless we hit the end of the vector
+			if (currentIterator != normalized_rules.end())
+			{
+				++currentIterator;
+			}
+
+			const auto duplicate_rule_end = currentIterator;
+
+			duplicate_rules.emplace_back(
+				DuplicateRuleDetails{
+					.duplicate_rule_begin = duplicate_rule_begin,
+					.duplicate_rule_end = duplicate_rule_end
+				});
+
+			std::wstring verbose_string;
+			if (duplicate_rule_begin->fwRule->wszLocalApplication)
+			{
+				verbose_string =
+					wil::str_printf<std::wstring>(
+						L"%ls:  %ls (Application-exe: '%ls')\n",
+						duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule_begin->ruleName.value.c_str(),
+						duplicate_rule_begin->fwRule->wszLocalApplication);
+			}
+			else
+			{
+				verbose_string =
+					wil::str_printf<std::wstring>(
+						L"%ls:  %ls\n",
+						duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule_begin->ruleName.value.c_str());
+			}
+
+			if (std::ranges::find(verbose_output_of_duplicate_strings, verbose_string) == verbose_output_of_duplicate_strings.end())
+			{
+				verbose_output_of_duplicate_strings.emplace_back(std::move(verbose_string));
+			}
+		}
+
+		size_t derived_total = 0;
+		for (const auto& rule : duplicate_rules)
+		{
+			derived_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
+		}
+
+		if (VerboseOutputEnabled() || !duplicate_rules.empty())
+		{
+			std::printf("  * Summary of duplicate analysis of firewall rules:\n");
+			std::printf("   - count of all duplicate rules: %zu\n", derived_total);
+			std::printf("   - count of unique rules with duplicates: %zu\n", duplicate_rules.size());
+			if (VerboseOutputEnabled() && !verbose_output_of_duplicate_strings.empty())
+			{
+				std::printf("   - unique rule names of duplicate rules:\n");
+				for (const auto& verbose_output : verbose_output_of_duplicate_strings)
+				{
+					std::printf("       %ls", verbose_output.c_str());
+				}
+			}
+		}
+		return duplicate_rules;
+	}
+
+	static void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rules)
+	{
+		bool printed_deletion_header = false;
+		bool delete_all_with_no_more_prompts = false;
+
+		for (const auto& duplicate_rule : duplicate_rules)
+		{
+			const auto duplicate_rule_total = std::distance(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end);
+			FAIL_FAST_IF(duplicate_rule_total == 0);
+
+			if (!printed_deletion_header)
+			{
+				printed_deletion_header = true;
+				PrintDeletionHeader("Deleting duplicate rules");
+			}
+
+			std::printf(
+				"\n"
+				"     %zd duplicates of this rule [%ls:  %ls]\n",
+				duplicate_rule_total,
+				duplicate_rule.duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+				duplicate_rule.duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule.duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule.duplicate_rule_begin->ruleName.value.c_str());
+
+			if (!delete_all_with_no_more_prompts)
+			{
+				switch (PromptForDeletion(DeletionPrompt))
+				{
+				case PromptResponse::Yes:
+					// continue to delete the duplicates of this rule
+					break;
+
+				case PromptResponse::No:
+					std::printf("       - Skipping this rule\n");
+					continue;
+
+				case PromptResponse::Skip:
+					std::printf("       - Skipping the remainder of the duplicate rules in this store\n");
+					return;
+
+				case PromptResponse::All:
+					std::printf("       - Deleting all duplicate rules in this store\n");
+					delete_all_with_no_more_prompts = true;
+					break;
+				}
+			}
+
+			// if the names are not the same, ask the user which to keep
+			bool allNamesMatch = true;
+			for (auto iter = duplicate_rule.duplicate_rule_begin; iter != duplicate_rule.duplicate_rule_end; ++iter)
+			{
+				auto next = iter + 1;
+				if (next == duplicate_rule.duplicate_rule_end)
+				{
+					break;
+				}
+				if (iter->ruleName != next->ruleName)
+				{
+					allNamesMatch = false;
+					break;
+				}
+			}
+
+			// by default keep the first rule
+			// if names don't match, ask the user which rule to keep
+			uint32_t rule_to_keep = 1;
+			if (!allNamesMatch)
+			{
+				uint32_t rule_count = 0;
+				uint32_t rule_listing = 0;
+
+				std::printf("\n     Duplicate rules have different names. Please choose which to keep:\n");
+
+				// cache the rule names so we don't present the same name multiple times
+				struct DuplicateRuleDetails
+				{
+					NormalizedString rule_name;
+					uint32_t rule_count;
+					uint32_t rule_listing;
+				};
+
+				// duplicate_rule_details will contain all unique names for duplicate rules
+				// this is to preset the user with a list of unique rule names to ask which to keep
+				// since we will delete all but one of the duplicates
+				std::vector<DuplicateRuleDetails> duplicate_rule_details;
+				for (const auto& rule : std::ranges::subrange(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end))
+				{
+					++rule_count;
+
+					bool rule_name_exists = false;
+					for (const auto& rule_detail : duplicate_rule_details)
+					{
+						if (rule_detail.rule_name == rule.ruleName)
+						{
+							// already listed this rule name, skip
+							rule_name_exists = true;
+							break;
+						}
+					}
+
+					// a new unique name for a duplicate rule
+					if (!rule_name_exists)
+					{
+						++rule_listing;
+						duplicate_rule_details.emplace_back(
+							DuplicateRuleDetails{
+								.rule_name = NormalizedString::Copy(rule.ruleName),
+								.rule_count = rule_count,
+								.rule_listing = rule_listing
+							});
+					}
+				}
+
+				// sort the rule names alphabetically to make presenting to the user nicer
+				std::ranges::sort(
+					duplicate_rule_details,
+					[](const DuplicateRuleDetails& lhs, const DuplicateRuleDetails& rhs)
+					{
+						return lhs.rule_name < rhs.rule_name;
+					});
+
+				// after sorting by name, renumber them
+				rule_listing = 0;
+				for (auto& rule_detail : duplicate_rule_details)
+				{
+					rule_detail.rule_listing = ++rule_listing;
+					std::printf("       %u. %ls\n", rule_detail.rule_listing, rule_detail.rule_name.value.c_str());
+				}
+
+				// now ask the user which rule to keep
+				std::wstring userInput;
+				for (;;)
+				{
+					std::printf("       Enter the number of the rule to keep: ");
+					userInput.clear();
+					std::getline(std::wcin, userInput);
+					const auto entered_rule_listing = std::wcstoul(userInput.c_str(), nullptr, 10);
+					if (entered_rule_listing < 1 || entered_rule_listing > rule_listing)
+					{
+						// invalid, ask the user again
+						continue;
+					}
+
+					// they chose the rule - find the rule_to_keep value matching it
+					for (const auto& rule_detail : duplicate_rule_details)
+					{
+						if (rule_detail.rule_listing == entered_rule_listing)
+						{
+							rule_to_keep = rule_detail.rule_count;
+							break;
+						}
+					}
+					break;
+				}
+			}
+
+			std::printf("       Deleting %zd duplicates of this rule, keeping 1\n", duplicate_rule_total - 1);
+
+			uint32_t delete_rule_counter = 0;
+			uint32_t successful_deletion_counter = 0;
+			for (auto& rule : std::ranges::subrange(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end))
+			{
+				++delete_rule_counter;
+				if (delete_rule_counter == rule_to_keep)
+				{
+					std::printf(
+						"        Keeping [%ls:  %ls]\n",
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
+					continue;
+				}
+
+				const auto deleteRuleError = g_FWDeleteFirewallRule(g_policyStore, rule.fwRule->wszRuleId);
+				if (deleteRuleError != ERROR_SUCCESS)
+				{
+					std::printf("        Failed to delete one of the duplicate firewall rules (0x%lx) - RuleId %ls\n", deleteRuleError, rule.fwRule->wszRuleId);
+				}
+				else
+				{
+					rule.ruleDeleted = true;
+					++successful_deletion_counter;
+					if (VerboseOutputEnabled())
+					{
+						std::printf("        Successfully deleted the duplicate firewall rule RuleId %ls\n", rule.fwRule->wszRuleId);
+					}
+				}
+			}
+
+			if (successful_deletion_counter > 0)
+			{
+				std::printf("        Successfully deleted %u duplicate firewall rules\n", successful_deletion_counter);
+			}
+		}
+	}
+
+	static void CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		size_t count_of_rules_with_local_application = 0;
+
+		std::vector<std::wstring> verbose_output_of_error_strings;
+
+		for (const auto& rule : normalized_rules)
+		{
+			if (rule.fwRule->wszLocalApplication)
+			{
+				++count_of_rules_with_local_application;
+
+				if (rule.targetApplicationExists.has_value() && !rule.targetApplicationExists.value())
+				{
+					verbose_output_of_error_strings.emplace_back(
+						wil::str_printf<std::wstring>(
+							L"     Application-exe:  '%ls'  [%ls:  %ls]\n",
+							rule.fwRule->wszLocalApplication,
+							rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+							rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+				}
+			}
+		}
+
+		if (VerboseOutputEnabled() || !verbose_output_of_error_strings.empty())
+		{
+			std::printf("  * Summary of application analysis of firewall rules:\n");
+			std::printf("   - count of rules with an application exe: %zu\n", count_of_rules_with_local_application);
+			std::printf("   - count of rules with an application exe referencing non-existing file: %zu\n", verbose_output_of_error_strings.size());
+			if (VerboseOutputEnabled() && !verbose_output_of_error_strings.empty())
+			{
+				std::printf("   - unique rule names of rules with an application exe referencing non-existing file:\n");
+				for (const auto& error_string : verbose_output_of_error_strings)
+				{
+					std::printf("%ls", error_string.c_str());
+				}
+			}
+		}
+	}
+
+	static void CheckForMissingAppPackage(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		size_t count_of_rules_with_local_app_package = 0;
+
+		std::vector<std::wstring> verbose_output_of_error_strings;
+
+		for (const auto& rule : normalized_rules)
+		{
+			if (rule.fwRule->wszPackageId) // wszPackageId == the Package ID SID
+			{
+				++count_of_rules_with_local_app_package;
+
+				const auto [name, exists] = FindPackageSid(rule.fwRule->wszPackageId);
+				if (exists == AppContainerName::None)
+				{
+					verbose_output_of_error_strings.emplace_back(
+						wil::str_printf<std::wstring>(
+							L"     Package-ID:  '%ls'  [%ls:  %ls]\n",
+							rule.fwRule->wszPackageId,
+							rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+							rule.ruleName.value.empty() ? rule.ruleId.c_str() : rule.ruleName.value.c_str()));
+				}
+			}
+		}
+
+		// if (VerboseOutputEnabled() || !verbose_output_of_error_strings.empty())
+		{
+			std::printf("  * Summary of app-package analysis of firewall rules:\n");
+			std::printf("   - count of rules with a package ID: %zu\n", count_of_rules_with_local_app_package);
+			std::printf("   - count of rules with package ID referencing non-existing package: %zu\n", verbose_output_of_error_strings.size());
+			if (VerboseOutputEnabled() && !verbose_output_of_error_strings.empty())
+			{
+				std::printf("   - unique rule names of rules with a package ID referencing non-existing package:\n");
+				for (const auto& error_string : verbose_output_of_error_strings)
+				{
+					std::printf("%ls", error_string.c_str());
+				}
+			}
+		}
+	}
+
+	static void DeleteMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		bool delete_all_with_no_more_prompts = false;
+		bool printed_deletion_header = false;
+
+		for (const auto& rule : normalized_rules)
+		{
+			if (rule.ruleDeleted)
+			{
+				continue;
+			}
+
+			if (!rule.targetApplicationExists.has_value())
+			{
+				// this rule was not checked for app file existence, skip it
+				continue;
+			}
+
+			if (rule.targetApplicationExists == true)
+			{
+				continue; // verified this file exists
+			}
+
+			if (!printed_deletion_header)
+			{
+				printed_deletion_header = true;
+				PrintDeletionHeader("Deleting rules with an application exe referencing non-existing file");
+			}
+
+			std::printf(
+				"\n"
+				"     Application-exe:  '%ls'  [%ls:  %ls]\n",
+				rule.fwRule->wszLocalApplication,
+				rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+				rule.ruleName.value.empty() ? rule.ruleId.c_str() : rule.ruleName.value.c_str());
+
+			if (!delete_all_with_no_more_prompts)
+			{
+				switch (PromptForDeletion(DeletionPrompt))
+				{
+				case PromptResponse::Yes:
+					// continue to delete this rule
+					break;
+
+				case PromptResponse::No:
+					std::printf("       - Skipping this rule\n");
+					continue;
+
+				case PromptResponse::Skip:
+					std::printf("       - Skipping the remainder of the rules with an application exe referencing non-existing file in this store\n");
+					return;
+
+				case PromptResponse::All:
+					std::printf("       - Deleting all rules with an application exe referencing non-existing file in this store\n");
+					delete_all_with_no_more_prompts = true;
+					break;
+				}
+			}
+
+			const auto deleteRuleError = g_FWDeleteFirewallRule(g_policyStore, rule.fwRule->wszRuleId);
+			if (deleteRuleError != ERROR_SUCCESS)
+			{
+				std::printf("       - Failed to delete the firewall rule (0x%lx)\n", deleteRuleError);
+			}
+			else
+			{
+				std::printf("       - Successfully deleted the firewall rule\n");
+			}
+		}
+	}
+
+	static void CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_rules, FW_STORE_TYPE store_type)
+	{
+		const bool check_for_local_profile = store_type == FW_STORE_TYPE_APP_ISO || store_type == FW_STORE_TYPE_IF_ISO;
+
+		/*
+		 * If a SID references a non-existing user account for an App-Isolation or Interface-Isolation rule, flag it to be deleted
+		 *
+			> reg query "HKLM\Software\Microsoft\Windows NT\CurrentVersion\ProfileList"
+
+			HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList
+				Default    REG_EXPAND_SZ    %SystemDrive%\Users\Default
+				ProfilesDirectory    REG_EXPAND_SZ    %SystemDrive%\Users
+				ProgramData    REG_EXPAND_SZ    %SystemDrive%\ProgramData
+				Public    REG_EXPAND_SZ    %SystemDrive%\Users\Public
+
+			HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-12-1-910410835-1306523740-2996082354-1245529378
+			HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-18
+			HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-19
+			HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-20
+			HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-99-486568272-975562994-1883531608-2732234258-332540751
+		*/
+
+		const auto convert_sid_to_name = [](PCWSTR sid_string) -> std::optional<std::tuple<std::wstring, std::wstring>>
+			{
+				std::wstring localUserOwnerName;
+				std::wstring localUserDomainName;
+
+				// process the local user owner string for string resources
+				wil::unique_sid localUserOwnerSid;
+				if (!ConvertStringSidToSid(sid_string, localUserOwnerSid.addressof()))
+				{
+					const auto gle = GetLastError();
+					if (VerboseOutputEnabled())
+					{
+						std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", sid_string, gle);
+					}
+					return std::nullopt;
+				}
+
+				DWORD localUserOwnerNameSize = 0;
+				DWORD cchReferencedDomainName = 0;
+				SID_NAME_USE sid_name_use{};
+				if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
+				{
+					if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+					{
+						localUserOwnerName.resize(localUserOwnerNameSize);
+						localUserDomainName.resize(cchReferencedDomainName);
+
+						if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
+						{
+							const auto gle = GetLastError();
+							if (DebugOutputEnabled())
+							{
+								std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, gle);
+							}
+							return std::nullopt;
+						}
+
+						if (DebugOutputEnabled())
+						{
+							if (localUserDomainName.empty())
+							{
+								std::printf("Successfully converted LocalUserOwner SID %ls to %ls\n", sid_string, localUserOwnerName.c_str());
+							}
+							else
+							{
+								std::printf("Successfully converted LocalUserOwner SID %ls to %ls\\%ls\n", sid_string, localUserDomainName.c_str(), localUserOwnerName.c_str());
+							}
+						}
+					}
+					else
+					{
+						const auto gle = GetLastError();
+						if (DebugOutputEnabled())
+						{
+							std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, gle);
+						}
+						return std::nullopt;
+					}
+				}
+				else
+				{
+					// should never happen
+					FAIL_FAST();
+				}
+
+				return std::make_tuple(localUserDomainName, localUserOwnerName);
+			};
+
+		std::vector<std::wstring> local_profile_sids;
+		if (check_for_local_profile)
+		{
+			if (VerboseOutputEnabled())
+			{
+				std::printf(
+					"  NOTE: Since this is an App-Isolation or Interface-Isolation store,\n"
+					"        rules with unresolved local user profiles are unnecessary and unused,\n"
+					"        as those rules are automatically recreated each time a local profile is created\n"
+					"\n");
+			}
+
+			if (DebugOutputEnabled())
+			{
+				std::printf("  * Querying local user profiles from the registry...\n");
+			}
+
+			const auto profile_key = wil::reg::open_unique_key(HKEY_LOCAL_MACHINE, LR"(Software\Microsoft\Windows NT\CurrentVersion\ProfileList)");
+			for (const auto& key_data : wil::make_range(wil::reg::key_iterator{ profile_key.get() }, wil::reg::key_iterator{}))
+			{
+				auto profile_sid = key_data.name;
+				const auto optional_name_conversion = convert_sid_to_name(profile_sid.c_str());
+				if (optional_name_conversion.has_value())
+				{
+					const auto& [domain_name, user_name] = optional_name_conversion.value();
+					if (DebugOutputEnabled())
+					{
+						std::printf("    Local profile SID: %ls  (%ls\\%ls)\n", profile_sid.c_str(), domain_name.c_str(), user_name.c_str());
+					}
+					local_profile_sids.emplace_back(std::move(profile_sid));
+				}
+				else
+				{
+					if (DebugOutputEnabled())
+					{
+						std::printf("    Local profile SID: %ls  (Failed to resolve the SID)\n", profile_sid.c_str());
+					}
+				}
+			}
+
+			if (DebugOutputEnabled())
+			{
+				std::printf("\n");
+			}
+		}
+
+		size_t count_of_rules_with_local_user_owner = 0;
+		std::vector<std::wstring> rules_with_unknown_sid_owners;
+		std::vector<std::wstring> rules_with_no_local_profile;
+		for (auto& rule : normalized_rules)
+		{
+			if (!rule.userNameResolvedSuccessfully.has_value())
+			{
+				continue;
+			}
+
+			++count_of_rules_with_local_user_owner;
+
+			if (!rule.userNameResolvedSuccessfully.value())
+			{
+				rules_with_unknown_sid_owners.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"    Unresolved SID:  '%ls'  [%ls:  %ls]\n",
+						rule.fwRule->wszLocalUserOwner,
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+			else if (check_for_local_profile)
+			{
+				// name resolved - check if there's a matching local profile
+				const auto found_local_user_owner_profile =
+					std::ranges::find_if(
+						local_profile_sids,
+						[&](const std::wstring& sid) {
+							return _wcsicmp(sid.c_str(), rule.fwRule->wszLocalUserOwner) == 0;
+						});
+
+				if (found_local_user_owner_profile == local_profile_sids.cend())
+				{
+					rule.userNameResolvedSuccessfullyWithLocalProfile = false;
+					rules_with_no_local_profile.emplace_back(
+						wil::str_printf<std::wstring>(
+							L"    Rule with a SID that failed to verify its local profile:  '%ls' (%ls\\%ls)\n"
+							L"      [%ls:  %ls]\n",
+							rule.fwRule->wszLocalUserOwner,
+							rule.localUserDomainName.c_str(),
+							rule.localUserOwnerName.c_str(),
+							rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+							rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+				}
+				else
+				{
+					rule.userNameResolvedSuccessfullyWithLocalProfile = true;
+					if (DebugOutputEnabled())
+					{
+						std::printf(
+							"    Rule with a SID matching a local profile:  '%ls' (%ls\\%ls)\n"
+							"      [%ls:  %ls]\n",
+							rule.fwRule->wszLocalUserOwner,
+							rule.localUserDomainName.c_str(),
+							rule.localUserOwnerName.c_str(),
+							rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+							rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
+
+					}
+				}
+			}
+		}
+
+		if (VerboseOutputEnabled() || !rules_with_unknown_sid_owners.empty() || !rules_with_no_local_profile.empty())
+		{
+			std::printf("  * Summary of SID owner analysis of firewall rules:\n");
+			std::printf("   - count of rules with LocalUserOwner SID: %zu\n", count_of_rules_with_local_user_owner);
+			std::printf("   - count of rules with LocalUserOwner SID referencing unresolved SID: %zu\n", rules_with_unknown_sid_owners.size());
+
+			if (check_for_local_profile)
+			{
+				std::printf("   - count of rules with LocalUserOwner SID referencing non-existing local profile: %zu\n", rules_with_no_local_profile.size());
+			}
+
+			if (VerboseOutputEnabled())
+			{
+				if (!rules_with_unknown_sid_owners.empty())
+				{
+					std::printf("     - rules with unresolved SIDs:\n");
+				}
+				for (const auto& error_string : rules_with_unknown_sid_owners)
+				{
+					std::printf("     %ls", error_string.c_str());
+				}
+
+				if (!rules_with_no_local_profile.empty())
+				{
+					std::printf("     - rules with no local profile:\n");
+				}
+				for (const auto& error_string : rules_with_no_local_profile)
+				{
+					std::printf("     %ls", error_string.c_str());
+				}
+			}
+		}
+	}
+
+	static void DeleteUnresolvedUserAccountRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		bool delete_all_with_no_more_prompts = false;
+		bool printed_deletion_header = false;
+
+		for (const auto& rule : normalized_rules)
+		{
+			if (rule.ruleDeleted)
+			{
+				continue;
+			}
+
+			if (!rule.userNameResolvedSuccessfully.has_value())
+			{
+				// this rule was not checked for user account existence, skip it
+				continue;
+			}
+
+			// prompt to delete if:
+			// - rule does not have a valid user account
+			// - rule has a valid user account but does not have a local profile (only for App-Isolation and Interface-Isolation stores)
+			std::wstring rule_to_delete;
+			if (!rule.userNameResolvedSuccessfully.value())
+			{
+				rule_to_delete =
+					wil::str_printf<std::wstring>(
+						L"\n"
+						L"  - Unresolved SID '%ls'  [%ls:  %ls]\n",
+						rule.fwRule->wszLocalUserOwner,
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
+			}
+
+			if (rule.userNameResolvedSuccessfullyWithLocalProfile.has_value())
+			{
+				// name resolved - only prompt if checking for local profile and rule does not have a local profile
+				if (!rule.userNameResolvedSuccessfullyWithLocalProfile.value())
+				{
+					rule_to_delete =
+						wil::str_printf<std::wstring>(
+							L"\n"
+							L"  - Valid SID but no local profile '%ls' (%ls\\%ls)\n"
+							L"      [%ls:  %ls]\n",
+							rule.fwRule->wszLocalUserOwner,
+							rule.localUserDomainName.c_str(),
+							rule.localUserOwnerName.c_str(),
+							rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+							rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
+				}
+			}
+
+			if (rule_to_delete.empty())
+			{
+				continue;
+			}
+
+			if (!printed_deletion_header)
+			{
+				printed_deletion_header = true;
+				PrintDeletionHeader("Deleting rules with unresolved SIDs or SIDs without local profiles:\n");
+			}
+
+			std::printf("%ls", rule_to_delete.c_str());
+
+			if (!delete_all_with_no_more_prompts)
+			{
+				switch (PromptForDeletion(DeletionPrompt))
+				{
+				case PromptResponse::Yes:
+					// continue to delete this rule
+					break;
+
+				case PromptResponse::No:
+					std::printf("       - Skipping this rule\n");
+					continue;
+
+				case PromptResponse::Skip:
+					std::printf("       -Skipping the remainder of the rules with unresolved SIDs in this store\n");
+					return;
+
+				case PromptResponse::All:
+					std::printf("       - Deleting all rules with unresolved SIDs in this store\n");
+					delete_all_with_no_more_prompts = true;
+					break;
+				}
+			}
+
+			const auto deleteRuleError = g_FWDeleteFirewallRule(g_policyStore, rule.fwRule->wszRuleId);
+			if (deleteRuleError != ERROR_SUCCESS)
+			{
+				std::printf("       - Failed to delete the firewall rule (0x%lx)\n", deleteRuleError);
+			}
+			else
+			{
+				std::printf("       - Successfully deleted the firewall rule\n");
+			}
+		}
+	}
+
+	static void FillRulesWithFilterDetails(std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		// sort vectors of rules/filters by name so can do a binary search for rules by name
+		std::ranges::sort(
+			normalized_rules,
+			[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+			{
+				return lhs.ruleName < rhs.ruleName;
+			}
+		);
+		SortFilterDetailsByName();
+
+		size_t rule_name_count = 0;
+		decltype(normalized_rules.begin()) previous_iter{};
+		for (auto iter = normalized_rules.begin(); iter != normalized_rules.end(); ++iter)
+		{
+			if (iter == normalized_rules.begin())
+			{
+				previous_iter = iter;
+				continue;
+			}
+
+			const auto& rule_name = iter->ruleName;
+			const auto& previous_rule_name = previous_iter->ruleName;
+			if (rule_name == previous_rule_name)
+			{
+				if (rule_name_count == 0)
+				{
+					// first time we have seen this duplicate
+					rule_name_count = 2;
+				}
+				else
+				{
+					// have already seen this duplicate before
+					++rule_name_count;
+				}
+			}
+			else
+			{
+				// found a new unique firewall rule - check how many filters exist for the previous rule name
+				previous_iter->filter_count = CountFiltersByName(previous_rule_name);
+				previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
+				previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
+				rule_name_count = 0;
+			}
+
+			previous_iter = iter;
+		}
+	}
+
+	static void CheckForRulesWithErrorStatus(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		size_t rules_with_no_errors = 0;
+
+		std::vector<std::wstring> verbose_rules_partially_ignored_error_strings;
+		std::vector<std::wstring> verbose_rules_completely_ignored_error_strings;
+		std::vector<std::wstring> verbose_rules_with_parsing_errors_error_strings;
+		std::vector<std::wstring> verbose_rules_with_semantic_errors_error_strings;
+		std::vector<std::wstring> verbose_rules_with_runtime_errors_error_strings;
+		std::vector<std::wstring> verbose_rules_with_unknown_errors_error_strings;
+
+		for (const auto& rule : normalized_rules)
+		{
+			if ((rule.fwRule->Status & FW_RULE_STATUS_OK) == FW_RULE_STATUS_OK)
+			{
+				++rules_with_no_errors;
+			}
+			else if ((rule.fwRule->Status & FW_RULE_STATUS_PARTIALLY_IGNORED) == FW_RULE_STATUS_PARTIALLY_IGNORED)
+			{
+				verbose_rules_partially_ignored_error_strings.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"A rule has some fields that were not understood and ignored:  %ls:  %ls\n",
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+			else if ((rule.fwRule->Status & FW_RULE_STATUS_IGNORED) == FW_RULE_STATUS_IGNORED)
+			{
+				verbose_rules_completely_ignored_error_strings.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"A rule was completely ignored:  %ls:  %ls\n",
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+			else if ((rule.fwRule->Status & FW_RULE_STATUS_PARSING_ERROR) == FW_RULE_STATUS_PARSING_ERROR)
+			{
+				verbose_rules_with_parsing_errors_error_strings.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"A rule has parsing error (0x%x):  %ls:  %ls\n",
+						rule.fwRule->Status,
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+			else if ((rule.fwRule->Status & FW_RULE_STATUS_SEMANTIC_ERROR) == FW_RULE_STATUS_SEMANTIC_ERROR)
+			{
+				verbose_rules_with_semantic_errors_error_strings.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"A rule has semantic error (0x%x):  %ls:  %ls\n",
+						rule.fwRule->Status,
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+			else if ((rule.fwRule->Status & FW_RULE_STATUS_RUNTIME_ERROR) == FW_RULE_STATUS_RUNTIME_ERROR)
+			{
+				verbose_rules_with_runtime_errors_error_strings.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"A rule has runtime error (0x%x):  %ls:  %ls\n",
+						rule.fwRule->Status,
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+			else
+			{
+				verbose_rules_with_unknown_errors_error_strings.emplace_back(
+					wil::str_printf<std::wstring>(
+						L"    A rule has unknown error status (0x%x):  %ls:  %ls\n",
+						rule.fwRule->Status,
+						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
+			}
+		}
+
+		if (!normalized_rules.empty())
+		{
+			std::printf("  * Summary of status analysis of firewall rules:\n");
+			std::printf("   - count of rules with no errors: %zu\n", rules_with_no_errors);
+
+			if (VerboseOutputEnabled() || !verbose_rules_partially_ignored_error_strings.empty())
+			{
+				std::printf("   - count of rules with partially ignored (some fields not understood): %zu\n", verbose_rules_partially_ignored_error_strings.size());
+				if (VerboseOutputEnabled())
+				{
+					for (const auto& error_string : verbose_rules_partially_ignored_error_strings)
+					{
+						std::printf("       %ls", error_string.c_str());
+					}
+				}
+			}
+
+			if (VerboseOutputEnabled() || !verbose_rules_completely_ignored_error_strings.empty())
+			{
+				std::printf("   - count of rules with completely ignored (newer schema with unknown fields): %zu\n", verbose_rules_completely_ignored_error_strings.size());
+				if (VerboseOutputEnabled())
+				{
+					for (const auto& error_string : verbose_rules_completely_ignored_error_strings)
+					{
+						std::printf("       %ls", error_string.c_str());
+					}
+				}
+			}
+
+			if (VerboseOutputEnabled() || !verbose_rules_with_parsing_errors_error_strings.empty())
+			{
+				std::printf("   - count of rules with parsing errors: %zu\n", verbose_rules_with_parsing_errors_error_strings.size());
+				if (VerboseOutputEnabled())
+				{
+					for (const auto& error_string : verbose_rules_with_parsing_errors_error_strings)
+					{
+						std::printf("       %ls", error_string.c_str());
+					}
+				}
+			}
+
+			if (VerboseOutputEnabled() || !verbose_rules_with_semantic_errors_error_strings.empty())
+			{
+				std::printf("   - count of rules with semantic errors: %zu\n", verbose_rules_with_semantic_errors_error_strings.size());
+				if (VerboseOutputEnabled())
+				{
+					for (const auto& error_string : verbose_rules_with_semantic_errors_error_strings)
+					{
+						std::printf("       %ls", error_string.c_str());
+					}
+				}
+			}
+
+			if (VerboseOutputEnabled() || !verbose_rules_with_runtime_errors_error_strings.empty())
+			{
+				std::printf("   - count of rules with runtime errors: %zu\n", verbose_rules_with_runtime_errors_error_strings.size());
+				if (VerboseOutputEnabled())
+				{
+					for (const auto& error_string : verbose_rules_with_runtime_errors_error_strings)
+					{
+						std::printf("       %ls", error_string.c_str());
+					}
+				}
+			}
+
+			if (VerboseOutputEnabled() || !verbose_rules_with_unknown_errors_error_strings.empty())
+			{
+				std::printf("   - count of rules with unknown errors: %zu\n", verbose_rules_with_unknown_errors_error_strings.size());
+				if (VerboseOutputEnabled())
+				{
+					for (const auto& error_string : verbose_rules_with_unknown_errors_error_strings)
+					{
+						std::printf("       %ls", error_string.c_str());
+					}
+				}
+			}
+		}
+	}
+} // namespace details
 
 bool HasFirewallAdminAccess()
 {
-	FW_POLICY_STORE_HANDLE test_handle = nullptr;
 	ChronoTimer timer;
+	FW_POLICY_STORE_HANDLE test_handle = nullptr;
+
 	timer.start("OpenPolicyStore");
 	const auto openStoreError = g_FWOpenPolicyStore(
 		FW_CURRENT_BINARY_VERSION,
@@ -81,990 +1312,148 @@ bool HasFirewallAdminAccess()
 	g_FWClosePolicyStore(test_handle);
 	return true;
 }
-HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
+
+HRESULT LoadFirewallRules() noexcept
+try
 {
-	if (g_policyStore)
+	details::LoadFirewallFunctions();
+	for (auto& policy : g_policy_objects)
 	{
-		const auto close_error = g_FWClosePolicyStore(g_policyStore);
-		if (close_error != ERROR_SUCCESS)
+		const auto load_error = details::LoadFirewallRulesFromStore(policy);
+		if (FAILED(load_error))
 		{
-			std::printf("  *** Failed to close previous firewall policy store. Error: 0x%lx\n", close_error);
-		}
-		g_policyStore = nullptr;
-	}
-
-	ChronoTimer timer;
-	timer.start("OpenPolicyStore");
-	const auto openStoreError = g_FWOpenPolicyStore(
-		FW_CURRENT_BINARY_VERSION,
-		nullptr,
-		policy.type,
-		CleanBrokenRulesEnabled() ? FW_POLICY_ACCESS_RIGHT_READ_WRITE : FW_POLICY_ACCESS_RIGHT_READ,
-		FW_POLICY_STORE_FLAGS_NONE,
-		&g_policyStore);
-	if (openStoreError != ERROR_SUCCESS)
-	{
-		if (openStoreError == ERROR_ACCESS_DENIED)
-		{
-			std::printf("\n  Administrative privileges required - try running from an elevated Administrator command prompt.");
-		}
-		else if (openStoreError == ERROR_FILE_NOT_FOUND)
-		{
-			std::printf("\n  The %s Firewall Policy Store does not exist on this system.", policy.type_string);
-		}
-		else
-		{
-			std::printf("\n  Failed to open firewall policy store. Error: 0x%lx", openStoreError);
-		}
-		return openStoreError;
-	}
-	timer.end();
-
-	timer.start("EnumFirewallRules");
-	DWORD num_rules = 0;
-	const auto enumRulesError = g_FWEnumFirewallRules(
-		g_policyStore,
-		static_cast<DWORD>(FW_RULE_STATUS_CLASS_ALL),
-		FW_PROFILE_TYPE_ALL,
-		FW_ENUM_RULES_FLAG_INCLUDE_METADATA,
-		&num_rules,
-		&policy.parent_rule);
-	if (enumRulesError != ERROR_SUCCESS)
-	{
-		std::printf("  Failed to enumerate firewall rules. Error: 0x%lx\n", enumRulesError);
-		THROW_WIN32(enumRulesError);
-	}
-	timer.end();
-
-	// cannot FWFreeFirewallRules - we keep those pointers around to read later
-
-	timer.start("Normalizing Firewall rules into a vector");
-	FW_RULE* rule_iterator = policy.parent_rule;
-	while (rule_iterator)
-	{
-		policy.normalizedRules.emplace_back(NormalizedFirewallRule::BuildFromFWRule(rule_iterator));
-		rule_iterator = rule_iterator->pNext;
-	}
-	timer.end();
-
-	FAIL_FAST_IF(num_rules != policy.normalizedRules.size());
-
-	// std::printf("  * Found a total of %zu Firewall rules\n", policy.normalizedRules.size());
-	if (!policy.normalizedRules.empty())
-	{
-		timer.start("Sorting Firewall rules");
-		std::ranges::sort(
-			policy.normalizedRules,
-			[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
+			if (load_error == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
 			{
-				return RuleDetailsComparison(lhs, rhs) < 0;
+				continue;
 			}
-		);
-		timer.end();
-		if (VerboseOutputEnabled())
-		{
-			std::printf("\n");
+			THROW_HR(load_error);
 		}
 	}
-
 	return S_OK;
 }
+CATCH_RETURN()
 
-std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules)
+HRESULT ProcessFirewallRules()
 {
-	std::vector<std::wstring> verbose_output_of_duplicate_strings;
-	std::vector<DuplicateRuleDetails> duplicate_rules;
-	for (auto currentIterator = normalized_rules.begin(); currentIterator != normalized_rules.end();)
+	std::wstring banner_header;
+	banner_header.insert(banner_header.begin(), 86, L'*');
+
+	for (auto& policy : g_policy_objects)
 	{
-		// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
-		currentIterator = std::adjacent_find(
-			currentIterator,
-			normalized_rules.end(),
-			[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-			{
-				return RuleDetailsComparison(lhs, rhs) == 0;
-			}
-		);
-
-		if (currentIterator == normalized_rules.end())
+		// cannot directly modify MDM or GP rules locally
+		if (CleanBrokenRulesEnabled())
 		{
-			// if adjacent_find returns the end iterator, there are no more adjacent entries that match
-			// in which case we should break out of the for loop
-			break;
-		}
-
-		const auto duplicate_rule_begin = currentIterator;
-
-		// currentIterator is currently pointing to the first of x number of duplicate rules
-		// iterate through normalized_rules until we hit the end of the vector
-		// or until RuleDetailsComparison returns false (i.e., we found the iterator past the last duplicate)
-		while (currentIterator != normalized_rules.end())
-		{
-			if (currentIterator + 1 == normalized_rules.end())
-			{
-				break;
-			}
-
-			if (RuleDetailsComparison(*currentIterator, *(currentIterator + 1)) != 0)
-			{
-				break;
-			}
-
-			++currentIterator;
-		}
-
-		// incrementing currentIterator so it points to next-rule-past the one that matched
-		// unless we hit the end of the vector
-		if (currentIterator != normalized_rules.end())
-		{
-			++currentIterator;
-		}
-
-		const auto duplicate_rule_end = currentIterator;
-
-		duplicate_rules.emplace_back(
-			DuplicateRuleDetails{
-				.duplicate_rule_begin = duplicate_rule_begin,
-				.duplicate_rule_end = duplicate_rule_end
-			});
-
-		std::wstring verbose_string;
-		if (duplicate_rule_begin->fwRule->wszLocalApplication)
-		{
-			verbose_string =
-				wil::str_printf<std::wstring>(
-					L"%ls:  %ls (Application-exe: '%ls')\n",
-					duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule_begin->ruleName.value.c_str(),
-					duplicate_rule_begin->fwRule->wszLocalApplication);
-		}
-		else
-		{
-			verbose_string =
-				wil::str_printf<std::wstring>(
-					L"%ls:  %ls\n",
-					duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule_begin->ruleName.value.c_str());
-		}
-
-		if (std::ranges::find(verbose_output_of_duplicate_strings, verbose_string) == verbose_output_of_duplicate_strings.end())
-		{
-			verbose_output_of_duplicate_strings.emplace_back(std::move(verbose_string));
-		}
-	}
-
-	size_t derived_total = 0;
-	for (const auto& rule : duplicate_rules)
-	{
-		derived_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
-	}
-
-	if (VerboseOutputEnabled() || !duplicate_rules.empty())
-	{
-		std::printf("  * Summary of duplicate analysis of firewall rules:\n");
-		std::printf("   - count of all duplicate rules: %zu\n", derived_total);
-		std::printf("   - count of unique rules with duplicates: %zu\n", duplicate_rules.size());
-		if (VerboseOutputEnabled() && !verbose_output_of_duplicate_strings.empty())
-		{
-			std::printf("   - unique rule names of duplicate rules:\n");
-			for (const auto& verbose_output : verbose_output_of_duplicate_strings)
-			{
-				std::printf("       %ls", verbose_output.c_str());
-			}
-		}
-	}
-	return duplicate_rules;
-}
-
-void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rules)
-{
-	bool printed_deletion_header = false;
-	bool delete_all_with_no_more_prompts = false;
-
-	for (const auto& duplicate_rule : duplicate_rules)
-	{
-		const auto duplicate_rule_total = std::distance(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end);
-		FAIL_FAST_IF(duplicate_rule_total == 0);
-
-		if (!printed_deletion_header)
-		{
-			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting duplicate rules");
-		}
-
-		std::printf(
-			"\n"
-			"     %zd duplicates of this rule [%ls:  %ls]\n",
-			duplicate_rule_total,
-			duplicate_rule.duplicate_rule_begin->ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-			duplicate_rule.duplicate_rule_begin->ruleName.value.empty() ? duplicate_rule.duplicate_rule_begin->fwRule->wszRuleId : duplicate_rule.duplicate_rule_begin->ruleName.value.c_str());
-
-		if (!delete_all_with_no_more_prompts)
-		{
-			switch (PromptForDeletion(DeletionPrompt))
-			{
-			case PromptResponse::Yes:
-				// continue to delete the duplicates of this rule
-				break;
-
-			case PromptResponse::No:
-				std::printf("       - Skipping this rule\n");
-				continue;
-
-			case PromptResponse::Skip:
-				std::printf("       - Skipping the remainder of the duplicate rules in this store\n");
-				return;
-
-			case PromptResponse::All:
-				std::printf("       - Deleting all duplicate rules in this store\n");
-				delete_all_with_no_more_prompts = true;
-				break;
-			}
-		}
-
-		// if the names are not the same, ask the user which to keep
-		bool allNamesMatch = true;
-		for (auto iter = duplicate_rule.duplicate_rule_begin; iter != duplicate_rule.duplicate_rule_end; ++iter)
-		{
-			auto next = iter + 1;
-			if (next == duplicate_rule.duplicate_rule_end)
-			{
-				break;
-			}
-			if (iter->ruleName != next->ruleName)
-			{
-				allNamesMatch = false;
-				break;
-			}
-		}
-
-		// by default keep the first rule
-		// if names don't match, ask the user which rule to keep
-		uint32_t rule_to_keep = 1;
-		if (!allNamesMatch)
-		{
-			uint32_t rule_count = 0;
-			uint32_t rule_listing = 0;
-
-			std::printf("\n     Duplicate rules have different names. Please choose which to keep:\n");
-
-			// cache the rule names so we don't present the same name multiple times
-			struct DuplicateRuleDetails
-			{
-				NormalizedString rule_name;
-				uint32_t rule_count;
-				uint32_t rule_listing;
-			};
-
-			// duplicate_rule_details will contain all unique names for duplicate rules
-			// this is to preset the user with a list of unique rule names to ask which to keep
-			// since we will delete all but one of the duplicates
-			std::vector<DuplicateRuleDetails> duplicate_rule_details;
-			for (const auto& rule : std::ranges::subrange(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end))
-			{
-				++rule_count;
-
-				bool rule_name_exists = false;
-				for (const auto& rule_detail : duplicate_rule_details)
-				{
-					if (rule_detail.rule_name == rule.ruleName)
-					{
-						// already listed this rule name, skip
-						rule_name_exists = true;
-						break;
-					}
-				}
-
-				// a new unique name for a duplicate rule
-				if (!rule_name_exists)
-				{
-					++rule_listing;
-					duplicate_rule_details.emplace_back(
-						DuplicateRuleDetails{
-							.rule_name = NormalizedString::Copy(rule.ruleName),
-							.rule_count = rule_count,
-							.rule_listing = rule_listing
-						});
-				}
-			}
-
-			// sort the rule names alphabetically to make presenting to the user nicer
-			std::ranges::sort(
-				duplicate_rule_details,
-				[](const DuplicateRuleDetails& lhs, const DuplicateRuleDetails& rhs)
-				{
-					return lhs.rule_name < rhs.rule_name;
-				});
-
-			// after sorting by name, renumber them
-			rule_listing = 0;
-			for (auto& rule_detail : duplicate_rule_details)
-			{
-				rule_detail.rule_listing = ++rule_listing;
-				std::printf("       %u. %ls\n", rule_detail.rule_listing, rule_detail.rule_name.value.c_str());
-			}
-
-			// now ask the user which rule to keep
-			std::wstring userInput;
-			for (;;)
-			{
-				std::printf("       Enter the number of the rule to keep: ");
-				userInput.clear();
-				std::getline(std::wcin, userInput);
-				const auto entered_rule_listing = std::wcstoul(userInput.c_str(), nullptr, 10);
-				if (entered_rule_listing < 1 || entered_rule_listing > rule_listing)
-				{
-					// invalid, ask the user again
-					continue;
-				}
-
-				// they chose the rule - find the rule_to_keep value matching it
-				for (const auto& rule_detail : duplicate_rule_details)
-				{
-					if (rule_detail.rule_listing == entered_rule_listing)
-					{
-						rule_to_keep = rule_detail.rule_count;
-						break;
-					}
-				}
-				break;
-			}
-		}
-
-		std::printf("       Deleting %zd duplicates of this rule, keeping 1\n", duplicate_rule_total - 1);
-
-		uint32_t delete_rule_counter = 0;
-		uint32_t successful_deletion_counter = 0;
-		for (auto& rule : std::ranges::subrange(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end))
-		{
-			++delete_rule_counter;
-			if (delete_rule_counter == rule_to_keep)
+			if (policy.type == FW_STORE_TYPE_MDM ||
+				policy.type == FW_STORE_TYPE_GPO ||
+				policy.type == FW_STORE_TYPE_GP_RSOP ||
+				policy.type == FW_STORE_TYPE_WSH_STATIC ||
+				policy.type == FW_STORE_TYPE_WSH_CONFIGURABLE)
 			{
 				std::printf(
-					"        Keeping [%ls:  %ls]\n",
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
+					"\n"
+					"%ls\n"
+					"  Skipping the %hs Firewall Policy Store\n"
+					"%ls\n"
+					"  NOTE: The %hs Firewall Policy Store cannot be modified locally.\n"
+					"        Skipping any deletion of rules in this store.\n",
+					banner_header.c_str(),
+					policy.type_string,
+					banner_header.c_str(),
+					policy.type_string);
 				continue;
 			}
-
-			const auto deleteRuleError = g_FWDeleteFirewallRule(g_policyStore, rule.fwRule->wszRuleId);
-			if (deleteRuleError != ERROR_SUCCESS)
-			{
-				std::printf("        Failed to delete one of the duplicate firewall rules (0x%lx) - RuleId %ls\n", deleteRuleError, rule.fwRule->wszRuleId);
-			}
-			else
-			{
-				rule.ruleDeleted = true;
-				++successful_deletion_counter;
-				if (DebugPrintEnabled())
-				{
-					std::printf("        Successfully deleted the duplicate firewall rule RuleId %ls\n", rule.fwRule->wszRuleId);
-				}
-			}
 		}
 
-		if (successful_deletion_counter > 0)
+		try
 		{
-			std::printf("        Successfully deleted %u duplicate firewall rules\n", successful_deletion_counter);
-		}
-	}
-}
+			auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the %hs Firewall Policy Store", policy.type_string);
+			const size_t prefix_spaces = (banner_header.size() - banner_output.size()) / 2;
+			banner_output.insert(0, prefix_spaces, L' ');
 
-void CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
-{
-	size_t count_of_rules_with_local_application = 0;
-
-	std::vector<std::wstring> verbose_output_of_error_strings;
-
-	for (const auto& rule : normalized_rules)
-	{
-		if (rule.fwRule->wszLocalApplication)
-		{
-			++count_of_rules_with_local_application;
-
-			if (rule.targetApplicationExists.has_value() && !rule.targetApplicationExists.value())
-			{
-				verbose_output_of_error_strings.emplace_back(
-					wil::str_printf<std::wstring>(
-						L"     Application-exe:  '%ls'  [%ls:  %ls]\n",
-						rule.fwRule->wszLocalApplication,
-						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-			}
-		}
-	}
-
-	if (VerboseOutputEnabled() || !verbose_output_of_error_strings.empty())
-	{
-		std::printf("  * Summary of application analysis of firewall rules:\n");
-		std::printf("   - count of rules with an application exe: %zu\n", count_of_rules_with_local_application);
-		std::printf("   - count of rules with an application exe referencing non-existing file: %zu\n", verbose_output_of_error_strings.size());
-		if (VerboseOutputEnabled() && !verbose_output_of_error_strings.empty())
-		{
-			std::printf("   - unique rule names of rules with an application exe referencing non-existing file:\n");
-			for (const auto& error_string : verbose_output_of_error_strings)
-			{
-				std::printf("%ls", error_string.c_str());
-			}
-		}
-	}
-}
-
-void DeleteMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
-{
-	bool delete_all_with_no_more_prompts = false;
-	bool printed_deletion_header = false;
-
-	for (const auto& rule : normalized_rules)
-	{
-		if (rule.ruleDeleted)
-		{
-			continue;
-		}
-
-		if (!rule.targetApplicationExists.has_value())
-		{
-			// this rule was not checked for app file existence, skip it
-			continue;
-		}
-
-		if (rule.targetApplicationExists == true)
-		{
-			continue; // verified this file exists
-		}
-
-		if (!printed_deletion_header)
-		{
-			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting rules with an application exe referencing non-existing file");
-		}
-
-		std::printf(
-			"\n"
-			"     Application-exe:  '%ls'  [%ls:  %ls]\n",
-			rule.fwRule->wszLocalApplication,
-			rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-			rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
-
-		if (!delete_all_with_no_more_prompts)
-		{
-			switch (PromptForDeletion(DeletionPrompt))
-			{
-			case PromptResponse::Yes:
-				// continue to delete this rule
-				break;
-
-			case PromptResponse::No:
-				std::printf("       - Skipping this rule\n");
-				continue;
-
-			case PromptResponse::Skip:
-				std::printf("       - Skipping the remainder of the rules with an application exe referencing non-existing file in this store\n");
-				return;
-
-			case PromptResponse::All:
-				std::printf("       - Deleting all rules with an application exe referencing non-existing file in this store\n");
-				delete_all_with_no_more_prompts = true;
-				break;
-			}
-		}
-
-		const auto deleteRuleError = g_FWDeleteFirewallRule(g_policyStore, rule.fwRule->wszRuleId);
-		if (deleteRuleError != ERROR_SUCCESS)
-		{
-			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", deleteRuleError);
-		}
-		else
-		{
-			std::printf("       - Successfully deleted the firewall rule\n");
-		}
-	}
-}
-
-void CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_rules, FW_STORE_TYPE store_type)
-{
-	const bool check_for_local_profile = store_type == FW_STORE_TYPE_APP_ISO || store_type == FW_STORE_TYPE_IF_ISO;
-
-	/*
-	 * If a SID references a non-existing user account for an App-Isolation or Interface-Isolation rule, flag it to be deleted
-	 *
-		> reg query "HKLM\Software\Microsoft\Windows NT\CurrentVersion\ProfileList"
-
-		HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList
-			Default    REG_EXPAND_SZ    %SystemDrive%\Users\Default
-			ProfilesDirectory    REG_EXPAND_SZ    %SystemDrive%\Users
-			ProgramData    REG_EXPAND_SZ    %SystemDrive%\ProgramData
-			Public    REG_EXPAND_SZ    %SystemDrive%\Users\Public
-
-		HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-12-1-910410835-1306523740-2996082354-1245529378
-		HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-18
-		HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-19
-		HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-20
-		HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-99-486568272-975562994-1883531608-2732234258-332540751
-	*/
-
-	const auto convert_sid_to_name = [](PCWSTR sid_string) -> std::optional<std::tuple<std::wstring, std::wstring>>
-		{
-			std::wstring localUserOwnerName;
-			std::wstring localUserDomainName;
-
-			// process the local user owner string for string resources
-			wil::unique_sid localUserOwnerSid;
-			if (!ConvertStringSidToSid(sid_string, localUserOwnerSid.addressof()))
-			{
-				const auto gle = GetLastError();
-				if (DebugPrintEnabled())
-				{
-					std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", sid_string, gle);
-				}
-				return std::nullopt;
-			}
-
-			DWORD localUserOwnerNameSize = 0;
-			DWORD cchReferencedDomainName = 0;
-			SID_NAME_USE sid_name_use{};
-			if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
-			{
-				if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-				{
-					localUserOwnerName.resize(localUserOwnerNameSize);
-					localUserDomainName.resize(cchReferencedDomainName);
-
-					if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
-					{
-						const auto gle = GetLastError();
-						if (DebugPrintEnabled())
-						{
-							std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, gle);
-						}
-						return std::nullopt;
-					}
-
-					if (DebugPrintEnabled())
-					{
-						if (localUserDomainName.empty())
-						{
-							std::printf("Successfully converted LocalUserOwner SID %ls to %ls\n", sid_string, localUserOwnerName.c_str());
-						}
-						else
-						{
-							std::printf("Successfully converted LocalUserOwner SID %ls to %ls\\%ls\n", sid_string, localUserDomainName.c_str(), localUserOwnerName.c_str());
-						}
-					}
-				}
-				else
-				{
-					const auto gle = GetLastError();
-					if (DebugPrintEnabled())
-					{
-						std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, gle);
-					}
-					return std::nullopt;
-				}
-			}
-			else
-			{
-				// should never happen
-				FAIL_FAST();
-			}
-
-			return std::make_tuple(localUserDomainName, localUserOwnerName);
-		};
-
-	std::vector<std::wstring> local_profile_sids;
-	if (check_for_local_profile)
-	{
-		if (VerboseOutputEnabled())
-		{
 			std::printf(
-				"  NOTE: Since this is an App-Isolation or Interface-Isolation store,\n"
-				"        rules with unresolved local user profiles are unnecessary and unused,\n"
-				"        as those rules are automatically recreated each time a local profile is created\n"
-				"\n");
-		}
+				"\n"
+				"%ls\n"
+				"%ls\n"
+				"%ls\n",
+				banner_header.c_str(),
+				banner_output.c_str(),
+				banner_header.c_str());
 
-		if (VerboseOutputEnabled())
-		{
-			std::printf("  * Querying local user profiles from the registry...\n");
-		}
+			ChronoTimer timer;
+			timer.start("FillRulesWithFilterDetails");
+			details::FillRulesWithFilterDetails(policy.normalizedRules);
+			timer.end();
 
-		const auto profile_key = wil::reg::open_unique_key(HKEY_LOCAL_MACHINE, LR"(Software\Microsoft\Windows NT\CurrentVersion\ProfileList)");
-		for (const auto& key_data : wil::make_range(wil::reg::key_iterator{ profile_key.get() }, wil::reg::key_iterator{}))
-		{
-			auto profile_sid = key_data.name;
-			const auto optional_name_conversion = convert_sid_to_name(profile_sid.c_str());
-			if (optional_name_conversion.has_value())
-			{
-				const auto& [domain_name, user_name] = optional_name_conversion.value();
-				if (VerboseOutputEnabled())
-				{
-					std::printf("    Local profile SID: %ls  (%ls\\%ls)\n", profile_sid.c_str(), domain_name.c_str(), user_name.c_str());
-				}
-				local_profile_sids.emplace_back(std::move(profile_sid));
-			}
-			else
-			{
-				if (VerboseOutputEnabled())
-				{
-					std::printf("    Local profile SID: %ls  (Failed to resolve the SID)\n", profile_sid.c_str());
-				}
-			}
-		}
+			timer.start("CheckForRulesWithErrorStatus");
+			details::CheckForRulesWithErrorStatus(policy.normalizedRules);
+			timer.end();
 
-		if (VerboseOutputEnabled())
-		{
-			std::printf("\n");
-		}
-	}
-
-	size_t count_of_rules_with_local_user_owner = 0;
-	std::vector<std::wstring> rules_with_unknown_sid_owners;
-	std::vector<std::wstring> rules_with_no_local_profile;
-	for (auto& rule : normalized_rules)
-	{
-		if (!rule.userNameResolvedSuccessfully.has_value())
-		{
-			continue;
-		}
-
-		++count_of_rules_with_local_user_owner;
-
-		if (!rule.userNameResolvedSuccessfully.value())
-		{
-			rules_with_unknown_sid_owners.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"    Unresolved SID:  '%ls'  [%ls:  %ls]\n",
-					rule.fwRule->wszLocalUserOwner,
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-		else if (check_for_local_profile)
-		{
-			// name resolved - check if there's a matching local profile
-			const auto found_local_user_owner_profile =
-				std::ranges::find_if(
-					local_profile_sids,
-					[&](const std::wstring& sid) {
-						return _wcsicmp(sid.c_str(), rule.fwRule->wszLocalUserOwner) == 0;
-					});
-
-			if (found_local_user_owner_profile == local_profile_sids.cend())
-			{
-				rule.userNameResolvedSuccessfullyWithLocalProfile = false;
-				rules_with_no_local_profile.emplace_back(
-					wil::str_printf<std::wstring>(
-						L"    Rule with a SID that failed to verify its local profile:  '%ls' (%ls\\%ls)\n"
-						L"      [%ls:  %ls]\n",
-						rule.fwRule->wszLocalUserOwner,
-						rule.localUserDomainName.c_str(),
-						rule.localUserOwnerName.c_str(),
-						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-			}
-			else
-			{
-				rule.userNameResolvedSuccessfullyWithLocalProfile = true;
-				if (DebugPrintEnabled())
-				{
-					std::printf(
-						"    Rule with a SID matching a local profile:  '%ls' (%ls\\%ls)\n"
-						"      [%ls:  %ls]\n",
-						rule.fwRule->wszLocalUserOwner,
-						rule.localUserDomainName.c_str(),
-						rule.localUserOwnerName.c_str(),
-						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
-
-				}
-			}
-		}
-	}
-
-	if (VerboseOutputEnabled() || !rules_with_unknown_sid_owners.empty() || !rules_with_no_local_profile.empty())
-	{
-		std::printf("  * Summary of SID owner analysis of firewall rules:\n");
-		std::printf("   - count of rules with LocalUserOwner SID: %zu\n", count_of_rules_with_local_user_owner);
-		std::printf("   - count of rules with LocalUserOwner SID referencing unresolved SID: %zu\n", rules_with_unknown_sid_owners.size());
-
-		if (check_for_local_profile)
-		{
-			std::printf("   - count of rules with LocalUserOwner SID referencing non-existing local profile: %zu\n", rules_with_no_local_profile.size());
-		}
-
-		if (VerboseOutputEnabled())
-		{
-			if (!rules_with_unknown_sid_owners.empty())
-			{
-				std::printf("     - rules with unresolved SIDs:\n");
-			}
-			for (const auto& error_string : rules_with_unknown_sid_owners)
-			{
-				std::printf("     %ls", error_string.c_str());
-			}
-
-			if (!rules_with_no_local_profile.empty())
-			{
-				std::printf("     - rules with no local profile:\n");
-			}
-			for (const auto& error_string : rules_with_no_local_profile)
-			{
-				std::printf("     %ls", error_string.c_str());
-			}
-		}
-	}
-}
-
-void DeleteUnresolvedUserAccountRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
-{
-	bool delete_all_with_no_more_prompts = false;
-	bool printed_deletion_header = false;
-
-	for (const auto& rule : normalized_rules)
-	{
-		if (rule.ruleDeleted)
-		{
-			continue;
-		}
-
-		if (!rule.userNameResolvedSuccessfully.has_value())
-		{
-			// this rule was not checked for user account existence, skip it
-			continue;
-		}
-
-		// prompt to delete if:
-		// - rule does not have a valid user account
-		// - rule has a valid user account but does not have a local profile (only for App-Isolation and Interface-Isolation stores)
-		std::wstring rule_to_delete;
-		if (!rule.userNameResolvedSuccessfully.value())
-		{
-			rule_to_delete =
-				wil::str_printf<std::wstring>(
-					L"\n"
-					L"  - Unresolved SID '%ls'  [%ls:  %ls]\n",
-					rule.fwRule->wszLocalUserOwner,
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
-		}
-
-		if (rule.userNameResolvedSuccessfullyWithLocalProfile.has_value())
-		{
-			// name resolved - only prompt if checking for local profile and rule does not have a local profile
-			if (!rule.userNameResolvedSuccessfullyWithLocalProfile.value())
-			{
-				rule_to_delete =
-					wil::str_printf<std::wstring>(
-						L"\n"
-						L"  - Valid SID but no local profile '%ls' (%ls\\%ls)\n"
-						L"      [%ls:  %ls]\n",
-						rule.fwRule->wszLocalUserOwner,
-						rule.localUserDomainName.c_str(),
-						rule.localUserOwnerName.c_str(),
-						rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-						rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str());
-			}
-		}
-
-		if (rule_to_delete.empty())
-		{
-			continue;
-		}
-
-		if (!printed_deletion_header)
-		{
-			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting rules with unresolved SIDs or SIDs without local profiles:\n");
-		}
-
-		std::printf("%ls", rule_to_delete.c_str());
-
-		if (!delete_all_with_no_more_prompts)
-		{
-			switch (PromptForDeletion(DeletionPrompt))
-			{
-			case PromptResponse::Yes:
-				// continue to delete this rule
-				break;
-
-			case PromptResponse::No:
-				std::printf("       - Skipping this rule\n");
-				continue;
-
-			case PromptResponse::Skip:
-				std::printf("       -Skipping the remainder of the rules with unresolved SIDs in this store\n");
-				return;
-
-			case PromptResponse::All:
-				std::printf("       - Deleting all rules with unresolved SIDs in this store\n");
-				delete_all_with_no_more_prompts = true;
-				break;
-			}
-		}
-
-		const auto deleteRuleError = g_FWDeleteFirewallRule(g_policyStore, rule.fwRule->wszRuleId);
-		if (deleteRuleError != ERROR_SUCCESS)
-		{
-			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", deleteRuleError);
-		}
-		else
-		{
-			std::printf("       - Successfully deleted the firewall rule\n");
-		}
-	}
-}
-
-void CheckForRulesWithErrorStatus(const std::vector<NormalizedFirewallRule>& normalized_rules)
-{
-	size_t rules_with_no_errors = 0;
-
-	std::vector<std::wstring> verbose_rules_partially_ignored_error_strings;
-	std::vector<std::wstring> verbose_rules_completely_ignored_error_strings;
-	std::vector<std::wstring> verbose_rules_with_parsing_errors_error_strings;
-	std::vector<std::wstring> verbose_rules_with_semantic_errors_error_strings;
-	std::vector<std::wstring> verbose_rules_with_runtime_errors_error_strings;
-	std::vector<std::wstring> verbose_rules_with_unknown_errors_error_strings;
-
-	for (const auto& rule : normalized_rules)
-	{
-		if ((rule.fwRule->Status & FW_RULE_STATUS_OK) == FW_RULE_STATUS_OK)
-		{
-			++rules_with_no_errors;
-		}
-		else if ((rule.fwRule->Status & FW_RULE_STATUS_PARTIALLY_IGNORED) == FW_RULE_STATUS_PARTIALLY_IGNORED)
-		{
-			verbose_rules_partially_ignored_error_strings.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"A rule has some fields that were not understood and ignored:  %ls:  %ls\n",
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-		else if ((rule.fwRule->Status & FW_RULE_STATUS_IGNORED) == FW_RULE_STATUS_IGNORED)
-		{
-			verbose_rules_completely_ignored_error_strings.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"A rule was completely ignored:  %ls:  %ls\n",
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-		else if ((rule.fwRule->Status & FW_RULE_STATUS_PARSING_ERROR) == FW_RULE_STATUS_PARSING_ERROR)
-		{
-			verbose_rules_with_parsing_errors_error_strings.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"A rule has parsing error (0x%x):  %ls:  %ls\n",
-					rule.fwRule->Status,
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-		else if ((rule.fwRule->Status & FW_RULE_STATUS_SEMANTIC_ERROR) == FW_RULE_STATUS_SEMANTIC_ERROR)
-		{
-			verbose_rules_with_semantic_errors_error_strings.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"A rule has semantic error (0x%x):  %ls:  %ls\n",
-					rule.fwRule->Status,
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-		else if ((rule.fwRule->Status & FW_RULE_STATUS_RUNTIME_ERROR) == FW_RULE_STATUS_RUNTIME_ERROR)
-		{
-			verbose_rules_with_runtime_errors_error_strings.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"A rule has runtime error (0x%x):  %ls:  %ls\n",
-					rule.fwRule->Status,
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-		else
-		{
-			verbose_rules_with_unknown_errors_error_strings.emplace_back(
-				wil::str_printf<std::wstring>(
-					L"    A rule has unknown error status (0x%x):  %ls:  %ls\n",
-					rule.fwRule->Status,
-					rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					rule.ruleName.value.empty() ? rule.fwRule->wszRuleId : rule.ruleName.value.c_str()));
-		}
-	}
-
-	if (VerboseOutputEnabled() ||
-		!verbose_rules_partially_ignored_error_strings.empty() ||
-		!verbose_rules_completely_ignored_error_strings.empty() ||
-		!verbose_rules_with_parsing_errors_error_strings.empty() ||
-		!verbose_rules_with_semantic_errors_error_strings.empty() ||
-		!verbose_rules_with_runtime_errors_error_strings.empty() ||
-		!verbose_rules_with_unknown_errors_error_strings.empty())
-	{
-		std::printf("  * Summary of status analysis of firewall rules:\n");
-		std::printf("   - count of rules with no errors: %zu\n", rules_with_no_errors);
-
-		if (VerboseOutputEnabled() || !verbose_rules_partially_ignored_error_strings.empty())
-		{
-			std::printf("   - count of rules with partially ignored (some fields not understood): %zu\n", verbose_rules_partially_ignored_error_strings.size());
 			if (VerboseOutputEnabled())
 			{
-				for (const auto& error_string : verbose_rules_partially_ignored_error_strings)
-				{
-					std::printf("       %ls", error_string.c_str());
-				}
+				std::printf("\n");
 			}
-		}
+			timer.start("CheckForMissingAppRules");
+			details::CheckForMissingAppRules(policy.normalizedRules);
+			timer.end();
 
-		if (VerboseOutputEnabled() || !verbose_rules_completely_ignored_error_strings.empty())
-		{
-			std::printf("   - count of rules with completely ignored (newer schema with unknown fields): %zu\n", verbose_rules_completely_ignored_error_strings.size());
+
 			if (VerboseOutputEnabled())
 			{
-				for (const auto& error_string : verbose_rules_completely_ignored_error_strings)
-				{
-					std::printf("       %ls", error_string.c_str());
-				}
+				std::printf("\n");
 			}
-		}
+			timer.start("CheckForMissingAppPackage");
+			details::CheckForMissingAppPackage(policy.normalizedRules);
+			timer.end();
 
-		if (VerboseOutputEnabled() || !verbose_rules_with_parsing_errors_error_strings.empty())
-		{
-			std::printf("   - count of rules with parsing errors: %zu\n", verbose_rules_with_parsing_errors_error_strings.size());
+			if (CleanBrokenRulesEnabled())
+			{
+				std::printf("\n");
+				details::DeleteMissingAppRules(policy.normalizedRules);
+			}
+
 			if (VerboseOutputEnabled())
 			{
-				for (const auto& error_string : verbose_rules_with_parsing_errors_error_strings)
-				{
-					std::printf("       %ls", error_string.c_str());
-				}
+				std::printf("\n");
 			}
-		}
+			timer.start("CheckUnresolvedUserAccountRules");
+			details::CheckUnresolvedUserAccountRules(policy.normalizedRules, policy.type);
+			timer.end();
 
-		if (VerboseOutputEnabled() || !verbose_rules_with_semantic_errors_error_strings.empty())
-		{
-			std::printf("   - count of rules with semantic errors: %zu\n", verbose_rules_with_semantic_errors_error_strings.size());
+			if (CleanBrokenRulesEnabled())
+			{
+				std::printf("\n");
+				details::DeleteUnresolvedUserAccountRules(policy.normalizedRules);
+			}
+
 			if (VerboseOutputEnabled())
 			{
-				for (const auto& error_string : verbose_rules_with_semantic_errors_error_strings)
-				{
-					std::printf("       %ls", error_string.c_str());
-				}
+				std::printf("\n");
 			}
-		}
+			timer.start("Counting duplicate rules");
+			const auto duplicateRules = details::CheckForDuplicateRules(policy.normalizedRules);
+			timer.end();
 
-		if (VerboseOutputEnabled() || !verbose_rules_with_runtime_errors_error_strings.empty())
-		{
-			std::printf("   - count of rules with runtime errors: %zu\n", verbose_rules_with_runtime_errors_error_strings.size());
-			if (VerboseOutputEnabled())
+			if (CleanBrokenRulesEnabled())
 			{
-				for (const auto& error_string : verbose_rules_with_runtime_errors_error_strings)
-				{
-					std::printf("       %ls", error_string.c_str());
-				}
+				std::printf("\n");
+				details::DeleteDuplicateRules(duplicateRules);
 			}
-		}
 
-		if (VerboseOutputEnabled() || !verbose_rules_with_unknown_errors_error_strings.empty())
+			timer.start("PrintRulesSortedOnFilterCounts");
+			details::PrintRulesSortedOnFilterCounts(policy.normalizedRules);
+			timer.end();
+
+		}
+		catch (const wil::ResultException& ex)
 		{
-			std::printf("   - count of rules with unknown errors: %zu\n", verbose_rules_with_unknown_errors_error_strings.size());
-			if (VerboseOutputEnabled())
-			{
-				for (const auto& error_string : verbose_rules_with_unknown_errors_error_strings)
-				{
-					std::printf("       %ls", error_string.c_str());
-				}
-			}
+			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());  // NOLINT(clang-diagnostic-format)
+			return ex.GetErrorCode();
+		}
+		catch (const std::exception& ex)
+		{
+			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
+			return wil::ResultFromCaughtException();
 		}
 	}
+	return S_OK;
 }

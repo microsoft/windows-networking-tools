@@ -8,10 +8,13 @@
 
 #include <Windows.h>
 
-bool DebugPrintEnabled() noexcept;
+bool DebugOutputEnabled() noexcept;
+bool VerboseOutputEnabled() noexcept;
+bool AnalyzeRulesEnabled() noexcept;
 bool CleanBrokenRulesEnabled() noexcept;
 bool VerboseOutputEnabled() noexcept;
 bool WfpOutputEnabled() noexcept;
+bool WfpEventEnumerationEnabled() noexcept;
 
 enum class PromptResponse
 {
@@ -84,7 +87,7 @@ class ChronoTimer
 public:
 	void start(PCSTR output_string) noexcept
 	{
-		if (DebugPrintEnabled())
+		if (DebugOutputEnabled())
 		{
 			m_output_string = output_string;
 			m_startTime_ns = std::chrono::high_resolution_clock::now();
@@ -94,7 +97,7 @@ public:
 	// returns in milliseconds
 	void end() const noexcept
 	{
-		if (DebugPrintEnabled())
+		if (DebugOutputEnabled())
 		{
 			const auto endTime_ns = std::chrono::high_resolution_clock::now();
 			const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(endTime_ns - m_startTime_ns).count();

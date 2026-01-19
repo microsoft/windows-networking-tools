@@ -265,6 +265,10 @@ std::wstring SublayerToSimpleString(const SubLayerDetails& sublayer)
 }
 
 const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept
+{
+	return g_all_sublayers;
+}
+void LoadWfpSubLayers() noexcept
 try
 {
 	g_all_sublayers.clear();
@@ -328,13 +332,10 @@ try
 		{
 			return left.weight > right.weight;
 		});
-
-	return g_all_sublayers;
 }
 catch (const std::exception& e)
 {
 	std::printf("*** Exception occurred while reading sublayers : %hs\n", e.what());
-	return g_all_sublayers;
 }
 
 SubLayerDetails& FindSublayer(const GUID& subLayerKey)

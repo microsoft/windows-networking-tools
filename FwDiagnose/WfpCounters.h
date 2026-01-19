@@ -101,7 +101,8 @@ inline bool operator==(const NormalizedString& lhs, const FilterDetails& rhs) no
 	return lhs.value == rhs.name.value;
 }
 
-const std::vector<FilterDetails>& ReadWfpFilters(bool verbose_output);
+void LoadWfpFilters() noexcept;
+const std::vector<FilterDetails>& ReadWfpFilters() noexcept;
 
 const std::vector<FilterDetails>& SortFilterDetailsByFilterId();
 const FilterDetails& FindFilterByFilterId(UINT64 filter_id);
@@ -126,6 +127,8 @@ struct CalloutDetails
 	bool is_third_party_callout{ false };
 	bool name_is_non_ascii_string{ true };
 };
+
+void LoadWfpCallouts() noexcept;
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
 std::wstring GetInternalCalloutString(const CalloutDetails& callout);
 std::wstring PrintCallout(const CalloutDetails& callout);
@@ -143,6 +146,8 @@ struct SubLayerDetails
 	uint16_t weight{};
 	bool is_third_party_sublayer{ false };
 };
+
+void LoadWfpSubLayers() noexcept;
 const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept;
 SubLayerDetails& FindSublayer(const GUID& subLayerKey);
 std::wstring SublayerToString(const SubLayerDetails& sublayer);
@@ -160,6 +165,8 @@ struct ProviderDetails
 	size_t persistentFilterCount{};
 	bool is_third_party_provider{ false };
 };
+
+void LoadWfpProviders() noexcept;
 const std::vector<ProviderDetails>& ReadWfpProviders() noexcept;
 ProviderDetails& FindProvider(const GUID& providerKey);
 std::wstring ProviderToString(const ProviderDetails& provider);

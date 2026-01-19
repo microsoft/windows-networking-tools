@@ -14,22 +14,12 @@ struct DuplicateRuleDetails
 struct FirewallPolicyObjects
 {
 	FW_RULE* parent_rule{};
-	FW_STORE_TYPE type{};
 	PCSTR type_string{};
+	FW_STORE_TYPE type{};
 	std::vector<NormalizedFirewallRule> normalizedRules;
 };
 
-void LoadFirewallFunctions();
-HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy);
+HRESULT LoadFirewallRules() noexcept;
 bool HasFirewallAdminAccess();
 
-std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules);
-void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rules);
-
-void CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules);
-void DeleteMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules);
-
-void CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_rules, FW_STORE_TYPE store_type);
-void DeleteUnresolvedUserAccountRules(const std::vector<NormalizedFirewallRule>& normalized_rules);
-
-void CheckForRulesWithErrorStatus(const std::vector<NormalizedFirewallRule>& normalized_rules);
+HRESULT ProcessFirewallRules();

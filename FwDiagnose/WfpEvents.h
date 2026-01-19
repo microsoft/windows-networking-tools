@@ -1,4 +1,8 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 #pragma once
+
 #include <string>
 #include <fwpmu.h>
 #include <winsock2.h>

@@ -9,129 +9,36 @@
 #include <Windows.h>
 #include <oaidl.h>
 #include <combaseapi.h>
-#include <userenv.h>
 #include <netfw.h>
 
 #include "FwDiagnose.h"
+
+#include <thread>
+
 #include "firewall.h"
 #include "FirewallRules.h"
 #include "NormalizedFirewallRule.h"
 #include "WfpCounters.h"
+#include "WfpEvents.h"
 
-#include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.ApplicationModel.h>
-#include <winrt/Windows.Management.Deployment.h>
 #include <wil/stl.h>
 #include <wil/registry.h>
 #include <wil/com.h>
 #include <wil/result.h>
 
-#include "WfpEvents.h"
+#include "AppContainers.h"
 
-void EnumPackages()
+// manually turn on debug output for lower-level debugging
+static bool g_debugOutputEnabled = false;
+bool DebugOutputEnabled() noexcept
 {
-    const winrt::Windows::Management::Deployment::PackageManager packageManager;
-    const auto packages = packageManager.FindPackages();
-
-	for (auto package : packages)
-	{
-		std::wcout << L"Package: " << package.Id().Name().c_str() << std::endl;
-		std::wcout << L"  Version: " << package.Id().Version().Major << L"."
-			<< package.Id().Version().Minor << L"."
-			<< package.Id().Version().Build << L"."
-			<< package.Id().Version().Revision << std::endl;
-		std::wcout << L"  Architecture: " << static_cast<uint16_t>(package.Id().Architecture()) << std::endl;
-		std::wcout << L"  ResourceId: " << package.Id().ResourceId().c_str() << std::endl;
-		std::wcout << L"  Publisher: " << package.Id().Publisher().c_str() << std::endl;
-		std::wcout << L"  PublisherId: " << package.Id().PublisherId().c_str() << std::endl;
-		std::wcout << L"  FullName: " << package.Id().FullName().c_str() << std::endl;
-		std::wcout << L"  FamilyName: " << package.Id().FamilyName().c_str() << std::endl;
-
-		PSID appcontainer_sid_from_full_name{};
-		HRESULT hr = DeriveAppContainerSidFromAppContainerName(package.Id().FullName().c_str(), &appcontainer_sid_from_full_name);
-		if (FAILED(hr))
-		{
-			std::printf("  -- Failed to derive AppContainer SID from FullName : 0x%x\n", hr);
-		}
-		PSID appcontainer_sid_from_family_name{};
-		hr = DeriveAppContainerSidFromAppContainerName(package.Id().FamilyName().c_str(), &appcontainer_sid_from_family_name);
-		if (FAILED(hr))
-		{
-			std::printf("  -- Failed to derive AppContainer SID from FamilyName : 0x%x\n", hr);
-		}
-
-		if (!appcontainer_sid_from_full_name && !appcontainer_sid_from_family_name)
-		{
-			std::wcout << L"  [No AppContainer SID available]" << std::endl;
-		}
-		else if (appcontainer_sid_from_full_name && appcontainer_sid_from_family_name)
-		{
-			if (EqualSid(appcontainer_sid_from_full_name, appcontainer_sid_from_family_name))
-			{
-				std::wcout << L"  [AppContainer SIDs from FullName and FamilyName match]" << std::endl;
-			}
-			else
-			{
-				std::wcout << L"  [AppContainer SIDs from FullName and FamilyName DO NOT match]" << std::endl;
-			}
-
-			LPWSTR sid_string{};
-			if (ConvertSidToStringSidW(appcontainer_sid_from_full_name, &sid_string))
-			{
-				std::wcout << L"  AppContainer SID (from FullName): " << sid_string << std::endl;
-				LocalFree(sid_string);
-			}
-			else
-			{
-				std::wcout << L"  -- Failed to convert AppContainer SID (from FullName) to string." << std::endl;
-			}
-			sid_string = nullptr;
-			if (ConvertSidToStringSidW(appcontainer_sid_from_family_name, &sid_string))
-			{
-				std::wcout << L"  AppContainer SID (from FamilyName): " << sid_string << std::endl;
-				LocalFree(sid_string);
-			}
-			else
-			{
-				std::wcout << L"  -- Failed to convert AppContainer SID (from FamilyName) to string." << std::endl;
-			}
-		}
-		else if (appcontainer_sid_from_full_name && !appcontainer_sid_from_family_name)
-		{
-			std::wcout << L"  [Only AppContainer SID from FullName is available]" << std::endl;
-			LPWSTR sid_string{};
-			if (ConvertSidToStringSidW(appcontainer_sid_from_full_name, &sid_string))
-			{
-				std::wcout << L"  AppContainer SID (from FullName): " << sid_string << std::endl;
-				LocalFree(sid_string);
-			}
-			else
-			{
-				std::wcout << L"  -- Failed to convert AppContainer SID (from FullName) to string." << std::endl;
-			}
-		}
-		else if (!appcontainer_sid_from_full_name && appcontainer_sid_from_family_name)
-		{
-			std::wcout << L"  [Only AppContainer SID from FamilyName is available]" << std::endl;
-			LPWSTR sid_string{};
-			if (ConvertSidToStringSidW(appcontainer_sid_from_family_name, &sid_string))
-			{
-				std::wcout << L"  AppContainer SID (from FamilyName): " << sid_string << std::endl;
-				LocalFree(sid_string);
-			}
-			else
-			{
-				std::wcout << L"  -- Failed to convert AppContainer SID (from FamilyName) to string." << std::endl;
-			}
-		}
-	}
+	return g_debugOutputEnabled;
 }
 
-// not static - shared with other files
-static bool g_debugPrint = false;
-bool DebugPrintEnabled() noexcept
+static bool g_analyzeRules = false;
+bool AnalyzeRulesEnabled() noexcept
 {
-	return g_debugPrint;
+	return g_analyzeRules;
 }
 
 static bool g_cleanBrokenRules = false;
@@ -164,21 +71,6 @@ static bool DeleteWfpCalloutFiltersEnabled() noexcept
 	return g_deleteWfpCalloutFilters;
 }
 
-static FirewallPolicyObjects g_policy_objects[] =
-{
-	{.type = FW_STORE_TYPE_LOCAL,            .type_string = "Local", .normalizedRules = {}},
-	// { .type= FW_STORE_TYPE_DYNAMIC, .type_string= "Dynamic", .normalizedRules = {}},
-	{.type = FW_STORE_TYPE_GPO,              .type_string = "Group Policy", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_GP_RSOP,          .type_string = "Group Policy (RSOP)", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_WSH_STATIC,       .type_string = "Windows Service Hardening (Static)", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_WSH_CONFIGURABLE, .type_string = "Windows Service Hardening (Configurable)", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_IF_ISO,           .type_string = "Interface-Isolation", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_IF_ISO_DYNAMIC,   .type_string = "Interface-Isolation (Dynamic)", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_APP_ISO,          .type_string = "Application-Isolation", .normalizedRules = {} },
-	{.type = FW_STORE_TYPE_MDM,              .type_string = "Mobile-Device-Management (MDM)" , .normalizedRules = {}},
-	{.type = FW_STORE_TYPE_TENANT_RESTRICTIONS, .type_string = "Tenant Restrictions", .normalizedRules = {} }
-};
-
 static std::vector<FWPM_FILTER*> g_deletedWfpFilters;
 
 static void RestoreDeletedFilters() noexcept
@@ -188,7 +80,7 @@ static void RestoreDeletedFilters() noexcept
 		return;
 	}
 
-	const auto engine_handle = GetFwpmEngineHandle();
+	auto* const engine_handle = GetFwpmEngineHandle();
 	for (auto& filter : g_deletedWfpFilters)
 	{
 		if (filter)
@@ -216,267 +108,158 @@ static void RestoreDeletedFilters() noexcept
 static void PrintUsage() noexcept
 {
 	std::printf(
-		"Usage: FwDiagnose.exe [-clean] [-verbose] [-wfp]\n"
-		"This tool enumerates the local firewall rules and checks for errors, duplicates, and missing application files.\n"
-		"This tool also enumerates WFP objects (callouts, sublayers, providers, and filters)\n"
+        "\n"
+		"FwDiagnose.exe [options] [-verbose]\n"
+        "\n"
+		"  This utility provides options to analyze Windows Firewall rules and Windows Filter Platform filters.\n"
+		"  It also has utility function to listen for and output NetEvents from WFP\n"
+		"  as well as enumerating and writing out all App-Packages for troubleshooting.\n"
+        "\n"
+		"  Note that only one option can be specified with the optional -verbose flag.\n"
 		"Options:\n"
 		"  -?               : Show this help message.\n"
+		"  -analyze-rules   : Analyzes firewall rules for potential issues\n"
 		"  -clean-rules     : Prompts to delete duplicate rules\n"
 		"                   : Prompts to delete rules with application exes referencing non-existing files\n"
 		"                   : Prompts to delete rules referencing unknown SIDs\n"
 		"                   : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"                   : This requires Administrator privileges\n"
-		"  -wfp             : Output details of WFP objects (callouts, sublayers, and filters)\n"
+		"  -analyze-wfp     : Output details of WFP objects (callouts, sublayers, and filters)\n"
 		"                   : This requires Administrator privileges\n"
-		"  -wfp-events      : Enumerate NetEvents from WFP\n"
-		"  -delete-callouts : Prompt to temporarily delete filters for 3rd party WFP callout drivers\n"
-		"                     Will restore any deleted filters before this program exits\n"
-		"  -verbose         : Output details of rules and/or WFP objects\n"
+		"  -wfp-events      : Listen for and print all NetEvents from WFP\n"
+		"  -remove-callouts : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
+		"                     Will restore any removed filters before this program exits\n"
+		"  -list-app-packages : Output details of all app-container packages\n"
 		"\n"
-		"Note: -wfp and -clean-rules cannot both be specified");
+		"  -verbose         : Output details of rules and/or WFP objects\n");
 }
+
 int __cdecl main(int argc, char* argv[]) try
 {
 	const auto coInit = wil::CoInitializeEx();
-	const auto wmi_supported = InitializeWfpPerfCounters();
 
-	EnumPackages();
-
-	std::vector<std::string> args;
-	for (int i = 1; i < argc; ++i)
+	if (argc != 2 && argc != 3)
 	{
-		args.emplace_back(argv[i]);
+		PrintUsage();
+		return E_INVALIDARG;
+	}
+
+	std::vector<PCSTR> args(argv + 1, argv + argc);
+	if (args.size() != 1 && args.size() != 2)
+	{
+		std::printf("An invalid parameter was specified (argument count of %zu)\n", args.size());
+		std::printf("When specifying -verbose, only one other option can be used\n");
+		PrintUsage();
+		return E_INVALIDARG;
+	}
+
+	if (args.size() == 2)
+	{
+		// one of the 2 must be -verbose
+		if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-verbose") == 0; }) != args.end())
+		{
+			auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-verbose") == 0; });
+			args.erase(removed_args.cbegin(), args.end());
+			g_verboseOutput = true;
+		}
+	}
+	if (args.size() == 2)
+	{
+		// if we didn't remove the -verbose option, something invalid was specified
+		std::printf("An invalid parameter was specified [%hs, %hs]\n", args[0], args[1]);
+	    std::printf("When specifying -verbose, only one other option can be used\n");
+		PrintUsage();
+		return E_INVALIDARG;
+	}
+
+	if (std::ranges::find(args, "-?") != args.end())
+	{
+		PrintUsage();
+		return 0;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-rules") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-rules") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_analyzeRules = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-clean-rules") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-clean-rules") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_cleanBrokenRules = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-wfp") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-wfp") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_wfpOutput = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-wfp-events") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-wfp-events") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_wfpEventEnumeration = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-remove-callouts") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-delete-callouts") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		// delete-callouts will automatically enable wfp output
+		g_wfpOutput = true;
+		g_deleteWfpCalloutFilters = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-packages") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-packages") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		LoadAllAppPackages();
+		PrintAllAppPackages();
+		return 0;
 	}
 
 	if (!args.empty())
 	{
-		if (std::ranges::find(args, "-?") != args.end())
+		std::printf("Unrecognized arguments: ");
+		for (const auto& arg : args)
 		{
-			PrintUsage();
-			return 0;
+			std::printf(" %s ", arg);
 		}
 
-		if (std::ranges::find(args, "-debug") != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-debug") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			g_debugPrint = true;
-		}
-
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean-rules") == 0; }) != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-clean-rules") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			g_cleanBrokenRules = true;
-		}
-
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-verbose") == 0; }) != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-verbose") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			g_verboseOutput = true;
-		}
-
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-wfp") == 0; }) != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-wfp") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			g_wfpOutput = true;
-		}
-
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-wfp-events") == 0; }) != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-wfp-events") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			g_wfpEventEnumeration = true;
-		}
-
-		if (std::ranges::find_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete-callouts") == 0; }) != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto& lhs) { return _stricmp(lhs.c_str(), "-delete-callouts") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			// delete-callouts will automatically enable wfp output
-			g_wfpOutput = true;
-			g_deleteWfpCalloutFilters = true;
-		}
-
-		if (!args.empty())
-		{
-			std::printf("Unrecognized arguments: ");
-			for (const auto& arg : args)
-			{
-				std::printf(" %s ", arg.c_str());
-			}
-
-			std::printf("\n");
-			PrintUsage();
-			return ERROR_BAD_ARGUMENTS;
-		}
-
-		if (g_wfpOutput && g_cleanBrokenRules)
-		{
-			std::printf("The -wfp and -clean-rules options cannot both be specified\n");
-			PrintUsage();
-			return ERROR_BAD_ARGUMENTS;
-		}
-
-		if (g_deleteWfpCalloutFilters && !g_wfpOutput)
-		{
-			std::printf("The -disable_callout option requires the -wfp option to also be specified\n");
-			PrintUsage();
-			return ERROR_BAD_ARGUMENTS;
-		}
+		std::printf("\n");
+		PrintUsage();
+		return ERROR_BAD_ARGUMENTS;
 	}
 
-	ChronoTimer timer;
+	// load Firewall, WFP, and AppContainer details
+	auto wfp_thread = std::thread{
+	[] {
+		LoadWfpCallouts();
+		LoadWfpSubLayers();
+		LoadWfpProviders();
+		LoadWfpFilters();
+	} };
+	auto firewall_thread = std::thread{ [] { LoadFirewallRules(); } };
+	auto app_package_thread = std::thread{ [] { LoadAllAppPackages(); } };
 
-	LoadFirewallFunctions();
+	// joining in the order of expected time-to-complete
+    // (WFP often taking a while)
+	app_package_thread.join();
+	firewall_thread.join();
+	wfp_thread.join();
 
-	if (!g_wfpOutput && !g_wfpEventEnumeration)
+	if (AnalyzeRulesEnabled() || CleanBrokenRulesEnabled())
 	{
-		// if we are deleting rules, capture filter counts before and after
-		uint64_t initial_filter_count = 0;
-		if (wmi_supported && CleanBrokenRulesEnabled())
-		{
-			initial_filter_count = ReadWfpPerfCounters();
-		}
-
-		std::wstring banner_header;
-		banner_header.insert(banner_header.begin(), 86, L'*');
-
-		for (auto& policy : g_policy_objects)
-		{
-			// cannot directly modify MDM or GP rules locally
-			if (CleanBrokenRulesEnabled())
-			{
-				if (policy.type == FW_STORE_TYPE_MDM ||
-					policy.type == FW_STORE_TYPE_GPO ||
-					policy.type == FW_STORE_TYPE_GP_RSOP ||
-					policy.type == FW_STORE_TYPE_WSH_STATIC ||
-					policy.type == FW_STORE_TYPE_WSH_CONFIGURABLE)
-				{
-					std::printf(
-						"\n"
-						"%ls\n"
-						"  Skipping the %hs Firewall Policy Store\n"
-						"%ls\n"
-						"  NOTE: The %hs Firewall Policy Store cannot be modified locally.\n"
-						"        Skipping any deletion of rules in this store.\n",
-						banner_header.c_str(),
-						policy.type_string,
-						banner_header.c_str(),
-						policy.type_string);
-					continue;
-				}
-			}
-			try
-			{
-				auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the %hs Firewall Policy Store", policy.type_string);
-				const size_t prefix_spaces = (banner_header.size() - banner_output.size()) / 2;
-				banner_output.insert(0, prefix_spaces, L' ');
-
-				std::printf(
-					"\n"
-					"%ls\n"
-					"%ls\n"
-					"%ls\n",
-					banner_header.c_str(),
-					banner_output.c_str(),
-					banner_header.c_str());
-
-				timer.start("LoadFirewallRulesFromStore");
-				const auto load_error = LoadFirewallRulesFromStore(policy);
-				timer.end();
-				if (FAILED(load_error))
-				{
-					if (load_error == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
-					{
-						continue;
-					}
-					THROW_HR(load_error);
-				}
-
-				timer.start("CheckForRulesWithErrorStatus");
-				CheckForRulesWithErrorStatus(policy.normalizedRules);
-				timer.end();
-
-				if (g_verboseOutput)
-				{
-					std::printf("\n");
-				}
-				timer.start("CheckForMissingAppRules");
-				CheckForMissingAppRules(policy.normalizedRules);
-				timer.end();
-
-				if (CleanBrokenRulesEnabled())
-				{
-					std::printf("\n");
-					DeleteMissingAppRules(policy.normalizedRules);
-				}
-
-				if (g_verboseOutput)
-				{
-					std::printf("\n");
-				}
-				timer.start("CheckUnresolvedUserAccountRules");
-				CheckUnresolvedUserAccountRules(policy.normalizedRules, policy.type);
-				timer.end();
-
-				if (CleanBrokenRulesEnabled())
-				{
-					std::printf("\n");
-					DeleteUnresolvedUserAccountRules(policy.normalizedRules);
-				}
-
-				if (g_verboseOutput)
-				{
-					std::printf("\n");
-				}
-				timer.start("Counting duplicate rules");
-				const auto duplicateRules = CheckForDuplicateRules(policy.normalizedRules);
-				timer.end();
-
-				if (CleanBrokenRulesEnabled())
-				{
-					std::printf("\n");
-					DeleteDuplicateRules(duplicateRules);
-				}
-			}
-			catch (const wil::ResultException& ex)
-			{
-				std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());  // NOLINT(clang-diagnostic-format)
-			}
-		}
-
-		if (wmi_supported)
-		{
-			const uint64_t final_wfp_filter_count = ReadWfpPerfCounters();
-			// if we are deleting rules, capture filter counts before and after
-			if (CleanBrokenRulesEnabled())
-			{
-				std::printf(
-					"\n"
-					"**************************************************************************************\n"
-					"                              Perf Counters: WFP Filters                              \n"
-					"**************************************************************************************\n"
-					"  * Total filters before removing rules: %llu\n"
-					"  * Total filters after removing rules: %llu\n",
-					initial_filter_count,
-					final_wfp_filter_count);
-			}
-			else
-			{
-				std::printf(
-					"\n"
-					"**************************************************************************************\n"
-					"                              Perf Counters: WFP Filters                              \n"
-					"**************************************************************************************\n"
-					"  * Total filters: %llu\n",
-					final_wfp_filter_count);
-			}
-		}
+		return ProcessFirewallRules();
 	}
-	else if (g_wfpOutput)
+
+	if (WfpOutputEnabled())
 	{
 		// verify has admin access
 		if (!HasFirewallAdminAccess())
@@ -594,8 +377,7 @@ int __cdecl main(int argc, char* argv[]) try
 			"**************************************************************************************\n"
 			"                                     WFP Filters                                      \n"
 			"**************************************************************************************\n");
-		// ReadWfpFilters will also update SubLayers and Provider counts regarding # of filters in each
-		const std::vector<FilterDetails>& filter_details = ReadWfpFilters(g_verboseOutput);
+		const std::vector<FilterDetails>& filter_details = ReadWfpFilters();
 		size_t filter_count = 0;
 		size_t disabled_count = 0;
 		size_t persistent_count = 0;
@@ -779,143 +561,6 @@ int __cdecl main(int argc, char* argv[]) try
 			}
 		}
 
-		if (VerboseOutputEnabled())
-		{
-			// update which rules are referenced by filters
-			for (auto& policy : g_policy_objects)
-			{
-				timer.start("LoadFirewallRulesFromStore");
-				const auto load_error = LoadFirewallRulesFromStore(policy);
-				timer.end();
-				if (FAILED(load_error))
-				{
-					if (load_error == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
-					{
-						continue;
-					}
-					THROW_HR(load_error);
-				}
-				timer.end();
-
-				// sort vectors of rules/filters by name so can do a binary search for rules by name
-				std::ranges::sort(
-					policy.normalizedRules,
-					[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-					{
-						return lhs.ruleName < rhs.ruleName;
-					}
-				);
-				SortFilterDetailsByName();
-
-				size_t rule_name_count = 0;
-				decltype(policy.normalizedRules.begin()) previous_iter{};
-				for (auto iter = policy.normalizedRules.begin(); iter != policy.normalizedRules.end(); ++iter)
-				{
-					if (iter == policy.normalizedRules.begin())
-					{
-						previous_iter = iter;
-						continue;
-					}
-
-					const auto& rule_name = iter->ruleName;
-					const auto& previous_rule_name = previous_iter->ruleName;
-					if (rule_name == previous_rule_name)
-					{
-						if (rule_name_count == 0)
-						{
-							// first time we have seen this duplicate
-							rule_name_count = 2;
-						}
-						else
-						{
-							// have already seen this duplicate before
-							++rule_name_count;
-						}
-					}
-					else
-					{
-						// found a new unique firewall rule - check how many filters exist for the previous rule name
-						previous_iter->filter_count = CountFiltersByName(previous_rule_name);
-						previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
-						previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
-						rule_name_count = 0;
-					}
-
-					previous_iter = iter;
-				}
-
-				if (!policy.normalizedRules.empty())
-				{
-					// resort rules by # of filters
-					std::ranges::sort(
-						policy.normalizedRules,
-						[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-						{
-							return lhs.filter_count > rhs.filter_count;
-						}
-					);
-					// write out the top 10 rules referenced by filters
-					std::printf("\n");
-					std::printf("  * Firewall Policy Store %s : Top 10 Firewall rules based off of total numbers of filters\n", policy.type_string);
-					size_t rules_printed = 0;
-					for (const auto& rule_details : policy.normalizedRules)
-					{
-						if (rule_details.filter_count == 0)
-						{
-							// remaining rules are not referenced by any filters
-							break;
-						}
-
-						std::printf("    [%zu] '%ls' across %zu %ls with this name\n",
-							rule_details.filter_count,
-							rule_details.ruleName.value.c_str(),
-							rule_details.duplicate_rule_count,
-							rule_details.duplicate_rule_count > 0 ? L"rules" : L"rule");
-
-						++rules_printed;
-						if (rules_printed >= 10)
-						{
-							break;
-						}
-					}
-
-					// resort rules by # of filters conditions
-					std::ranges::sort(
-						policy.normalizedRules,
-						[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-						{
-							return lhs.filter_condition_count > rhs.filter_condition_count;
-						}
-					);
-					// write out the top 10 rules referenced by filters
-					std::printf("\n");
-					std::printf("  * Firewall Policy Store %s : Top 10 Firewall rules based off of filter conditions/rule\n",
-						policy.type_string);
-					rules_printed = 0;
-					for (const auto& rule_details : policy.normalizedRules)
-					{
-						if (rule_details.filter_condition_count == 0)
-						{
-							// remaining rules are not referenced by any filters
-							break;
-						}
-
-						std::printf("    [%zu] '%ls' across %zu %ls with this name\n",
-							rule_details.filter_condition_count,
-							rule_details.ruleName.value.c_str(),
-							rule_details.duplicate_rule_count,
-							rule_details.duplicate_rule_count > 0 ? L"rules" : L"rule");
-
-						++rules_printed;
-						if (rules_printed >= 10)
-						{
-							break;
-						}
-					}
-				}
-			}
-		}
-
 		if (DeleteWfpCalloutFiltersEnabled())
 		{
 			std::printf(
@@ -1070,12 +715,7 @@ int __cdecl main(int argc, char* argv[]) try
 			return ERROR_ACCESS_DENIED;
 		}
 
-		// read all WFP information to use later (they are stored in global variables)
-		ReadWfpCallouts();
-		ReadWfpSubLayers();
-		ReadWfpProviders();
-		ReadWfpFilters(g_verboseOutput);
-		// then sort filters by filter id for fast lookup
+		// sort filters by filter id for fast lookup
 		SortFilterDetailsByFilterId();
 
 		FWPM_NET_EVENT_SUBSCRIPTION0 subscription_info{};
@@ -1120,14 +760,14 @@ int __cdecl main(int argc, char* argv[]) try
 				}
 			},
 			nullptr, // null context
-			& eventsHandle);
+			&eventsHandle);
 		THROW_IF_WIN32_ERROR_MSG(fwpm_subscription_error, "FwpmNetEventSubscribe4");
 
 		std::printf(
 			"\n"
 			"**************************************************************************************\n"
 			"                            Subscribed to WFP NetEvents                               \n"
-            "                      ( press Ctrl-C to stop processing events )                      \n"
+			"                      ( press Ctrl-C to stop processing events )                      \n"
 			"**************************************************************************************\n");
 
 		static const wil::unique_event ctrl_event(wil::EventOptions::ManualReset);

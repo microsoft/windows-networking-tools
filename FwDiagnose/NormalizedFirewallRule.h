@@ -10,6 +10,7 @@
 #include <sddl.h>
 
 #include "WfpCounters.h"
+#include "FwDiagnose.h"
 
 #include <wil/resource.h>
 
@@ -178,7 +179,7 @@ private:
 		const auto expanded_file_name = ExpandString(file_name);
 		if (expanded_file_name.empty())
 		{
-			if (DebugPrintEnabled())
+			if (VerboseOutputEnabled())
 			{
 				std::printf("Failed to expand the file name '%ls'\n", file_name.c_str());
 			}
@@ -189,7 +190,7 @@ private:
 		if (!file_name_hmod)
 		{
 			const auto gle = GetLastError();
-			if (DebugPrintEnabled())
+			if (VerboseOutputEnabled())
 			{
 				std::printf("Failed to LoadLibraryExW(%ls) (0x%lx)\n", expanded_file_name.c_str(), gle);
 			}
@@ -207,7 +208,7 @@ private:
 			});
 		if (FAILED(conversion_error))
 		{
-			if (DebugPrintEnabled())
+			if (VerboseOutputEnabled())
 			{
 				std::printf("Failed to convert string index '%ls' to a number: 0x%lx\n", string_index.c_str(), conversion_error);  // NOLINT(clang-diagnostic-format)
 			}
@@ -224,7 +225,7 @@ private:
 		if (conversion_size == 0)
 		{
 			const auto gle = GetLastError();
-			if (DebugPrintEnabled())
+			if (VerboseOutputEnabled())
 			{
 				std::printf("Failed to LoadStringW(%ls, %u) (0x%lx)\n", expanded_file_name.c_str(), converted_value, gle);
 			}
@@ -265,7 +266,7 @@ private:
 			if (expanded_size == 0)
 			{
 				const auto gle = GetLastError();
-				if (DebugPrintEnabled())
+				if (VerboseOutputEnabled())
 				{
 					std::printf("Failed to ExpandEnvironmentStrings(%ls) (0x%lx)", original_filename.c_str(), gle);
 				}
@@ -294,7 +295,7 @@ private:
 			if (!ConvertStringSidToSid(fwRule->wszLocalUserOwner, localUserOwnerSid.addressof()))
 			{
 				const auto gle = GetLastError();
-				if (DebugPrintEnabled())
+				if (VerboseOutputEnabled())
 				{
 					std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", fwRule->wszLocalUserOwner, gle);
 				}
@@ -315,7 +316,7 @@ private:
 					if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
 					{
 						const auto gle = GetLastError();
-						if (DebugPrintEnabled())
+						if (DebugOutputEnabled())
 						{
 							std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fwRule->wszLocalUserOwner, gle);
 						}
@@ -325,7 +326,7 @@ private:
 
 					userNameResolvedSuccessfully = true;
 
-					if (DebugPrintEnabled())
+					if (DebugOutputEnabled())
 					{
 						if (localUserDomainName.empty())
 						{
@@ -340,7 +341,7 @@ private:
 				else
 				{
 					const auto gle = GetLastError();
-					if (DebugPrintEnabled())
+					if (DebugOutputEnabled())
 					{
 						std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fwRule->wszLocalUserOwner, gle);
 					}
@@ -394,7 +395,7 @@ private:
 		if (found_file == INVALID_HANDLE_VALUE)
 		{
 			const auto gle = GetLastError();
-			if (DebugPrintEnabled())
+			if (DebugOutputEnabled())
 			{
 				std::printf("Failed to FindFirstFileExW(%ls) (0x%lx)\n", expanded_string.c_str(), gle);
 			}
