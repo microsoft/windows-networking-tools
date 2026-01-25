@@ -67,7 +67,7 @@ uint64_t ReadWfpPerfCounters()
 	return *ull_filter_count.rbegin();
 }
 
-uint32_t SortedLayerValue(const GUID& layer) noexcept
+uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept
 {
 	uint32_t layer_priority = 0;
 	// first ALE layers
@@ -600,7 +600,7 @@ uint32_t SortedLayerValue(const GUID& layer) noexcept
 	FAIL_FAST();
 }
 
-std::string LayerToString(const GUID& layerGuid)
+std::string FwpmLayerToString(const GUID& layerGuid)
 {
 	if (layerGuid == FWPM_LAYER_INBOUND_IPPACKET_V4)
 	{

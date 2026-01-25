@@ -1333,7 +1333,7 @@ try
 }
 CATCH_RETURN()
 
-HRESULT ProcessFirewallRules()
+void ProcessFirewallRules()
 {
 	std::wstring banner_header;
 	banner_header.insert(banner_header.begin(), 86, L'*');
@@ -1446,14 +1446,11 @@ HRESULT ProcessFirewallRules()
 		}
 		catch (const wil::ResultException& ex)
 		{
-			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());  // NOLINT(clang-diagnostic-format)
-			return ex.GetErrorCode();
+			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
 		}
 		catch (const std::exception& ex)
 		{
 			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
-			return wil::ResultFromCaughtException();
 		}
 	}
-	return S_OK;
 }

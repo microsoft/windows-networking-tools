@@ -15,6 +15,9 @@ bool CleanBrokenRulesEnabled() noexcept;
 bool VerboseOutputEnabled() noexcept;
 bool WfpOutputEnabled() noexcept;
 bool WfpEventEnumerationEnabled() noexcept;
+bool RemoveWfpCalloutFiltersEnabled() noexcept;
+bool RemoveWfpCalloutFiltersEnabled() noexcept;
+bool RemoveWfpCalloutFiltersEnabled() noexcept;
 
 enum class PromptResponse
 {

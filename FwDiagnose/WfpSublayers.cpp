@@ -268,6 +268,41 @@ const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept
 {
 	return g_all_sublayers;
 }
+
+void WriteWfpSubLayers() noexcept
+{
+	std::printf(
+		"\n"
+		"**************************************************************************************\n"
+		"                                     WFP Sublayers                                    \n"
+		"**************************************************************************************\n");
+	std::printf(
+		"  * Total sublayers: %zu\n"
+		"  * Total 3rd party sublayers: %zd\n",
+		g_all_sublayers.size(),
+		std::ranges::count_if(
+			g_all_sublayers, [](const SubLayerDetails& sublayer)
+			{
+				return sublayer.is_third_party_sublayer;
+			}));
+	for (const auto& sublayer : g_all_sublayers)
+	{
+		if (sublayer.is_third_party_sublayer)
+		{
+			std::printf("      %ls [weight %hu]\n", sublayer.displayName.empty() ? L"(no display name)" : sublayer.displayName.c_str(), sublayer.weight);
+		}
+	}
+
+	if (VerboseOutputEnabled())
+	{
+		for (const auto& sublayer : g_all_sublayers)
+		{
+			std::printf("    %ls\n", SublayerToString(sublayer).c_str());
+		}
+		std::printf("\n");
+	}
+}
+
 void LoadWfpSubLayers() noexcept
 try
 {

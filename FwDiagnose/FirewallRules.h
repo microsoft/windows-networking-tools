@@ -22,4 +22,4 @@ struct FirewallPolicyObjects
 HRESULT LoadFirewallRules() noexcept;
 bool HasFirewallAdminAccess();
 
-HRESULT ProcessFirewallRules();
+void ProcessFirewallRules();

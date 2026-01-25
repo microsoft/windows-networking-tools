@@ -32,9 +32,11 @@ inline std::wstring GuidToString(const GUID& guid)
 	return return_string;
 }
 
+void OutputWfpDetails();
+
 HANDLE GetFwpmEngineHandle();
-uint32_t SortedLayerValue(const GUID& layer) noexcept;
-std::string LayerToString(const GUID& layerGuid);
+uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept;
+std::string FwpmLayerToString(const GUID& layerGuid);
 
 struct FilterDetails
 {
@@ -61,25 +63,28 @@ struct FilterDetails
 
 	FWPM_ACTION0 action_type;
 
-	bool IsDisabled() const noexcept
+    [[nodiscard]] bool IsDisabled() const noexcept
 	{
 		return (flags & FWPM_FILTER_FLAG_DISABLED) != 0;
 	}
-	bool IsPersistent() const noexcept
+
+    [[nodiscard]] bool IsPersistent() const noexcept
 	{
 		return (flags & FWPM_FILTER_FLAG_PERSISTENT) != 0;
 	}
-	bool InvokesCallout() const noexcept
+
+    [[nodiscard]] bool InvokesCallout() const noexcept
 	{
 		return (action_type.type & FWP_ACTION_FLAG_CALLOUT) != 0;
 	}
-	bool InvokesCallout(const GUID& calloutKey) const noexcept
+
+    [[nodiscard]] bool InvokesCallout(const GUID& calloutKey) const noexcept
 	{
 		if ((action_type.type & FWP_ACTION_FLAG_CALLOUT) == 0)
 		{
 			return false;
 		}
-		return (action_type.calloutKey == calloutKey);
+		return action_type.calloutKey == calloutKey;
 	}
 };
 
@@ -103,6 +108,7 @@ inline bool operator==(const NormalizedString& lhs, const FilterDetails& rhs) no
 
 void LoadWfpFilters() noexcept;
 const std::vector<FilterDetails>& ReadWfpFilters() noexcept;
+void WriteWfpFilters() noexcept;
 
 const std::vector<FilterDetails>& SortFilterDetailsByFilterId();
 const FilterDetails& FindFilterByFilterId(UINT64 filter_id);
@@ -116,10 +122,11 @@ struct CalloutDetails
 {
 	GUID callout_key{};
 	GUID applicable_layer{};
-	std::string layer{};
+	uint32_t callout_id{};
+
+    std::string layer{};
 	std::wstring name{};
 	std::wstring description{};
-	uint32_t callout_id{};
 	std::wstring driver_name{};
 
     uint64_t referenced_by_filter_count_enabled{};
@@ -130,6 +137,11 @@ struct CalloutDetails
 
 void LoadWfpCallouts() noexcept;
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
+void WriteWfpCallouts() noexcept;
+void WriteThirdPartyCalloutDetails() noexcept;
+
+void TemporarilyRemoveWfpCalloutFilters();
+
 std::wstring GetInternalCalloutString(const CalloutDetails& callout);
 std::wstring PrintCallout(const CalloutDetails& callout);
 std::wstring PrintCallout(const GUID& calloutKey);
@@ -149,6 +161,8 @@ struct SubLayerDetails
 
 void LoadWfpSubLayers() noexcept;
 const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept;
+void WriteWfpSubLayers() noexcept;
+
 SubLayerDetails& FindSublayer(const GUID& subLayerKey);
 std::wstring SublayerToString(const SubLayerDetails& sublayer);
 std::wstring SublayerToSimpleString(const SubLayerDetails& sublayer);
@@ -168,6 +182,8 @@ struct ProviderDetails
 
 void LoadWfpProviders() noexcept;
 const std::vector<ProviderDetails>& ReadWfpProviders() noexcept;
+void WriteWfpProviders() noexcept;
+
 ProviderDetails& FindProvider(const GUID& providerKey);
 std::wstring ProviderToString(const ProviderDetails& provider);
 void PrintProviderFilterDetails();

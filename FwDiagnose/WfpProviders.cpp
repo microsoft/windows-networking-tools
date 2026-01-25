@@ -135,6 +135,39 @@ const std::vector<ProviderDetails>& ReadWfpProviders() noexcept
 {
 	return g_all_providers;
 }
+
+void WriteWfpProviders() noexcept
+{
+	std::printf(
+		"\n"
+		"**************************************************************************************\n"
+		"                                     WFP Providers                                    \n"
+		"**************************************************************************************\n");
+	std::printf("  * Total Providers: %zu\n"
+		"  * Total 3rd party providers: %zd\n",
+		g_all_providers.size(),
+		std::ranges::count_if(
+			g_all_providers, [](const ProviderDetails& provider)
+			{
+				return provider.is_third_party_provider;
+			}));
+	for (const auto& provider : g_all_providers)
+	{
+		if (provider.is_third_party_provider)
+		{
+			std::printf("      %ls\n", provider.displayName.empty() ? L"(no display name)" : provider.displayName.c_str());
+		}
+	}
+
+	if (VerboseOutputEnabled())
+	{
+		for (const auto& provider : g_all_providers)
+		{
+			std::printf("    %ls\n", ProviderToString(provider).c_str());
+		}
+	}
+}
+
 void LoadWfpProviders() noexcept
 try
 {

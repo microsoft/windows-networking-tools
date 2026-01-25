@@ -233,36 +233,82 @@ std::wstring PrintCallout(const CalloutDetails& callout)
 
 std::wstring PrintCallout(const GUID& calloutKey)
 {
-	auto found_callout = std::find_if(g_all_callouts.cbegin(), g_all_callouts.cend(),
+	auto found_callout = std::ranges::find_if(
+		std::as_const(g_all_callouts),
 		[&](const CalloutDetails& callout)
 		{
 			return callout.callout_key == calloutKey;
 		});
+
 	if (found_callout == g_all_callouts.cend())
 	{
 		// refresh callouts and try again
 		ReadWfpCallouts();
-		found_callout = std::find_if(g_all_callouts.cbegin(), g_all_callouts.cend(),
+		found_callout = std::ranges::find_if(
+			std::as_const(g_all_callouts),
 			[&](const CalloutDetails& callout)
 			{
 				return callout.callout_key == calloutKey;
 			});
 	}
+
 	if (found_callout != g_all_callouts.cend())
 	{
 		return PrintCallout(*found_callout);
 	}
-	else
-	{
-		return wil::str_printf<std::wstring>(
-			L"%ls : (unknown callout)",
-			GuidToString(calloutKey).c_str());
-	}
+
+	return wil::str_printf<std::wstring>(
+		L"%ls : (unknown callout)",
+		GuidToString(calloutKey).c_str());
+
 }
 
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept
 {
 	return g_all_callouts;
+}
+
+void WriteWfpCallouts() noexcept
+{
+	std::printf(
+		"\n"
+		"**************************************************************************************\n"
+		"                                     WFP Callouts                                     \n"
+		"**************************************************************************************\n");
+	std::printf(
+		"  * Total callouts: %zu\n"
+		"  * Total 3rd party callouts: %zd\n",
+		g_all_callouts.size(),
+		std::ranges::count_if(
+			g_all_callouts, [](const CalloutDetails& callout)
+			{
+				return callout.is_third_party_callout;
+			}));
+	for (const auto& callout : g_all_callouts)
+	{
+		if (callout.is_third_party_callout)
+		{
+			std::printf("       %ls [callout id: %u] [%ls]\n",
+				callout.name.empty() ? L"(no name)" : callout.name.c_str(),
+				callout.callout_id,
+				callout.driver_name.empty() ? L"(hidden)" : callout.driver_name.c_str());
+		}
+	}
+
+	if (VerboseOutputEnabled())
+	{
+		GUID current_layer_being_printed{};
+		for (const auto& callout : g_all_callouts)
+		{
+			if (current_layer_being_printed != callout.applicable_layer)
+			{
+				current_layer_being_printed = callout.applicable_layer;
+				std::printf("\n    %hs\n", callout.layer.c_str());
+			}
+
+			std::printf("      %ls\n", PrintCallout(callout).c_str());
+		}
+	}
 }
 
 void LoadWfpCallouts() noexcept
@@ -309,14 +355,14 @@ try
 				CalloutDetails{
 					.callout_key = current_fwpm_filter->calloutKey,
 					.applicable_layer = current_fwpm_filter->applicableLayer,
-					.layer = LayerToString(current_fwpm_filter->applicableLayer),
+					.callout_id = current_fwpm_filter->calloutId,
+					.layer = FwpmLayerToString(current_fwpm_filter->applicableLayer),
 					.name = current_fwpm_filter->displayData.name ?
 						current_fwpm_filter->displayData.name :
 						L"(no name)",
 					.description = current_fwpm_filter->displayData.description ?
 					   current_fwpm_filter->displayData.description :
 					   L"(no description)",
-					.callout_id = current_fwpm_filter->calloutId,
 				});
 		}
 
@@ -344,7 +390,7 @@ try
 	std::ranges::sort(
 		g_all_callouts, [](const CalloutDetails& left, const CalloutDetails& right)
 		{
-			return SortedLayerValue(left.applicable_layer) < SortedLayerValue(right.applicable_layer);
+			return SortedLayerRelativePriority(left.applicable_layer) < SortedLayerRelativePriority(right.applicable_layer);
 		});
 
 	// Microsoft.Windows.Networking.WFP.Callout
@@ -361,29 +407,29 @@ try
 	} callout_rundown_details;
 
 	auto callback_fn = [](const EVENT_RECORD* pRecord) {
-			// Process the ETW event record
-			const auto event_message = ctl::ctEtwRecord(pRecord);
+		// Process the ETW event record
+		const auto event_message = ctl::ctEtwRecord(pRecord);
 
-			bool is_callout_rundown_record = true;
-			std::wstring callout_id_key;
-			is_callout_rundown_record &= event_message.queryEventProperty(L"CalloutId", callout_id_key);
-			std::wstring driver_name_key;
-			is_callout_rundown_record &= event_message.queryEventProperty(L"DriverName", driver_name_key);
-			std::wstring applicable_layer_id_key;
-			is_callout_rundown_record &= event_message.queryEventProperty(L"ApplicableLayerId", applicable_layer_id_key);
-			std::wstring behavior_flags_key;
-			is_callout_rundown_record &= event_message.queryEventProperty(L"BehaviorFlags", behavior_flags_key);
-			if (!is_callout_rundown_record)
-			{
-				return;
-			}
+		bool is_callout_rundown_record = true;
+		std::wstring callout_id_key;
+		is_callout_rundown_record &= event_message.queryEventProperty(L"CalloutId", callout_id_key);
+		std::wstring driver_name_key;
+		is_callout_rundown_record &= event_message.queryEventProperty(L"DriverName", driver_name_key);
+		std::wstring applicable_layer_id_key;
+		is_callout_rundown_record &= event_message.queryEventProperty(L"ApplicableLayerId", applicable_layer_id_key);
+		std::wstring behavior_flags_key;
+		is_callout_rundown_record &= event_message.queryEventProperty(L"BehaviorFlags", behavior_flags_key);
+		if (!is_callout_rundown_record)
+		{
+			return;
+		}
 
-			CalloutRundownDetails::CalloutDetails new_callout_details{};
-			new_callout_details.driver_name = driver_name_key;
-			new_callout_details.callout_id = std::stoul(callout_id_key);
-			new_callout_details.applicable_layer_id = std::stoul(applicable_layer_id_key);
-			new_callout_details.behavior_flags = std::stoul(behavior_flags_key);
-			callout_rundown_details.callouts.push_back(new_callout_details);
+		CalloutRundownDetails::CalloutDetails new_callout_details{};
+		new_callout_details.driver_name = driver_name_key;
+		new_callout_details.callout_id = std::stoul(callout_id_key);
+		new_callout_details.applicable_layer_id = std::stoul(applicable_layer_id_key);
+		new_callout_details.behavior_flags = std::stoul(behavior_flags_key);
+		callout_rundown_details.callouts.push_back(new_callout_details);
 		};
 
 	ctl::ctEtwReader etw_reader{ callback_fn };
@@ -707,4 +753,182 @@ static PCWSTR BuiltInCalloutsToString(const GUID& guid) noexcept
 		return L"MPSSVC_INTERFACE_BINDING_CALLOUT_V6";
 	}
 	FAIL_FAST();
+}
+
+
+static std::vector<FWPM_FILTER*> g_deletedWfpFilters;
+static void RestoreDeletedFilters() noexcept
+{
+	if (g_deletedWfpFilters.empty())
+	{
+		return;
+	}
+
+	auto* const engine_handle = GetFwpmEngineHandle();
+	for (auto& filter : g_deletedWfpFilters)
+	{
+		if (filter)
+		{
+			const auto fwpm_error = FwpmFilterAdd0(
+				engine_handle,
+				filter,
+				nullptr,
+				nullptr);
+			if (fwpm_error != ERROR_SUCCESS)
+			{
+				std::printf("Failed to restore deleted WFP filter %llu. Error: 0x%lx\n", filter->filterId, fwpm_error);
+			}
+			else
+			{
+				std::printf("Restored deleted WFP filter %llu\n", filter->filterId);
+			}
+
+			FwpmFreeMemory(reinterpret_cast<void**>(&filter));
+		}
+	}
+	g_deletedWfpFilters.clear();
+}
+
+void TemporarilyRemoveWfpCalloutFilters()
+{
+	std::printf(
+		"\n"
+		"**************************************************************************************\n"
+		"               Temporarily Remove Filters for 3rd Party WFP Callouts                \n"
+		"**************************************************************************************\n");
+	std::vector<std::wstring> callout_drivers;
+	for (const auto& callout : g_all_callouts)
+	{
+		if (callout.is_third_party_callout)
+		{
+			if (callout.driver_name.empty())
+			{
+				continue;
+			}
+			if (std::ranges::find(callout_drivers, callout.driver_name) != callout_drivers.end())
+			{
+				continue;
+			}
+			callout_drivers.emplace_back(callout.driver_name);
+		}
+	}
+	std::printf(
+		"  * Total 3rd party callout drivers: %zu\n",
+		callout_drivers.size());
+	for (const auto& driver_name : callout_drivers)
+	{
+		std::printf("    - %ls\n", driver_name.c_str());
+	}
+
+	const auto restore_deleted_filters_on_exit = wil::scope_exit([]
+		{
+			RestoreDeletedFilters();
+		});
+
+	bool delete_all_with_no_more_prompts = false;
+	for (const auto& driver : callout_drivers)
+	{
+		std::printf("\n  * Temporarily deleting filters for the callout driver: %ls\n", driver.c_str());
+		for (const auto& callout : g_all_callouts)
+		{
+			if (callout.driver_name != driver)
+			{
+				continue;
+			}
+
+			std::printf(
+				"\n"
+				"    * Temporarily deleting the filters for WFP callout %ls - registered with driver %ls\n"
+				"       Callout id %ld\n"
+				"       Filters for this callout: %llu\n",
+				callout.name.c_str(),
+				callout.driver_name.c_str(),
+				callout.callout_id,
+				callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled);
+
+			if (callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled == 0)
+			{
+				std::printf("      * No Filters to delete for this callout\n");
+				continue;
+			}
+
+			bool skip_remaining_callouts = false;
+			if (!delete_all_with_no_more_prompts)
+			{
+				const auto DeletionPrompt = wil::str_printf<std::wstring>(L"Temporarily delete all filters referencing this callout (%ls) referencing driver (%ls)", callout.name.c_str(), callout.driver_name.c_str());
+				switch (PromptForDeletion(DeletionPrompt.c_str()))
+				{
+				case PromptResponse::Yes:
+					// continue to delete filters for this callout
+					break;
+
+				case PromptResponse::No:
+					std::printf("       - Skipping filters for this one callout (%ls)\n", callout.name.c_str());
+					continue;
+
+				case PromptResponse::Skip:
+					std::printf("       - Skipping the remainder of the callouts for this driver (%ls)\n", driver.c_str());
+					skip_remaining_callouts = true;
+					break;
+
+				case PromptResponse::All:
+					std::printf("       - Deleting all filters referencing all callouts for all drivers\n");
+					delete_all_with_no_more_prompts = true;
+					break;
+				}
+			}
+			if (skip_remaining_callouts)
+			{
+				break;
+			}
+
+			std::printf("       - Temporarily deleting filters referencing this callout\n");
+			for (const auto& current_fwpm_filter : ReadWfpFilters())
+			{
+				if (current_fwpm_filter.InvokesCallout(callout.callout_key))
+				{
+					std::printf("         Temporarily deleting filter id %llu : [filter name: %ls] [layer: %hs]\n",
+						current_fwpm_filter.filterId,
+						current_fwpm_filter.name.value.c_str(),
+						FwpmLayerToString(current_fwpm_filter.layerKey).c_str());
+
+					FWPM_FILTER* deleted_filter{};
+					// ensure we have space in our vector before deleting the filter
+					g_deletedWfpFilters.push_back(deleted_filter);
+					const auto filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &deleted_filter);
+					if (filter_get_error != 0)
+					{
+						std::printf("         - FwpmFilterGetByKey failed: 0x%lx -- cannot delete filter %llu\n", filter_get_error, current_fwpm_filter.filterId);
+					}
+					else
+					{
+						const auto delete_error = FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
+						if (delete_error != 0)
+						{
+							std::printf("         - FwpmFilterDeleteByKey failed: 0x%lx\n", delete_error);
+						}
+						else
+						{
+							*g_deletedWfpFilters.rbegin() = deleted_filter;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// work hard to guarantee we restore the filters we deleted
+	SetConsoleCtrlHandler([](DWORD) -> BOOL
+		{
+			std::printf("Restoring filters to callout drivers...\n");
+			RestoreDeletedFilters();
+			TerminateProcess(GetCurrentProcess(), 0);
+			return TRUE;
+		}, TRUE);
+	std::printf("Press Enter to restore filters to callout drivers\n");
+	std::wstring userInput;
+	std::getline(std::wcin, userInput);
+
+	std::printf("Restoring filters to callout drivers...\n");
+	RestoreDeletedFilters();
 }

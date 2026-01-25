@@ -6,6 +6,7 @@
 #include <string>
 
 #include <Windows.h>
+#include "firewall.h"
 #include <netfw.h>
 #include <sddl.h>
 

@@ -25,6 +25,51 @@ const std::vector<FilterDetails>& ReadWfpFilters() noexcept
 {
 	return g_all_filters;
 }
+
+void WriteWfpFilters() noexcept
+{
+	std::printf(
+		"\n"
+		"**************************************************************************************\n"
+		"                                     WFP Filters                                      \n"
+		"**************************************************************************************\n");
+	size_t filter_count = 0;
+	size_t disabled_count = 0;
+	size_t persistent_count = 0;
+	size_t filter_count_without_provider = 0;
+	for (const auto& current_fwpm_filter : g_all_filters)
+	{
+		++filter_count;
+		if (current_fwpm_filter.flags & FWPM_FILTER_FLAG_DISABLED)
+		{
+			++disabled_count;
+		}
+		if (current_fwpm_filter.flags & FWPM_FILTER_FLAG_PERSISTENT)
+		{
+			++persistent_count;
+		}
+		if (!current_fwpm_filter.providerKey.has_value())
+		{
+			++filter_count_without_provider;
+		}
+	}
+	std::printf("\n");
+	std::printf("  * Total filters: %zu\n", filter_count);
+	std::printf("    * Disabled filters: %zu\n", disabled_count);
+	std::printf("    * Persistent filters: %zu\n", persistent_count);
+	if (VerboseOutputEnabled())
+	{
+		std::printf("\n");
+		std::printf("  * Filter counts per sublayer\n");
+		PrintSublayerFilterDetails();
+
+		std::printf("\n");
+		std::printf("  * Filter counts per provider\n");
+		std::printf("    * Filters without provider: %zu\n", filter_count_without_provider);
+		PrintProviderFilterDetails();
+	}
+}
+
 void LoadWfpFilters() noexcept
 try
 {
