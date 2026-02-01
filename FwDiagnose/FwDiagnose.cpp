@@ -89,6 +89,7 @@ static void PrintUsage() noexcept
 		"  -remove-callouts : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
 		"                     Will restore any removed filters before this program exits\n"
 		"  -list-app-packages : Output details of all app-container packages\n"
+        "  -list-app-package-rules: Outputs Firewall rules referencing app-packages\n"
 		"\n"
 		"  -verbose         : Output details of rules and/or WFP objects\n");
 }
@@ -180,6 +181,16 @@ int __cdecl main(int argc, char* argv[]) try
 		args.erase(removed_args.cbegin(), args.end());
 		LoadAllAppPackages();
 		PrintAllAppPackages();
+		return 0;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-package-rules") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-package-rules") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		LoadAllAppPackages();
+		LoadFirewallRules();
+		PrintFirewallRulesReferencingAppPackages();
 		return 0;
 	}
 

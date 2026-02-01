@@ -15,6 +15,263 @@
 
 #include <wil/resource.h>
 
+static
+std::wstring
+ToHex(uint32_t value)
+{
+	WCHAR string_value[16]{};
+	swprintf_s(string_value, L"0x%X", value);
+	return std::wstring{ string_value };
+}
+
+static
+std::wstring
+ToString(FW_DIRECTION direction)
+{
+	switch (direction)
+	{
+	case FW_DIR_INVALID: return L"FW_DIR_INVALID";
+	case FW_DIR_IN: return L"FW_DIR_IN";
+	case FW_DIR_OUT: return L"FW_DIR_OUT";
+	default:
+		return L"(unknown FW_DIRECTION " + std::to_wstring(direction) + L")";
+	}
+}
+
+static
+std::wstring
+ToString(NET_FW_IP_PROTOCOL protocol)
+{
+	switch (protocol)
+	{
+	case NET_FW_IP_PROTOCOL_TCP: return L"NET_FW_IP_PROTOCOL_TCP";
+	case NET_FW_IP_PROTOCOL_UDP: return L"NET_FW_IP_PROTOCOL_UDP";
+	case NET_FW_IP_PROTOCOL_ANY: return L"NET_FW_IP_PROTOCOL_ANY";
+	default:
+		return std::to_wstring(protocol);
+	}
+}
+
+static
+std::wstring
+ToString(FW_RULE_ACTION action)
+{
+	switch (action)
+	{
+	case FW_RULE_ACTION_INVALID: return L"FW_RULE_ACTION_INVALID";
+	case FW_RULE_ACTION_ALLOW_BYPASS: return L"FW_RULE_ACTION_ALLOW_BYPASS";
+	case FW_RULE_ACTION_BLOCK: return L"FW_RULE_ACTION_BLOCK";
+	case FW_RULE_ACTION_ALLOW: return L"FW_RULE_ACTION_ALLOW";
+	default:
+		return L"(unknown FW_RULE_ACTION " + std::to_wstring(action) + L")";
+	}
+}
+
+static
+std::wstring
+ToString(FW_OS_PLATFORM platform)
+{
+	std::wstring result;
+
+	result += L"Platform: ";
+	if (platform.bPlatform == VER_PLATFORM_WIN32s)
+	{
+		result += L"VER_PLATFORM_WIN32s";
+	}
+	else if (platform.bPlatform == VER_PLATFORM_WIN32_WINDOWS)
+	{
+		result += L"VER_PLATFORM_WIN32_WINDOWS";
+	}
+	else if (platform.bPlatform == VER_PLATFORM_WIN32_NT)
+	{
+		result += L"VER_PLATFORM_WIN32_NT";
+	}
+	else
+	{
+		result += L"(unknown platform " + std::to_wstring(platform.bPlatform) + L")";
+	}
+
+	result += L", Major Version: " + std::to_wstring(platform.bMajorVersion);
+	result += L", Minor Version: " + std::to_wstring(platform.bMinorVersion);
+	return result;
+}
+
+static
+std::wstring
+ToString(FW_RULE_ORIGIN_TYPE type)
+{
+	switch (type)
+	{
+	case FW_RULE_ORIGIN_INVALID: return L"FW_RULE_ORIGIN_INVALID";
+	case FW_RULE_ORIGIN_LOCAL: return L"FW_RULE_ORIGIN_LOCAL";
+	case FW_RULE_ORIGIN_GP: return L"FW_RULE_ORIGIN_GP";
+	case FW_RULE_ORIGIN_DYNAMIC: return L"FW_RULE_ORIGIN_DYNAMIC";
+	case FW_RULE_ORIGIN_AUTOGEN: return L"FW_RULE_ORIGIN_AUTOGEN";
+	case FW_RULE_ORIGIN_HARDCODED: return L"FW_RULE_ORIGIN_HARDCODED";
+	case FW_RULE_ORIGIN_MDM: return L"FW_RULE_ORIGIN_MDM";
+		// Hyper-V rule origins for host translated rules
+	case FW_RULE_ORIGIN_HOST_LOCAL: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_LOCAL)";
+	case FW_RULE_ORIGIN_HOST_GP: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_GP)";
+	case FW_RULE_ORIGIN_HOST_DYNAMIC: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_DYNAMIC)";
+	case FW_RULE_ORIGIN_HOST_MDM: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_MDM)";
+	default:
+		return L"(unknown FW_RULE_ORIGIN_TYPE " + std::to_wstring(type) + L")";
+	}
+}
+
+static
+std::wstring
+ToString(FW_RULE_FLAG flag)
+{
+	if (flag == FW_RULE_FLAGS_NONE)
+	{
+		return L"FW_RULE_FLAGS_NONE";
+	}
+
+	std::wstring result;
+	if (flag & FW_RULE_FLAGS_ACTIVE)
+	{
+		result += L"FW_RULE_FLAGS_ACTIVE | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTHENTICATE)
+	{
+		result += L"FW_RULE_FLAGS_AUTHENTICATE | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTHENTICATE_WITH_ENCRYPTION)
+	{
+		result += L"FW_RULE_FLAGS_AUTHENTICATE_WITH_ENCRYPTION | ";
+	}
+	if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE)
+	{
+		result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE | ";
+	}
+	if (flag & FW_RULE_FLAGS_LOOSE_SOURCE_MAPPED)
+	{
+		result += L"FW_RULE_FLAGS_LOOSE_SOURCE_MAPPED | ";
+	}
+	static_assert(FW_RULE_FLAGS_AUTOGENERATE_CONNECTION_SECURITY_RULE == FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION);
+	if (flag & FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION)
+	{
+		result += L"FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION + FW_RULE_FLAGS_AUTOGENERATE_CONNECTION_SECURITY_RULE | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTH_WITH_ENC_NEGOTIATE)
+	{
+		result += L"FW_RULE_FLAGS_AUTH_WITH_ENC_NEGOTIATE | ";
+	}
+	if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_APP)
+	{
+		result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_APP | ";
+	}
+	if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_USER)
+	{
+		result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_USER | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTHENTICATE_BYPASS_OUTBOUND)
+	{
+		result += L"FW_RULE_FLAGS_AUTHENTICATE_BYPASS_OUTBOUND | ";
+	}
+	if (flag & FW_RULE_FLAGS_ALLOW_PROFILE_CROSSING)
+	{
+		result += L"FW_RULE_FLAGS_ALLOW_PROFILE_CROSSING | ";
+	}
+	if (flag & FW_RULE_FLAGS_LOCAL_ONLY_MAPPED)
+	{
+		result += L"FW_RULE_FLAGS_LOCAL_ONLY_MAPPED | ";
+	}
+	if (flag & FW_RULE_FLAGS_LUA_CONDITIONAL_ACE)
+	{
+		result += L"FW_RULE_FLAGS_LUA_CONDITIONAL_ACE | ";
+	}
+	if (flag & FW_RULE_FLAGS_BIND_TO_INTERFACE)
+	{
+		result += L"FW_RULE_FLAGS_BIND_TO_INTERFACE | ";
+	}
+
+	if (!result.empty())
+	{
+		// remove trailing " | "
+		result.erase(result.size() - 3);
+	}
+	return result;
+}
+
+static
+std::wstring
+ToString(FW_RULE_FLAGS2 flag)
+{
+	if (flag == FW_RULE_FLAGS2_NONE)
+	{
+		return L"FW_RULE_FLAGS2_NONE";
+	}
+
+	std::wstring result;
+
+	if (flag & FW_RULE_FLAGS2_SYSTEMOS_ONLY)
+	{
+		result += L"FW_RULE_FLAGS2_SYSTEMOS_ONLY | ";
+	}
+	if (flag & FW_RULE_FLAGS2_GAMEOS_ONLY)
+	{
+		result += L"FW_RULE_FLAGS2_GAMEOS_ONLY | ";
+	}
+	if (flag & FW_RULE_FLAGS2_DEVMODE)
+	{
+		result += L"FW_RULE_FLAGS2_DEVMODE | ";
+	}
+	if (flag & FW_RULE_FLAGS2_EMPTY_REMOTENAME)
+	{
+		result += L"FW_RULE_FLAGS2_EMPTY_REMOTENAME | ";
+	}
+	if (flag & FW_RULE_FLAGS2_NOT_REMOTENAME)
+	{
+		result += L"FW_RULE_FLAGS2_NOT_REMOTENAME | ";
+	}
+	if (flag & FW_RULE_FLAGS2_CALLOUT_AND_AUDIT)
+	{
+		result += L"FW_RULE_FLAGS2_CALLOUT_AND_AUDIT | ";
+	}
+	if (flag & FW_RULE_FLAGS2_APP_LOOPBACK)
+	{
+		result += L"FW_RULE_FLAGS2_APP_LOOPBACK | ";
+	}
+	if (flag & FW_RULE_FLAGS2_INDIRECT_NAME_RESOLVED)
+	{
+		result += L"FW_RULE_FLAGS2_INDIRECT_NAME_RESOLVED | ";
+	}
+	if (flag & FW_RULE_FLAGS2_INDIRECT_DESCRIPTION_RESOLVED)
+	{
+		result += L"FW_RULE_FLAGS2_INDIRECT_DESCRIPTION_RESOLVED | ";
+	}
+	if (flag & FW_RULE_FLAGS2_DELAY_ENFORCE)
+	{
+		result += L"FW_RULE_FLAGS2_DELAY_ENFORCE | ";
+	}
+	if (flag & FW_RULE_FLAGS2_AVOID_NETID)
+	{
+		result += L"FW_RULE_FLAGS2_AVOID_NETID | ";
+	}
+	if (flag & FW_RULE_FLAGS2_LOOPBACK)
+	{
+		result += L"FW_RULE_FLAGS2_LOOPBACK | ";
+	}
+	if (flag & FW_RULE_FLAGS2_EDP)
+	{
+		result += L"FW_RULE_FLAGS2_EDP | ";
+	}
+	if (flag & FW_RULE_FLAGS2_TENANT_RESTRICTIONS_HIGH_WEIGHT)
+	{
+		result += L"FW_RULE_FLAGS2_TENANT_RESTRICTIONS_HIGH_WEIGHT | ";
+	}
+
+	if (!result.empty())
+	{
+		// remove trailing " | "
+		result.erase(result.size() - 3);
+	}
+	return result;
+}
+
+
 struct NormalizedFirewallRule
 {
 	FW_RULE* fwRule{};
@@ -39,7 +296,6 @@ struct NormalizedFirewallRule
 	bool ruleEnabled = false;
 	bool ruleDeleted = false;
 
-	// guarantee this object is never copied, only moved
 	NormalizedFirewallRule(const NormalizedFirewallRule&) = delete;
 	NormalizedFirewallRule& operator=(const NormalizedFirewallRule&) = delete;
 
@@ -152,6 +408,319 @@ struct NormalizedFirewallRule
 		normalizedRule.AppendValue(fwRule->wszFqbn);
 		normalizedRule.AppendValue(fwRule->compartmentId);
 		return normalizedRule;
+	}
+
+	static std::wstring PrintRule(FW_RULE* fwRule)
+	{
+		if (!fwRule)
+		{
+			return L"<NULL>\n";
+		}
+
+		std::wstring result;
+
+		result += L"Rule Name: ";
+		result += !fwRule->wszName ? L"(null)" : fwRule->wszName;
+		result += L"\n";
+
+		result += L"Rule ID: ";
+		result += !fwRule->wszRuleId ? L"(null)" : fwRule->wszRuleId;
+		result += L"\n";
+
+		result += L"Description: ";
+		result += !fwRule->wszDescription ? L"(null)" : fwRule->wszDescription;
+		result += L"\n";
+
+		result += L"Schema Version: " + ToHex(fwRule->wSchemaVersion) + L"\n";
+		result += L"Profiles: 0x" + std::to_wstring(fwRule->dwProfiles) + L"\n";
+		result += L"Direction: " + ToString(fwRule->Direction) + L"\n";
+		result += L"IP Protocol: " + ToString(static_cast<NET_FW_IP_PROTOCOL>(fwRule->wIpProtocol)) + L"\n";
+
+		switch (fwRule->wIpProtocol)
+		{
+		case NET_FW_IP_PROTOCOL_TCP:
+		case NET_FW_IP_PROTOCOL_UDP:
+		{
+			// TCP/UDP ports
+			result += L"Local Port Keywords: 0x" + std::to_wstring(fwRule->LocalPorts.wPortKeywords) + L"\n";
+			result += L"Local Ports: ";
+			if (fwRule->LocalPorts.Ports.dwNumEntries > 0 && fwRule->LocalPorts.Ports.pPorts)
+			{
+				for (DWORD i = 0; i < fwRule->LocalPorts.Ports.dwNumEntries; ++i)
+				{
+					result += std::to_wstring(fwRule->LocalPorts.Ports.pPorts[i].wBegin);
+					if (fwRule->LocalPorts.Ports.pPorts[i].wBegin != fwRule->LocalPorts.Ports.pPorts[i].wEnd)
+					{
+						result += L"-" + std::to_wstring(fwRule->LocalPorts.Ports.pPorts[i].wEnd);
+					}
+					if (i < fwRule->LocalPorts.Ports.dwNumEntries - 1)
+					{
+						result += L", ";
+					}
+				}
+			}
+			else
+			{
+				result += L"(none)";
+			}
+			result += L"\n";
+
+			result += L"Remote Port Keywords: 0x" + std::to_wstring(fwRule->RemotePorts.wPortKeywords) + L"\n";
+			result += L"Remote Ports: ";
+			if (fwRule->RemotePorts.Ports.dwNumEntries > 0 && fwRule->RemotePorts.Ports.pPorts)
+			{
+				for (DWORD i = 0; i < fwRule->RemotePorts.Ports.dwNumEntries; ++i)
+				{
+					result += std::to_wstring(fwRule->RemotePorts.Ports.pPorts[i].wBegin);
+					if (fwRule->RemotePorts.Ports.pPorts[i].wBegin != fwRule->RemotePorts.Ports.pPorts[i].wEnd)
+					{
+						result += L"-" + std::to_wstring(fwRule->RemotePorts.Ports.pPorts[i].wEnd);
+					}
+					if (i < fwRule->RemotePorts.Ports.dwNumEntries - 1)
+					{
+						result += L", ";
+					}
+				}
+			}
+			else
+			{
+				result += L"(none)";
+			}
+			result += L"\n";
+			break;
+		}
+		case 1:
+		case 58:
+		{
+			// ICMP
+			result += L"ICMP v4 Type/Code List: ";
+			if (fwRule->V4TypeCodeList.dwNumEntries > 0 && fwRule->V4TypeCodeList.pEntries)
+			{
+				for (DWORD i = 0; i < fwRule->V4TypeCodeList.dwNumEntries; ++i)
+				{
+					result += std::to_wstring(fwRule->V4TypeCodeList.pEntries[i].bType) + L":" +
+						std::to_wstring(fwRule->V4TypeCodeList.pEntries[i].wCode);
+					if (i < fwRule->V4TypeCodeList.dwNumEntries - 1)
+					{
+						result += L", ";
+					}
+				}
+			}
+			else
+			{
+				result += L"(none)";
+			}
+			result += L"\n";
+
+			result += L"ICMP v6 Type/Code List: ";
+			if (fwRule->V6TypeCodeList.dwNumEntries > 0 && fwRule->V6TypeCodeList.pEntries)
+			{
+				for (DWORD i = 0; i < fwRule->V6TypeCodeList.dwNumEntries; ++i)
+				{
+					result += std::to_wstring(fwRule->V6TypeCodeList.pEntries[i].bType) + L":" +
+						std::to_wstring(fwRule->V6TypeCodeList.pEntries[i].wCode);
+					if (i < fwRule->V6TypeCodeList.dwNumEntries - 1)
+					{
+						result += L", ";
+					}
+				}
+			}
+			else
+			{
+				result += L"(none)";
+			}
+			result += L"\n";
+			break;
+		}
+		}
+
+		if (fwRule->LocalAddresses.dwV4AddressKeywords > 0)
+		{
+			result += L"Local Address V4 Keywords: 0x" + std::to_wstring(fwRule->LocalAddresses.dwV4AddressKeywords) + L"\n";
+		}
+		if (fwRule->LocalAddresses.dwV6AddressKeywords > 0)
+		{
+			result += L"Local Address V6 Keywords: 0x" + std::to_wstring(fwRule->LocalAddresses.dwV6AddressKeywords) + L"\n";
+		}
+		if (fwRule->LocalAddresses.V4SubNets.dwNumEntries > 0)
+		{
+			result += L"Local Address : V4 Subnets: " + std::to_wstring(fwRule->LocalAddresses.V4SubNets.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->LocalAddresses.V6SubNets.dwNumEntries > 0)
+		{
+			result += L"Local Address : V6 Subnets: " + std::to_wstring(fwRule->LocalAddresses.V6SubNets.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->LocalAddresses.V4Ranges.dwNumEntries > 0)
+		{
+			result += L"Local Address : V4 Ranges: " + std::to_wstring(fwRule->LocalAddresses.V4Ranges.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->LocalAddresses.V6Ranges.dwNumEntries > 0)
+		{
+			result += L"Local Address : V6 Ranges: " + std::to_wstring(fwRule->LocalAddresses.V6Ranges.dwNumEntries) + L" entries\n";
+		}
+
+		if (fwRule->RemoteAddresses.dwV4AddressKeywords > 0)
+		{
+			result += L"Remote Address V4 Keywords: 0x" + std::to_wstring(fwRule->RemoteAddresses.dwV4AddressKeywords) + L"\n";
+		}
+		if (fwRule->RemoteAddresses.dwV6AddressKeywords > 0)
+		{
+			result += L"Remote Address V6 Keywords: 0x" + std::to_wstring(fwRule->RemoteAddresses.dwV6AddressKeywords) + L"\n";
+		}
+		if (fwRule->RemoteAddresses.V4SubNets.dwNumEntries > 0)
+		{
+			result += L"Remote Address : V4 Subnets: " + std::to_wstring(fwRule->RemoteAddresses.V4SubNets.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->RemoteAddresses.V6SubNets.dwNumEntries > 0)
+		{
+			result += L"Remote Address : V6 Subnets: " + std::to_wstring(fwRule->RemoteAddresses.V6SubNets.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->RemoteAddresses.V4Ranges.dwNumEntries > 0)
+		{
+			result += L"Remote Address : V4 Ranges: " + std::to_wstring(fwRule->RemoteAddresses.V4Ranges.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->RemoteAddresses.V6Ranges.dwNumEntries > 0)
+		{
+			result += L"Remote Address : V6 Ranges: " + std::to_wstring(fwRule->RemoteAddresses.V6Ranges.dwNumEntries) + L" entries\n";
+		}
+		if (fwRule->LocalInterfaceIds.dwNumLUIDs > 0)
+		{
+			result += L"Local Interface IDs: " + std::to_wstring(fwRule->LocalInterfaceIds.dwNumLUIDs) + L" entries\n";
+		}
+
+		if (fwRule->dwLocalInterfaceTypes > 0)
+		{
+			result += L"Local Interface Types: 0x" + std::to_wstring(fwRule->dwLocalInterfaceTypes) + L"\n";
+		}
+
+		if (fwRule->wszLocalApplication)
+		{
+			result += std::wstring(L"Local Application: ") + fwRule->wszLocalApplication + L"\n";
+		}
+
+		if (fwRule->wszLocalService)
+		{
+			result += std::wstring(L"Local Service: ") + fwRule->wszLocalService + L"\n";
+		}
+
+		result += L"Action: " + ToString(fwRule->Action) + L"\n";
+		result += L"Flags: " + ToString(static_cast<FW_RULE_FLAG>(fwRule->wFlags)) + L" (0x" + std::to_wstring(fwRule->wFlags) + L")\n";
+		if (fwRule->wFlags2 > 0)
+		{
+			result += L"Flags2: " + ToString(static_cast<FW_RULE_FLAGS2>(fwRule->wFlags2)) + L" (0x" + std::to_wstring(fwRule->wFlags2) + L")\n";
+		}
+
+		if (fwRule->wszRemoteMachineAuthorizationList)
+		{
+			result += std::wstring(L"Remote Machine Authorization List : ") + fwRule->wszRemoteMachineAuthorizationList + L"\n";
+		}
+
+		if (fwRule->wszRemoteUserAuthorizationList)
+		{
+			result += std::wstring(L"Remote User Authorization List: ") + fwRule->wszRemoteUserAuthorizationList + L"\n";
+		}
+
+		if (fwRule->wszLocalUserAuthorizationList)
+		{
+			result += std::wstring(L"Local User Authorization List: ") + fwRule->wszLocalUserAuthorizationList + L"\n";
+		}
+
+		if (fwRule->wszEmbeddedContext)
+		{
+			result += std::wstring(L"Embedded Context: ") + fwRule->wszEmbeddedContext + L"\n";
+		}
+
+		if (fwRule->PlatformValidityList.dwNumEntries > 0)
+		{
+			result += L"Platform Validity List: " + std::to_wstring(fwRule->PlatformValidityList.dwNumEntries) + L" entries\n";
+			for (uint32_t count = 0; count < fwRule->PlatformValidityList.dwNumEntries; ++count)
+			{
+				result += L"  - " + ToString(fwRule->PlatformValidityList.pPlatforms[count]) + L"\n";
+			}
+		}
+
+		result += L"Status: ";
+		if (fwRule->Status == FW_RULE_STATUS_OK)
+		{
+			result += L"FW_RULE_STATUS_OK";
+		}
+		else
+		{
+			result += std::to_wstring(fwRule->Status);
+		}
+		result += L"\n";
+
+		result += L"Origin: " + ToString(fwRule->Origin) + L"\n";
+
+		if (fwRule->wszGPOName)
+		{
+			result += std::wstring(L"GPO Name: ") + fwRule->wszGPOName + L"\n";
+		}
+
+		if (fwRule->pMetaData)
+		{
+			result += L"MetaData: " + std::to_wstring(fwRule->pMetaData->dwNumEntries) + L" entries\n";
+		}
+
+		if (fwRule->wszPackageId)
+		{
+			result += std::wstring(L"Package ID: ") + fwRule->wszPackageId + L"\n";
+		}
+
+		if (fwRule->wszLocalUserOwner)
+		{
+			result += std::wstring(L"Local User Owner: ") + fwRule->wszLocalUserOwner + L"\n";
+		}
+
+		if (fwRule->dwTrustTupleKeywords > 0)
+		{
+			result += L"Trust Tuple Keywords: 0x" + std::to_wstring(fwRule->dwTrustTupleKeywords) + L"\n";
+		}
+
+		if (fwRule->OnNetworkNames.dwNumEntries > 0)
+		{
+			result += L"Network Names: ";
+			for (DWORD i = 0; i < fwRule->OnNetworkNames.dwNumEntries; ++i)
+			{
+				result += fwRule->OnNetworkNames.wszNames[i] ? std::wstring(fwRule->OnNetworkNames.wszNames[i]) : L"(null)";
+				if (i < fwRule->OnNetworkNames.dwNumEntries - 1)
+				{
+					result += L", ";
+				}
+			}
+			result += L"\n";
+		}
+
+		if (fwRule->wszSecurityRealmId)
+		{
+			result += std::wstring(L"Security Realm ID: ") + fwRule->wszSecurityRealmId + L"\n";
+		}
+
+		if (fwRule->RemoteOutServerNames.dwNumEntries > 0)
+		{
+			result += L"Remote Out Server Names: ";
+			for (DWORD i = 0; i < fwRule->RemoteOutServerNames.dwNumEntries; ++i)
+			{
+				result += fwRule->RemoteOutServerNames.wszNames[i] ? std::wstring(fwRule->RemoteOutServerNames.wszNames[i]) : L"(null)";
+				if (i < fwRule->RemoteOutServerNames.dwNumEntries - 1)
+				{
+					result += L", ";
+				}
+			}
+			result += L"\n";
+		}
+
+		if (fwRule->wszFqbn)
+		{
+			result += std::wstring(L"FQBN: ") + fwRule->wszFqbn + L"\n";
+		}
+
+		if (fwRule->compartmentId > 0)
+		{
+			result += L"Compartment ID: " + std::to_wstring(fwRule->compartmentId) + L"\n";
+		}
+
+		return result;
 	}
 
 private:

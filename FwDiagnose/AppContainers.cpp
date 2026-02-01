@@ -17,6 +17,8 @@
 #include <wil/resource.h>
 
 #include "AppContainers.h"
+
+#include "FirewallRules.h"
 #include "FwDiagnose.h"
 
 static std::vector<AppContainerPackage> g_app_packages;
@@ -82,24 +84,24 @@ void LoadAllAppPackages()
 		case winrt::Windows::System::ProcessorArchitecture::X86:
 			app_package.architecture = L"x86";
 			break;
-		    case winrt::Windows::System::ProcessorArchitecture::Arm:
-				app_package.architecture = L"ARM";
-				break;
-			case winrt::Windows::System::ProcessorArchitecture::X64:
-				app_package.architecture = L"x64";
-				break;
-			case winrt::Windows::System::ProcessorArchitecture::Neutral:
-				app_package.architecture = L"Neutral";
-				break;
-			case winrt::Windows::System::ProcessorArchitecture::Arm64:
-				app_package.architecture = L"ARM64";
-				break;
-			case winrt::Windows::System::ProcessorArchitecture::X86OnArm64:
-				app_package.architecture = L"x86OnARM64";
-				break;
-			default:
-				app_package.architecture = L"Unknown";
-				break;
+		case winrt::Windows::System::ProcessorArchitecture::Arm:
+			app_package.architecture = L"ARM";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::X64:
+			app_package.architecture = L"x64";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::Neutral:
+			app_package.architecture = L"Neutral";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::Arm64:
+			app_package.architecture = L"ARM64";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::X86OnArm64:
+			app_package.architecture = L"x86OnARM64";
+			break;
+		default:
+			app_package.architecture = L"Unknown";
+			break;
 		}
 
 		const auto [full_name_hr, full_name_sid] = ResolveAppContainerNameToSid(app_package.full_name, AppContainerName::FullName);
@@ -139,6 +141,88 @@ void PrintAllAppPackages()
 	}
 }
 
+void PrintFirewallRulesReferencingAppPackages()
+{
+	std::vector<std::wstring> app_isolation_rules_without_package_id{};
+	std::vector<std::wstring> app_isolation_rules_with_package_id{};
+	// uint32_t count = 0;
+	for (const auto& [policy_store, rule] : GetRulesWithAppPackages())
+	{
+		if (policy_store == "Application-Isolation")
+		{
+			if (rule->wszPackageId)
+			{
+				app_isolation_rules_with_package_id.emplace_back(rule->wszRuleId);
+			}
+			else
+			{
+				app_isolation_rules_without_package_id.emplace_back(rule->wszRuleId);
+			}
+		}
+		/*
+		if (rule->wszName == std::wstring_view{ L"@{Microsoft.LockApp_10.0.29520.1000_neutral__cw5n1h2txyewy?ms-resource://Microsoft.LockApp/resources/AppDisplayName}" })
+		{
+			wprintf(L"****** FW_RULE [%hs Store] *********\n%ws\n", policy_store.c_str(), NormalizedFirewallRule::PrintRule(rule).c_str());
+		}
+		else if (rule->wszPackageId && rule->wszPackageId == std::wstring_view{ L"S-1-15-2-1823635404-1364722122-2170562666-1762391777-2399050872-3465541734-3732476201" })
+		{
+			wprintf(L"****** FW_RULE [%hs Store] *********\n%ws\n", policy_store.c_str(), NormalizedFirewallRule::PrintRule(rule).c_str());
+		}
+        */
+
+		/*
+		if (!rule->wszName)
+		{
+			wprintf(L"Rule %lu: Rule has no name (packageId %ws) ***\n",
+				count,
+				rule->wszPackageId);
+			++count;
+			continue;
+		}
+
+		if (!rule->wszPackageId)
+		{
+			if (rule->wszName[0] == L'@')
+			{
+				if (!rule->wszLocalApplication)
+				{
+					wprintf(L"Rule %lu: %ws [no packageId, but looks like an app-package rule]\n",
+						count,
+						rule->wszName);
+					++count;
+				}
+			}
+			else
+			{
+				wprintf(L"Rule %lu: %ws [no packageId]\n",
+					count,
+					rule->wszName);
+				++count;
+			}
+		}
+		else
+		{
+			wprintf(L"Rule %lu: %ws [packageId %ws]\n",
+				count,
+				rule->wszName,
+				rule->wszPackageId);
+		}
+		*/
+	}
+
+	wprintf(L"*** Firewall Rules in Application-Isolation Store with a Package ID [%llu rules] ***\n", app_isolation_rules_with_package_id.size());
+	for (const auto& rule_id : app_isolation_rules_with_package_id)
+	{
+		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
+	}
+	wprintf(L"\n\n");
+	wprintf(L"*** Firewall Rules in Application-Isolation Store without a Package ID [%llu rules] ***\n", app_isolation_rules_without_package_id.size());
+	for (const auto& rule_id : app_isolation_rules_without_package_id)
+	{
+		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
+	}
+}
+
 const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept
 {
 	return g_app_packages;
@@ -159,5 +243,5 @@ std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) no
 			return { package.family_name, AppContainerName::FamilyName };
 		}
 	}
-	return { L"", AppContainerName::None };
+	return { {}, AppContainerName::None };
 }

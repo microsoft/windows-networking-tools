@@ -1333,6 +1333,32 @@ try
 }
 CATCH_RETURN()
 
+// Returns a vector of tuples of (policy store type string, FW_RULE*) for rules that have an application package ID
+std::vector<std::tuple<std::string, FW_RULE*>> GetRulesWithAppPackages()
+{
+	std::vector<std::tuple<std::string, FW_RULE*>> return_rules;
+
+	for (auto& policy : g_policy_objects)
+	{
+		for (const auto& rule : policy.normalizedRules)
+		{
+			if (rule.fwRule->wszPackageId) // wszPackageId == the Package ID SID
+			{
+				return_rules.emplace_back(policy.type_string, rule.fwRule);
+			}
+			else if (rule.fwRule->wszName)
+			{
+				if (rule.fwRule->wszName[0] == L'@')
+				{
+					return_rules.emplace_back(policy.type_string, rule.fwRule);
+				}
+			}
+		}
+	}
+
+	return return_rules;
+}
+
 void ProcessFirewallRules()
 {
 	std::wstring banner_header;

@@ -36,5 +36,6 @@ struct AppContainerPackage
 
 void LoadAllAppPackages();
 void PrintAllAppPackages();
+void PrintFirewallRulesReferencingAppPackages();
 const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept;
 std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) noexcept;
