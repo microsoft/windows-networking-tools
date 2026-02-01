@@ -5,6 +5,9 @@
 #include <exception>
 #include <string>
 #include <windows.h>
+
+// enable this #define to get debug output from ctWmiInstance methods
+// #define ENABLE_WMI_DEBUG_OUTPUT
 #include "ctWmiInstance.hpp"
 
 #include <wil/com.h>
@@ -61,6 +64,16 @@ static PCWSTR PrintNetFwAction(int32_t flag) noexcept
 
 }
 
+void PrintUsage() noexcept
+{
+	wprintf(
+		L"QueryFirewallProperties.exe\n"
+		L"Reads and displays the properties of MSFT_NetFirewallProfile from a specified firewall policy store.\n"
+		L"\n"
+		L"Usage: QueryFirewallProperties.exe [-PolicyStore <PolicyStoreName>]\n"
+		L"     : PolicyStoreName is optional, and can be one of ActiveStore, PersistentStore, or RSOP\n"
+	    L"     : PolicyStoreName defaults to ActiveStore\n");
+}
 int __cdecl wmain(int argc, wchar_t** argv)
 try
 {
@@ -77,19 +90,38 @@ try
 
 	PCWSTR policyStoreValue = L"ActiveStore";
 
+	if (argc != 1 && argc != 3)
+	{
+		PrintUsage();
+		return E_INVALIDARG;
+	}
+
 	if (argc == 3)
 	{
 		if (0 == lstrcmpiW(L"-PolicyStore", argv[1]))
 		{
 			policyStoreValue = argv[2];
 		}
+		else
+		{
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+	}
+
+	if (lstrcmpiW(policyStoreValue, L"ActiveStore") != 0 &&
+		lstrcmpiW(policyStoreValue, L"") != 0 &&
+		lstrcmpiW(policyStoreValue, L"") != 0)
+	{
+		PrintUsage();
+		return E_INVALIDARG;
 	}
 
 	wprintf(L"Enumerating NetFirewallProfile from the policy store %ws\n", policyStoreValue);
 
 	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
 	// analogous to the powershell command: Get-NetFirewallProfile -PolicyStore ActiveStore
-    const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
+	const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
 	THROW_IF_FAILED(policyStoreContext->SetValue(
 		L"PolicyStore",
 		0,
@@ -119,7 +151,7 @@ try
 		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowLocalFirewallRules", &local_rules_allowed));
 
 		int32_t local_ipsec_rules_allowed{};
-        THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowLocalIPsecRules", &local_ipsec_rules_allowed));
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowLocalIPsecRules", &local_ipsec_rules_allowed));
 
 		int32_t user_apps_allowed{};
 		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowUserApps", &user_apps_allowed));
@@ -152,7 +184,9 @@ try
 		int32_t enable_ipsec_stealth_mode{};
 		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"EnableStealthModeForIPsec", &enable_ipsec_stealth_mode));
 
-        //    string DisabledInterfaceAliases[];
+		// get() will return false if the property is null or empty - which will happen when no interfaces are disabled
+		std::vector<std::wstring> disabledInterfaces;
+		profile.get(L"DisabledInterfaceAliases", &disabledInterfaces);
 
 		wprintf(
 			L"\nProfile %ws\n"
@@ -188,13 +222,25 @@ try
 			PrintFwBooleanFlag(log_allowed),
 			PrintFwBooleanFlag(log_blocked),
 			PrintFwBooleanFlag(log_ignored),
-			PrintFwBooleanFlag(enable_ipsec_stealth_mode)
-		);
+			PrintFwBooleanFlag(enable_ipsec_stealth_mode));
+
+		if (disabledInterfaces.empty())
+		{
+			wprintf(L"  Disabled Interface Aliases: None\n");
+		}
+		else
+		{
+			wprintf(L"  Disabled Interface Aliases:\n");
+			for (const auto& name : disabledInterfaces)
+			{
+				wprintf(L"    %ws\n", name.c_str());
+			}
+		}
 	}
 
 	if (!instances_returned)
 	{
-	    wprintf(L"\n** No policy objects returned for the specified policy store **\n");
+		wprintf(L"\n** No policy objects returned for the specified policy store **\n");
 	}
 }
 catch (const std::exception& e)

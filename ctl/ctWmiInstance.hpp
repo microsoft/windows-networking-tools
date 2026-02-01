@@ -380,12 +380,16 @@ private:
     void get_property(_In_ PCWSTR propertyName, _Inout_ VARIANT* pVariant) const
     {
         auto* pInstance = m_instanceObject.get();
-        THROW_IF_FAILED(pInstance->Get(
+        const auto hr = pInstance->Get(
             propertyName,
             0,
             pVariant,
             nullptr,
-            nullptr));
+            nullptr);
+#if defined(ENABLE_WMI_DEBUG_OUTPUT)
+            wprintf(L"\t** ctWmiInstance::get_property(%ws) returned HRESULT: 0x%08X, returned variant type 0x%x\n", propertyName, hr, pVariant->vt);
+#endif
+		THROW_IF_FAILED(hr);
     }
 
     void set_property(_In_ PCWSTR property_name, _In_ const VARIANT* pVariant) const
