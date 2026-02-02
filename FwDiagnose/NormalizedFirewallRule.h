@@ -12,16 +12,30 @@
 
 #include "WfpCounters.h"
 #include "FwDiagnose.h"
+#include "FirewallRules.h"
 
 #include <wil/resource.h>
 
-static
-std::wstring
-ToHex(uint32_t value)
+inline WORD MajorVersionFromSchemaVersion(WORD word) noexcept
 {
-	WCHAR string_value[16]{};
-	swprintf_s(string_value, L"0x%X", value);
-	return std::wstring{ string_value };
+	constexpr WORD MajorVersionOffset = 8;
+	constexpr WORD MajorVersionBitMask = 0xFF00;
+	return (word & MajorVersionBitMask) >> MajorVersionOffset;
+}
+
+inline WORD MinorVersionFromSchemaVersion(WORD word) noexcept
+{
+	constexpr WORD MinorVersionBitMask = 0x00FF;
+	return word & MinorVersionBitMask;
+}
+
+
+static
+WORD OSPlatformFromFWPlatform(FW_OS_PLATFORM platform)
+{
+	// trim off high-order FW bits to read the OS platform field that matches VER_PLATFORM_XXX values
+	constexpr BYTE FWPlatformBitMask = 7;
+	return platform.bPlatform & FWPlatformBitMask;
 }
 
 static
@@ -72,17 +86,18 @@ std::wstring
 ToString(FW_OS_PLATFORM platform)
 {
 	std::wstring result;
+	const auto os_platform = OSPlatformFromFWPlatform(platform);
 
 	result += L"Platform: ";
-	if (platform.bPlatform == VER_PLATFORM_WIN32s)
+	if (os_platform == VER_PLATFORM_WIN32s)
 	{
 		result += L"VER_PLATFORM_WIN32s";
 	}
-	else if (platform.bPlatform == VER_PLATFORM_WIN32_WINDOWS)
+	else if (os_platform == VER_PLATFORM_WIN32_WINDOWS)
 	{
 		result += L"VER_PLATFORM_WIN32_WINDOWS";
 	}
-	else if (platform.bPlatform == VER_PLATFORM_WIN32_NT)
+	else if (os_platform == VER_PLATFORM_WIN32_NT)
 	{
 		result += L"VER_PLATFORM_WIN32_NT";
 	}
@@ -275,6 +290,7 @@ ToString(FW_RULE_FLAGS2 flag)
 struct NormalizedFirewallRule
 {
 	FW_RULE* fwRule{};
+	WORD requestedRuleVersion{};
 	std::wstring ruleId;
 	NormalizedString ruleName;
 	std::wstring ruleDescription;
@@ -305,10 +321,14 @@ struct NormalizedFirewallRule
 	NormalizedFirewallRule() = default;
 	~NormalizedFirewallRule() = default;
 
-	static NormalizedFirewallRule BuildFromFWRule(FW_RULE* fwRule)
+	static NormalizedFirewallRule BuildFromFWRule(FW_RULE* fwRule, WORD requestedRuleVersion)
 	{
 		NormalizedFirewallRule normalizedRule;
 		normalizedRule.fwRule = fwRule;
+		// we must store the version we requested, not the version in the rule
+		// the FW_RULE* structure will be allocated based on the requested version
+		// not the actual version of the rule
+		normalizedRule.requestedRuleVersion = requestedRuleVersion;
 
 		if (fwRule->wszName)
 		{
@@ -407,10 +427,32 @@ struct NormalizedFirewallRule
 		normalizedRule.AppendValue(fwRule->RemoteOutServerNames);
 		normalizedRule.AppendValue(fwRule->wszFqbn);
 		normalizedRule.AppendValue(fwRule->compartmentId);
+
+		if (normalizedRule.requestedRuleVersion < FW_BINARY_VERSION_31 || fwRule->wSchemaVersion < FW_BINARY_VERSION_31)
+		{
+			normalizedRule.AppendValue(GUID{}); // FW_RULE::providerContextKey
+			normalizedRule.AppendValue(DWORD{}); // FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST::dwNumIds
+		}
+		else
+		{
+			// fields are present in 2.31 and later
+			normalizedRule.AppendValue(fwRule->providerContextKey);
+			normalizedRule.AppendValue(fwRule->RemoteDynamicKeywordAddresses);
+		}
+
+		if (normalizedRule.requestedRuleVersion < FW_BINARY_VERSION_33 || fwRule->wSchemaVersion < FW_BINARY_VERSION_33)
+		{
+			normalizedRule.AppendValue(PCWSTR{ nullptr });
+		}
+		else
+		{
+			normalizedRule.AppendValue(fwRule->wszPackageFamilyName);
+		}
+
 		return normalizedRule;
 	}
 
-	static std::wstring PrintRule(FW_RULE* fwRule)
+	static std::wstring PrintRule(FW_RULE* fwRule, WORD requestedRuleVersion)
 	{
 		if (!fwRule)
 		{
@@ -431,7 +473,10 @@ struct NormalizedFirewallRule
 		result += !fwRule->wszDescription ? L"(null)" : fwRule->wszDescription;
 		result += L"\n";
 
-		result += L"Schema Version: " + ToHex(fwRule->wSchemaVersion) + L"\n";
+		result += L"Schema Version: "
+			+ std::to_wstring(MajorVersionFromSchemaVersion(fwRule->wSchemaVersion))
+			+ L"." + std::to_wstring(MinorVersionFromSchemaVersion(fwRule->wSchemaVersion))
+			+ L"\n";
 		result += L"Profiles: 0x" + std::to_wstring(fwRule->dwProfiles) + L"\n";
 		result += L"Direction: " + ToString(fwRule->Direction) + L"\n";
 		result += L"IP Protocol: " + ToString(static_cast<NET_FW_IP_PROTOCOL>(fwRule->wIpProtocol)) + L"\n";
@@ -720,6 +765,38 @@ struct NormalizedFirewallRule
 			result += L"Compartment ID: " + std::to_wstring(fwRule->compartmentId) + L"\n";
 		}
 
+		if (requestedRuleVersion >= FW_BINARY_VERSION_31 && fwRule->wSchemaVersion >= FW_BINARY_VERSION_31)
+		{
+			// fields are present in 2.31 and later
+			constexpr GUID null_guid{};
+			if (fwRule->providerContextKey != null_guid)
+			{
+				result += std::wstring(L"Provider Context Key: ") + GuidToString(fwRule->providerContextKey) + L"\n";
+			}
+
+			if (fwRule->RemoteDynamicKeywordAddresses.dwNumIds > 0)
+			{
+				result += L"Remote Dynamic Keyword Address IDs: ";
+				for (DWORD i = 0; i < fwRule->RemoteDynamicKeywordAddresses.dwNumIds; ++i)
+				{
+					result += GuidToString(fwRule->RemoteDynamicKeywordAddresses.ids[i]);
+					if (i < fwRule->RemoteDynamicKeywordAddresses.dwNumIds - 1)
+					{
+						result += L", ";
+					}
+				}
+				result += L"\n";
+			}
+		}
+
+		if (requestedRuleVersion > FW_BINARY_VERSION_31 && fwRule->wSchemaVersion > FW_BINARY_VERSION_31)
+		{
+			if (fwRule->wszPackageFamilyName)
+			{
+				result += std::wstring(L"Package Family Name: ") + fwRule->wszPackageFamilyName + L"\n";
+			}
+		}
+
 		return result;
 	}
 
@@ -996,7 +1073,7 @@ private:
 		const auto ports_count = list.dwNumEntries;
 		if (ports_count == 0 || !ports)
 		{
-			if (ports_count != 0 || ports)
+			if (ports_count != 0 && !ports)
 			{
 				DebugBreak();
 			}
@@ -1018,7 +1095,7 @@ private:
 		const auto icmp_count = list.dwNumEntries;
 		if (icmp_count == 0 || !icmp_list)
 		{
-			if (icmp_count != 0 || icmp_list)
+			if (icmp_count != 0 && !icmp_list)
 			{
 				DebugBreak();
 			}
@@ -1040,7 +1117,7 @@ private:
 		const auto subnet_count = list.dwNumEntries;
 		if (subnet_count == 0 || !subnets)
 		{
-			if (subnet_count != 0 || subnets)
+			if (subnet_count != 0 && !subnets)
 			{
 				DebugBreak();
 			}
@@ -1062,7 +1139,7 @@ private:
 		const auto subnet_count = list.dwNumEntries;
 		if (subnet_count == 0 || !subnets)
 		{
-			if (subnet_count != 0 || subnets)
+			if (subnet_count != 0 && !subnets)
 			{
 				DebugBreak();
 			}
@@ -1073,7 +1150,7 @@ private:
 			for (const auto& subnet : wil::make_range(subnets, subnets + subnet_count))
 			{
 				// append as 2 64-bit integers
-				static_assert(sizeof(subnet.Address) == (2 * sizeof(uint64_t)));
+				static_assert(sizeof(subnet.Address) == 2 * sizeof(uint64_t));
 				const BYTE* address_buffer = subnet.Address;
 				const uint64_t* first_integer = reinterpret_cast<const uint64_t*>(address_buffer);
 				AppendValue(*first_integer);
@@ -1089,7 +1166,7 @@ private:
 		const auto range_count = list.dwNumEntries;
 		if (range_count == 0 || !ranges)
 		{
-			if (range_count != 0 || ranges)
+			if (range_count != 0 && !ranges)
 			{
 				DebugBreak();
 			}
@@ -1111,7 +1188,7 @@ private:
 		const auto range_count = list.dwNumEntries;
 		if (range_count == 0 || !ranges)
 		{
-			if (range_count != 0 || ranges)
+			if (range_count != 0 && !ranges)
 			{
 				DebugBreak();
 			}
@@ -1122,14 +1199,14 @@ private:
 			for (const auto& range : wil::make_range(ranges, ranges + range_count))
 			{
 				// append as 2 64-bit integers
-				static_assert(sizeof(range.Begin) == (2 * sizeof(uint64_t)));
+				static_assert(sizeof(range.Begin) == 2 * sizeof(uint64_t));
 				const BYTE* begin_buffer = range.Begin;
 				const uint64_t* first_begin_integer = reinterpret_cast<const uint64_t*>(begin_buffer);
 				AppendValue(*first_begin_integer);
 				const uint64_t* second_begin_integer = reinterpret_cast<const uint64_t*>(begin_buffer + sizeof(first_begin_integer));
 				AppendValue(*second_begin_integer);
 				// append as 2 64-bit integers
-				static_assert(sizeof(range.End) == (2 * sizeof(uint64_t)));
+				static_assert(sizeof(range.End) == 2 * sizeof(uint64_t));
 				const BYTE* end_buffer = range.End;
 				const uint64_t* first_end_integer = reinterpret_cast<const uint64_t*>(end_buffer);
 				AppendValue(*first_end_integer);
@@ -1145,7 +1222,7 @@ private:
 		const auto luids_count = interface_luids.dwNumLUIDs;
 		if (luids_count == 0 || !luids)
 		{
-			if (luids_count != 0 || luids)
+			if (luids_count != 0 && !luids)
 			{
 				DebugBreak();
 			}
@@ -1166,7 +1243,7 @@ private:
 		const auto platform_count = list.dwNumEntries;
 		if (platform_count == 0 || !platforms)
 		{
-			if (platform_count != 0 || platforms)
+			if (platform_count != 0 && !platforms)
 			{
 				DebugBreak();
 			}
@@ -1201,7 +1278,7 @@ private:
 
 		if (enforcement_states_count == 0 || !enforcement_states)
 		{
-			if (enforcement_states_count != 0 || enforcement_states)
+			if (enforcement_states_count != 0 && !enforcement_states)
 			{
 				DebugBreak();
 			}
@@ -1223,7 +1300,7 @@ private:
 
 		if (names_count == 0 || !names)
 		{
-			if (names_count != 0 || names)
+			if (names_count != 0 && !names)
 			{
 				DebugBreak();
 			}
@@ -1256,6 +1333,29 @@ private:
 	{
 		const PCWSTR const_value{ value };
 		return AppendValue(const_value);
+	}
+
+	void AppendValue(const FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST& list)
+	{
+		const auto* ids = list.ids;
+		const auto ids_count = list.dwNumIds;
+		if (ids_count == 0 || !ids)
+		{
+			if (ids_count != 0 && !ids)
+			{
+				DebugBreak();
+			}
+
+			AppendValue(0); // for the count
+		}
+		else
+		{
+			AppendValue(ids_count);
+			for (const auto& id : wil::make_range(ids, ids + ids_count))
+			{
+				AppendValue(id);
+			}
+		}
 	}
 
 	template <typename T>

@@ -11,10 +11,15 @@
 extern "C" {
 #endif
 
-#define FW_VERSION(major,minor) \
-        ((WORD)(((BYTE)(minor)) | ((WORD)((BYTE)(major))) << 8))
+	constexpr WORD FW_VERSION(WORD major, WORD minor) noexcept
+	{
+		return (WORD)((BYTE)(minor) | ((WORD)((BYTE)(major))) << 8);
+	}
 
-#define FW_CURRENT_BINARY_VERSION         FW_VERSION(2,27)
+	constexpr WORD FW_BINARY_MAJOR_VERSION = 2;
+	constexpr WORD FW_BINARY_VERSION_27 = FW_VERSION(FW_BINARY_MAJOR_VERSION, 27);
+	constexpr WORD FW_BINARY_VERSION_31 = FW_VERSION(FW_BINARY_MAJOR_VERSION, 31);
+	constexpr WORD FW_BINARY_VERSION_33 = FW_VERSION(FW_BINARY_MAJOR_VERSION, 33);
 
 	/***********************************************************************
 	 *                                                                     *
@@ -1252,6 +1257,18 @@ extern "C" {
 		WCHAR* wszFqbn;
 
 		DWORD compartmentId;
+
+		// Fields are only present if the schema version is 2.31 or greater
+		GUID providerContextKey;
+
+		struct FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST
+		{
+			DWORD dwNumIds;
+			GUID* ids;
+		} RemoteDynamicKeywordAddresses;
+
+		// Fields are only present if the schema version is 2.33 or greater
+		WCHAR* wszPackageFamilyName;
 	};
 
 	// Different types of rules that the firewall supports.

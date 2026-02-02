@@ -44,17 +44,17 @@ static PCSTR DeletionPrompt = "Delete all duplicates of this rule";
 
 static FirewallPolicyObjects g_policy_objects[] =
 {
-	{.parent_rule = nullptr, .type_string = "Local", .type = FW_STORE_TYPE_LOCAL, .normalizedRules = {}},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Local", .store_type = FW_STORE_TYPE_LOCAL, .rule_version = 0},
 	// { .type= FW_STORE_TYPE_DYNAMIC, .type_string= "Dynamic", .normalizedRules = {}},
-	{.parent_rule = nullptr, .type_string = "Group Policy", .type = FW_STORE_TYPE_GPO, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Group Policy (RSOP)", .type = FW_STORE_TYPE_GP_RSOP, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Windows Service Hardening (Static)", .type = FW_STORE_TYPE_WSH_STATIC, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Windows Service Hardening (Configurable)", .type = FW_STORE_TYPE_WSH_CONFIGURABLE, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Interface-Isolation", .type = FW_STORE_TYPE_IF_ISO, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Interface-Isolation (Dynamic)", .type = FW_STORE_TYPE_IF_ISO_DYNAMIC, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Application-Isolation", .type = FW_STORE_TYPE_APP_ISO, .normalizedRules = {} },
-	{.parent_rule = nullptr, .type_string = "Mobile-Device-Management (MDM)" , .type = FW_STORE_TYPE_MDM, .normalizedRules = {}},
-	{.parent_rule = nullptr, .type_string = "Tenant Restrictions", .type = FW_STORE_TYPE_TENANT_RESTRICTIONS, .normalizedRules = {} }
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Group Policy", .store_type = FW_STORE_TYPE_GPO, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Group Policy (RSOP)", .store_type = FW_STORE_TYPE_GP_RSOP, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Windows Service Hardening (Static)", .store_type = FW_STORE_TYPE_WSH_STATIC, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Windows Service Hardening (Configurable)", .store_type = FW_STORE_TYPE_WSH_CONFIGURABLE, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Interface-Isolation", .store_type = FW_STORE_TYPE_IF_ISO, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Interface-Isolation (Dynamic)", .store_type = FW_STORE_TYPE_IF_ISO_DYNAMIC, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Application-Isolation", .store_type = FW_STORE_TYPE_APP_ISO, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Mobile-Device-Management (MDM)" , .store_type = FW_STORE_TYPE_MDM, .rule_version = 0},
+	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Tenant Restrictions", .store_type = FW_STORE_TYPE_TENANT_RESTRICTIONS, .rule_version = 0},
 };
 
 namespace details
@@ -77,7 +77,9 @@ namespace details
 
 	static HRESULT LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 	{
-		if (g_policyStore)
+		ChronoTimer timer;
+
+	    if (g_policyStore)
 		{
 			const auto close_error = g_FWClosePolicyStore(g_policyStore);
 			if (close_error != ERROR_SUCCESS)
@@ -87,32 +89,52 @@ namespace details
 			g_policyStore = nullptr;
 		}
 
-		ChronoTimer timer;
-		timer.start("OpenPolicyStore");
-		const auto openStoreError = g_FWOpenPolicyStore(
-			FW_CURRENT_BINARY_VERSION,
-			nullptr,
-			policy.type,
-			CleanBrokenRulesEnabled() ? FW_POLICY_ACCESS_RIGHT_READ_WRITE : FW_POLICY_ACCESS_RIGHT_READ,
-			FW_POLICY_STORE_FLAGS_NONE,
-			&g_policyStore);
+		// try all supported versions of the Firewall API - from most recent to oldest supported
+		DWORD openStoreError{};
+		WORD versionSelected{};
+		for (const auto version : { FW_BINARY_VERSION_33, FW_BINARY_VERSION_31, FW_BINARY_VERSION_27 })
+		{
+			versionSelected = version;
+			timer.start("OpenPolicyStore");
+			openStoreError = g_FWOpenPolicyStore(
+				versionSelected,
+				nullptr,
+				policy.store_type,
+				CleanBrokenRulesEnabled() ? FW_POLICY_ACCESS_RIGHT_READ_WRITE : FW_POLICY_ACCESS_RIGHT_READ,
+				FW_POLICY_STORE_FLAGS_NONE,
+				&g_policyStore);
+			if (openStoreError == ERROR_SUCCESS)
+			{
+				// succeeded in opening the store
+				break;
+			}
+
+			if (openStoreError != ERROR_SUCCESS)
+			{
+				if (openStoreError == ERROR_ACCESS_DENIED)
+				{
+					std::printf("\n  Administrative privileges required - try running from an elevated Administrator command prompt\n");
+					return HRESULT_FROM_WIN32(openStoreError);
+				}
+				
+				if (openStoreError == ERROR_FILE_NOT_FOUND)
+				{
+					// std::printf("\n  The %s Firewall Policy Store does not exist on this system.", policy.type_string);
+					// this succeeded in opening the store (version is supported), but it does not exist on this system
+					return HRESULT_FROM_WIN32(openStoreError);
+				}
+			}
+			timer.end();
+		}
 		if (openStoreError != ERROR_SUCCESS)
 		{
-			if (openStoreError == ERROR_ACCESS_DENIED)
-			{
-				std::printf("\n  Administrative privileges required - try running from an elevated Administrator command prompt\n");
-			}
-			else if (openStoreError == ERROR_FILE_NOT_FOUND)
-			{
-				// std::printf("\n  The %s Firewall Policy Store does not exist on this system.", policy.type_string);
-			}
-			else
-			{
-				std::printf("\n  Failed to open firewall policy store. Error: 0x%lx\n", openStoreError);
-			}
+			std::printf("  Failed to open %s firewall policy store. Error: 0x%lx\n", policy.store_type_string, openStoreError);
 			return HRESULT_FROM_WIN32(openStoreError);
 		}
-		timer.end();
+
+		// we must store the version we used to open the store
+		// as that will indicate to what fields from FW_RULE are valid to read
+		policy.rule_version = versionSelected;
 
 		timer.start("EnumFirewallRules");
 		DWORD num_rules = 0;
@@ -136,7 +158,7 @@ namespace details
 		FW_RULE* rule_iterator = policy.parent_rule;
 		while (rule_iterator)
 		{
-			policy.normalizedRules.emplace_back(NormalizedFirewallRule::BuildFromFWRule(rule_iterator));
+			policy.normalizedRules.emplace_back(NormalizedFirewallRule::BuildFromFWRule(rule_iterator, versionSelected));
 			rule_iterator = rule_iterator->pNext;
 		}
 		timer.end();
@@ -643,7 +665,10 @@ namespace details
 
 	static void CheckForMissingAppPackage(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		size_t count_of_rules_with_local_app_package = 0;
+		size_t count_of_rules_with_package_id = 0;
+		size_t count_of_rules_with_missing_package_id = 0;
+		size_t count_of_rules_with_package_family_name = 0;
+		size_t count_of_rules_with_missing_package_family_name = 0;
 
 		std::vector<std::wstring> verbose_output_of_error_strings;
 
@@ -651,11 +676,13 @@ namespace details
 		{
 			if (rule.fwRule->wszPackageId) // wszPackageId == the Package ID SID
 			{
-				++count_of_rules_with_local_app_package;
+				++count_of_rules_with_package_id;
 
 				const auto [name, exists] = FindPackageSid(rule.fwRule->wszPackageId);
 				if (exists == AppContainerName::None)
 				{
+					++count_of_rules_with_missing_package_id;
+
 					verbose_output_of_error_strings.emplace_back(
 						wil::str_printf<std::wstring>(
 							L"     Package-ID:  '%ls'  [%ls:  %ls]\n",
@@ -664,16 +691,40 @@ namespace details
 							rule.ruleName.value.empty() ? rule.ruleId.c_str() : rule.ruleName.value.c_str()));
 				}
 			}
+
+			// check for PFN only if we requested a supported version and the returned rule version supports it
+			if (rule.requestedRuleVersion > FW_BINARY_VERSION_31 && rule.fwRule->wSchemaVersion > FW_BINARY_VERSION_31)
+			{
+				if (rule.fwRule->wszPackageFamilyName)
+				{
+					++count_of_rules_with_package_family_name;
+
+					const auto [name, exists] = FindPackageFamilyName(rule.fwRule->wszPackageFamilyName);
+					if (exists == AppContainerName::None)
+					{
+						++count_of_rules_with_missing_package_family_name;
+
+						verbose_output_of_error_strings.emplace_back(
+							wil::str_printf<std::wstring>(
+								L"     Package-Family-Name:  '%ls'  [%ls:  %ls]\n",
+								rule.fwRule->wszPackageFamilyName,
+								rule.ruleName.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+								rule.ruleName.value.empty() ? rule.ruleId.c_str() : rule.ruleName.value.c_str()));
+					}
+				}
+			}
 		}
 
 		// if (VerboseOutputEnabled() || !verbose_output_of_error_strings.empty())
 		{
 			std::printf("  * Summary of app-package analysis of firewall rules:\n");
-			std::printf("   - count of rules with a package ID: %zu\n", count_of_rules_with_local_app_package);
-			std::printf("   - count of rules with package ID referencing non-existing package: %zu\n", verbose_output_of_error_strings.size());
+			std::printf("   - count of rules with a package ID: %zu\n", count_of_rules_with_package_id);
+			std::printf("   - count of rules with a package ID referencing a non-existing package: %zu\n", count_of_rules_with_missing_package_id);
+			std::printf("   - count of rules with a package family name: %zu\n", count_of_rules_with_package_family_name);
+			std::printf("   - count of rules with a package family name referencing a non-existing package: %zu\n", count_of_rules_with_missing_package_family_name);
 			if (VerboseOutputEnabled() && !verbose_output_of_error_strings.empty())
 			{
-				std::printf("   - unique rule names of rules with a package ID referencing non-existing package:\n");
+				std::printf("   - unique rule names of rules with a package ID referencing a non-existing package:\n");
 				for (const auto& error_string : verbose_output_of_error_strings)
 				{
 					std::printf("%ls", error_string.c_str());
@@ -1293,7 +1344,7 @@ bool HasFirewallAdminAccess()
 
 	timer.start("OpenPolicyStore");
 	const auto openStoreError = g_FWOpenPolicyStore(
-		FW_CURRENT_BINARY_VERSION,
+		FW_BINARY_VERSION_27, // the earliest version supported - just testing for access
 		nullptr,
 		FW_STORE_TYPE_LOCAL,
 		FW_POLICY_ACCESS_RIGHT_READ_WRITE,
@@ -1334,9 +1385,9 @@ try
 CATCH_RETURN()
 
 // Returns a vector of tuples of (policy store type string, FW_RULE*) for rules that have an application package ID
-std::vector<std::tuple<std::string, FW_RULE*>> GetRulesWithAppPackages()
+std::vector<std::tuple<std::string, FW_RULE*, WORD>> GetRulesWithAppPackages()
 {
-	std::vector<std::tuple<std::string, FW_RULE*>> return_rules;
+	std::vector<std::tuple<std::string, FW_RULE*, WORD>> return_rules;
 
 	for (auto& policy : g_policy_objects)
 	{
@@ -1344,13 +1395,13 @@ std::vector<std::tuple<std::string, FW_RULE*>> GetRulesWithAppPackages()
 		{
 			if (rule.fwRule->wszPackageId) // wszPackageId == the Package ID SID
 			{
-				return_rules.emplace_back(policy.type_string, rule.fwRule);
+				return_rules.emplace_back(policy.store_type_string, rule.fwRule, rule.requestedRuleVersion);
 			}
 			else if (rule.fwRule->wszName)
 			{
 				if (rule.fwRule->wszName[0] == L'@')
 				{
-					return_rules.emplace_back(policy.type_string, rule.fwRule);
+					return_rules.emplace_back(policy.store_type_string, rule.fwRule, rule.requestedRuleVersion);
 				}
 			}
 		}
@@ -1369,11 +1420,11 @@ void ProcessFirewallRules()
 		// cannot directly modify MDM or GP rules locally
 		if (CleanBrokenRulesEnabled())
 		{
-			if (policy.type == FW_STORE_TYPE_MDM ||
-				policy.type == FW_STORE_TYPE_GPO ||
-				policy.type == FW_STORE_TYPE_GP_RSOP ||
-				policy.type == FW_STORE_TYPE_WSH_STATIC ||
-				policy.type == FW_STORE_TYPE_WSH_CONFIGURABLE)
+			if (policy.store_type == FW_STORE_TYPE_MDM ||
+				policy.store_type == FW_STORE_TYPE_GPO ||
+				policy.store_type == FW_STORE_TYPE_GP_RSOP ||
+				policy.store_type == FW_STORE_TYPE_WSH_STATIC ||
+				policy.store_type == FW_STORE_TYPE_WSH_CONFIGURABLE)
 			{
 				std::printf(
 					"\n"
@@ -1383,16 +1434,16 @@ void ProcessFirewallRules()
 					"  NOTE: The %hs Firewall Policy Store cannot be modified locally.\n"
 					"        Skipping any deletion of rules in this store.\n",
 					banner_header.c_str(),
-					policy.type_string,
+					policy.store_type_string,
 					banner_header.c_str(),
-					policy.type_string);
+					policy.store_type_string);
 				continue;
 			}
 		}
 
 		try
 		{
-			auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the %hs Firewall Policy Store", policy.type_string);
+			auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the %hs Firewall Policy Store", policy.store_type_string);
 			const size_t prefix_spaces = (banner_header.size() - banner_output.size()) / 2;
 			banner_output.insert(0, prefix_spaces, L' ');
 
@@ -1442,7 +1493,7 @@ void ProcessFirewallRules()
 				std::printf("\n");
 			}
 			timer.start("CheckUnresolvedUserAccountRules");
-			details::CheckUnresolvedUserAccountRules(policy.normalizedRules, policy.type);
+			details::CheckUnresolvedUserAccountRules(policy.normalizedRules, policy.store_type);
 			timer.end();
 
 			if (CleanBrokenRulesEnabled())

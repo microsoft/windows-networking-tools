@@ -9,6 +9,7 @@
 enum class AppContainerName
 {
 	None,
+	SID,
 	FullName,
 	FamilyName
 };
@@ -39,3 +40,4 @@ void PrintAllAppPackages();
 void PrintFirewallRulesReferencingAppPackages();
 const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept;
 std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) noexcept;
+std::tuple<std::wstring, AppContainerName> FindPackageFamilyName(PCWSTR package_family_name) noexcept;

@@ -14,13 +14,16 @@ struct DuplicateRuleDetails
 struct FirewallPolicyObjects
 {
 	FW_RULE* parent_rule{};
-	PCSTR type_string{};
-	FW_STORE_TYPE type{};
+
 	std::vector<NormalizedFirewallRule> normalizedRules;
+
+	PCSTR store_type_string{};
+	FW_STORE_TYPE store_type{};
+	WORD rule_version{};
 };
 
 HRESULT LoadFirewallRules() noexcept;
-std::vector<std::tuple<std::string, FW_RULE*>> GetRulesWithAppPackages();
+std::vector<std::tuple<std::string, FW_RULE*, WORD>> GetRulesWithAppPackages();
 
 bool HasFirewallAdminAccess();
 

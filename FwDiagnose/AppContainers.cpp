@@ -143,32 +143,48 @@ void PrintAllAppPackages()
 
 void PrintFirewallRulesReferencingAppPackages()
 {
-	std::vector<std::wstring> app_isolation_rules_without_package_id{};
-	std::vector<std::wstring> app_isolation_rules_with_package_id{};
+	std::vector<std::wstring> app_isolation_rules_without_package_id_231_or_earlier{};
+	std::vector<std::wstring> app_isolation_rules_without_package_id_or_pfn_after_231{};
+
+	std::vector<std::wstring> app_isolation_rules_with_package_id_231_or_earlier{};
+	std::vector<std::wstring> app_isolation_rules_with_package_id_after_231{};
+	std::vector<std::wstring> app_isolation_rules_with_pfn_after_231{};
 	// uint32_t count = 0;
-	for (const auto& [policy_store, rule] : GetRulesWithAppPackages())
+	for (const auto& [policy_store, rule, requestedRuleVersion] : GetRulesWithAppPackages())
 	{
 		if (policy_store == "Application-Isolation")
 		{
-			if (rule->wszPackageId)
+			if (rule->wSchemaVersion > FW_BINARY_VERSION_31 && rule->wszPackageFamilyName)
 			{
-				app_isolation_rules_with_package_id.emplace_back(rule->wszRuleId);
+				app_isolation_rules_with_pfn_after_231.emplace_back(rule->wszRuleId);
+			}
+			else if (rule->wszPackageId)
+			{
+				// we are reading the versioning from the rule, not the requested version
+				// as we are only counting rules
+				// we cannot read the fields in the structure without looking at requestedRuleVersion
+				if (rule->wSchemaVersion <= FW_BINARY_VERSION_31)
+				{
+					app_isolation_rules_with_package_id_231_or_earlier.emplace_back(rule->wszRuleId);
+				}
+				else
+				{
+					app_isolation_rules_with_package_id_after_231.emplace_back(rule->wszRuleId);
+				}
 			}
 			else
 			{
-				app_isolation_rules_without_package_id.emplace_back(rule->wszRuleId);
+				if (rule->wSchemaVersion <= FW_BINARY_VERSION_31)
+				{
+					// Schema version 2.31 or earlier did not support PackageFamilyName in the FW_RULE structure
+					app_isolation_rules_without_package_id_231_or_earlier.emplace_back(rule->wszRuleId);
+				}
+				else
+				{
+					app_isolation_rules_without_package_id_or_pfn_after_231.emplace_back(rule->wszRuleId);
+				}
 			}
 		}
-		/*
-		if (rule->wszName == std::wstring_view{ L"@{Microsoft.LockApp_10.0.29520.1000_neutral__cw5n1h2txyewy?ms-resource://Microsoft.LockApp/resources/AppDisplayName}" })
-		{
-			wprintf(L"****** FW_RULE [%hs Store] *********\n%ws\n", policy_store.c_str(), NormalizedFirewallRule::PrintRule(rule).c_str());
-		}
-		else if (rule->wszPackageId && rule->wszPackageId == std::wstring_view{ L"S-1-15-2-1823635404-1364722122-2170562666-1762391777-2399050872-3465541734-3732476201" })
-		{
-			wprintf(L"****** FW_RULE [%hs Store] *********\n%ws\n", policy_store.c_str(), NormalizedFirewallRule::PrintRule(rule).c_str());
-		}
-        */
 
 		/*
 		if (!rule->wszName)
@@ -210,17 +226,58 @@ void PrintFirewallRulesReferencingAppPackages()
 		*/
 	}
 
-	wprintf(L"*** Firewall Rules in Application-Isolation Store with a Package ID [%llu rules] ***\n", app_isolation_rules_with_package_id.size());
-	for (const auto& rule_id : app_isolation_rules_with_package_id)
+	/*
+	std::vector<std::wstring> app_isolation_rules_without_package_id_231_or_earlier{};
+	std::vector<std::wstring> app_isolation_rules_without_package_id_or_pfn_after_231{};
+
+	std::vector<std::wstring> app_isolation_rules_with_package_id_231_or_earlier{};
+	std::vector<std::wstring> app_isolation_rules_with_package_id_after_231{};
+	std::vector<std::wstring> app_isolation_rules_with_pfn_after_231{};
+    */
+
+	wprintf(L"*** Firewall Rules in Application-Isolation Store with a PFN version after 2.31 [%llu rules] ***\n", app_isolation_rules_with_pfn_after_231.size());
+	/*
+	for (const auto& rule_id : app_isolation_rules_with_pfn_after_231)
 	{
 		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
 	}
 	wprintf(L"\n\n");
-	wprintf(L"*** Firewall Rules in Application-Isolation Store without a Package ID [%llu rules] ***\n", app_isolation_rules_without_package_id.size());
-	for (const auto& rule_id : app_isolation_rules_without_package_id)
+    */
+
+	wprintf(L"*** Firewall Rules in Application-Isolation Store with a Package ID and no PFN version after 2.31 [%llu rules] ***\n", app_isolation_rules_with_package_id_after_231.size());
+	/*
+	for (const auto& rule_id : app_isolation_rules_with_package_id_after_231)
 	{
 		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
 	}
+	wprintf(L"\n\n");
+    */
+
+	wprintf(L"*** Firewall Rules in Application-Isolation Store with a Package ID (PFN not supported) version 2.31 or earlier [%llu rules] ***\n", app_isolation_rules_with_package_id_231_or_earlier.size());
+	/*
+	for (const auto& rule_id : app_isolation_rules_with_package_id_231_or_earlier)
+	{
+		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
+	}
+	wprintf(L"\n\n");
+	*/
+
+	wprintf(L"*** Firewall Rules in Application-Isolation Store without a Package ID or PFN version after 2.31 [%llu rules] ***\n", app_isolation_rules_without_package_id_or_pfn_after_231.size());
+	/*
+	for (const auto& rule_id : app_isolation_rules_without_package_id_or_pfn_after_231)
+	{
+		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
+	}
+	*/
+
+    wprintf(L"*** Firewall Rules in Application-Isolation Store without a Package ID (PFN not supported) version 2.31 or earlier [%llu rules] ***\n", app_isolation_rules_without_package_id_231_or_earlier.size());
+	/*
+	for (const auto& rule_id : app_isolation_rules_without_package_id_231_or_earlier)
+	{
+		wprintf(L"  RuleId: %ws\n", rule_id.c_str());
+	}
+	wprintf(L"\n\n");
+	*/
 }
 
 const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept
@@ -228,19 +285,37 @@ const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept
 	return g_app_packages;
 }
 
-// return {full_name, AppContainerName}
+// return {family_name_sid, AppContainerName}
 std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) noexcept
 {
 	const auto& app_packages = ReadAllAppPackages();
 	for (const auto package : app_packages)
 	{
-		if (package.full_name_sid == package_sid)
-		{
-			return { package.full_name, AppContainerName::FullName };
-		}
 		if (package.family_name_sid == package_sid)
 		{
+			return { package.family_name_sid, AppContainerName::SID };
+		}
+		if (package.full_name_sid == package_sid)
+		{
+			DebugBreak();
+		}
+	}
+	return { {}, AppContainerName::None };
+}
+
+// return {family_name, AppContainerName}
+std::tuple<std::wstring, AppContainerName> FindPackageFamilyName(PCWSTR package_family_name) noexcept
+{
+	const auto& app_packages = ReadAllAppPackages();
+	for (const auto package : app_packages)
+	{
+		if (package.family_name == package_family_name)
+		{
 			return { package.family_name, AppContainerName::FamilyName };
+		}
+		if (package.full_name == package_family_name)
+		{
+			DebugBreak();
 		}
 	}
 	return { {}, AppContainerName::None };
