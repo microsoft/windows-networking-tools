@@ -289,7 +289,7 @@ const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept
 std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) noexcept
 {
 	const auto& app_packages = ReadAllAppPackages();
-	for (const auto package : app_packages)
+	for (const auto& package : app_packages)
 	{
 		if (package.family_name_sid == package_sid)
 		{
@@ -307,7 +307,7 @@ std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) no
 std::tuple<std::wstring, AppContainerName> FindPackageFamilyName(PCWSTR package_family_name) noexcept
 {
 	const auto& app_packages = ReadAllAppPackages();
-	for (const auto package : app_packages)
+	for (const auto& package : app_packages)
 	{
 		if (package.family_name == package_family_name)
 		{
