@@ -23,6 +23,8 @@ struct FirewallPolicyObjects
 };
 
 HRESULT LoadFirewallRules() noexcept;
+HRESULT AnalyzeFirewallRulesReferencingAppPackages();
+
 std::vector<std::tuple<std::string, FW_RULE*, WORD>> GetRulesWithAppPackages();
 
 bool HasFirewallAdminAccess();

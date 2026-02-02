@@ -242,6 +242,7 @@
     <ClCompile Include="AppContainers.cpp" />
     <ClCompile Include="FirewallRules.cpp" />
     <ClCompile Include="FwDiagnose.cpp" />
+    <ClCompile Include="NormalizedFirewallRule.cpp" />
     <ClCompile Include="WfpCallouts.cpp" />
     <ClCompile Include="WfpCounters.cpp" />
     <ClCompile Include="WfpEvents.cpp" />
@@ -266,6 +267,7 @@
     <ClInclude Include="FirewallRules.h" />
     <ClInclude Include="FwDiagnose.h" />
     <ClInclude Include="NormalizedFirewallRule.h" />
+    <ClInclude Include="NormalizedString.h" />
     <ClInclude Include="WfpCounters.h" />
     <ClInclude Include="WfpEvents.h" />
   </ItemGroup>

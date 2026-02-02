@@ -121,7 +121,7 @@ try
 					.filterId = current_fwpm_filter->filterId,
 					.layerKey = current_fwpm_filter->layerKey,
 					.subLayerKey = current_fwpm_filter->subLayerKey,
-					.name = current_fwpm_filter->displayData.name ? NormalizedString::Normalize(current_fwpm_filter->displayData.name) : NormalizedString::Normalize(L""),
+					.name = current_fwpm_filter->displayData.name ? NormalizedString::Create(current_fwpm_filter->displayData.name) : NormalizedString::Create(L""),
 					.description = current_fwpm_filter->displayData.description ? current_fwpm_filter->displayData.description : L"",
 					.flags = current_fwpm_filter->flags,
 					.weight =

@@ -17,6 +17,8 @@
 
 #include <wil/resource.h>
 
+#include "NormalizedString.h"
+
 bool InitializeWfpPerfCounters() noexcept;
 uint64_t ReadWfpPerfCounters();
 
