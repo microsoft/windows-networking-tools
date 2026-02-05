@@ -1437,7 +1437,7 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 			!rules_with_pfn_after_231.empty())
 		{
 			wprintf(L"\n\n");
-			wprintf(L"*** Firewall Rules in %hs Store with a PFN version after 2.31 [%llu rules] ***\n", policy.store_type_string, rules_with_pfn_after_231.size());
+			wprintf(L"*** Firewall Rules in %hs Store with a PFN version after 2.31 [%zu rules] ***\n", policy.store_type_string, rules_with_pfn_after_231.size());
 			if (VerboseOutputEnabled())
 			{
 				for (const auto& rule_id : rules_with_pfn_after_231)
@@ -1447,7 +1447,7 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 				wprintf(L"\n\n");
 			}
 
-			wprintf(L"*** Firewall Rules in %hs Store with a Package ID and no PFN version after 2.31 [%llu rules] ***\n", policy.store_type_string, rules_with_package_id_after_231.size());
+			wprintf(L"*** Firewall Rules in %hs Store with a Package ID and no PFN version after 2.31 [%zu rules] ***\n", policy.store_type_string, rules_with_package_id_after_231.size());
 			if (VerboseOutputEnabled())
 			{
 				for (const auto& rule_id : rules_with_package_id_after_231)
@@ -1457,7 +1457,7 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 				wprintf(L"\n\n");
 			}
 
-			wprintf(L"*** Firewall Rules in %hs Store with a Package ID (PFN not supported) version 2.31 or earlier [%llu rules] ***\n", policy.store_type_string, rules_with_package_id_231_or_earlier.size());
+			wprintf(L"*** Firewall Rules in %hs Store with a Package ID (PFN not supported) version 2.31 or earlier [%zu rules] ***\n", policy.store_type_string, rules_with_package_id_231_or_earlier.size());
 			if (VerboseOutputEnabled())
 			{
 				for (const auto& rule_id : rules_with_package_id_231_or_earlier)
@@ -1467,7 +1467,7 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 				wprintf(L"\n\n");
 			}
 
-			wprintf(L"*** Firewall Rules in %hs Store without a Package ID or PFN but a Firewall name that looks like a package-name, version after 2.31 [%llu rules] ***\n", policy.store_type_string, rules_with_package_naming_without_package_id_or_pfn_after_231.size());
+			wprintf(L"*** Firewall Rules in %hs Store without a Package ID or PFN but a Firewall name that looks like a package-name, version after 2.31 [%zu rules] ***\n", policy.store_type_string, rules_with_package_naming_without_package_id_or_pfn_after_231.size());
 			if (VerboseOutputEnabled())
 			{
 				for (const auto& rule_id : rules_with_package_naming_without_package_id_or_pfn_after_231)
@@ -1477,7 +1477,7 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 			}
 
 			wprintf(
-				L"*** Firewall Rules in %hs Store without a Package ID (PFN not supported) but a Firewall name that looks like a package-name, version 2.31 or earlier [%llu rules] ***\n",
+				L"*** Firewall Rules in %hs Store without a Package ID (PFN not supported) but a Firewall name that looks like a package-name, version 2.31 or earlier [%zu rules] ***\n",
 				policy.store_type_string,
 				rules_with_package_naming_without_package_id_231_or_earlier.size());
 			if (VerboseOutputEnabled())
