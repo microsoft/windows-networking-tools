@@ -29,4 +29,5 @@ std::vector<std::tuple<std::string, FW_RULE*, WORD>> GetRulesWithAppPackages();
 
 bool HasFirewallAdminAccess();
 
+void ProcessFirewallPolicy() noexcept;
 void ProcessFirewallRules();

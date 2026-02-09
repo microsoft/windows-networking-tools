@@ -226,7 +226,8 @@ int __cdecl main(int argc, char* argv[]) try
 
 	if (AnalyzeRulesEnabled() || CleanBrokenRulesEnabled())
 	{
-		ProcessFirewallRules();
+		ProcessFirewallPolicy();
+	    ProcessFirewallRules();
 	}
 
 	if (WfpOutputEnabled())

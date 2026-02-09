@@ -16,12 +16,18 @@
 #include "firewall.h"
 #include "FirewallRules.h"
 
+#include <netioapi.h>
+
 #include "NormalizedFirewallRule.h"
 #include "AppContainers.h"
 
+#include "ctWmiInstance.hpp"
+
 #include <wil/stl.h>
+#include <wil/com.h>
 #include <wil/resource.h>
 #include <wil/registry.h>
+
 
 static HMODULE g_FirewallApiModule = nullptr;
 static decltype(FWOpenPolicyStore)* g_FWOpenPolicyStore = nullptr;
@@ -160,7 +166,7 @@ namespace details
 		FW_RULE* rule_iterator = policy.parent_rule;
 		while (rule_iterator)
 		{
-			policy.normalizedRules.emplace_back(NormalizedFirewallRule{ rule_iterator, versionSelected });
+			policy.normalizedRules.emplace_back(rule_iterator, versionSelected);
 			rule_iterator = rule_iterator->pNext;
 		}
 		timer.end();
@@ -1492,6 +1498,136 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 	}
 
 	return S_OK;
+}
+
+void ProcessFirewallPolicy() noexcept
+try
+{
+	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
+	// analogous to the powershell command: Get-NetFirewallProfile -PolicyStore ActiveStore
+
+	constexpr auto* policyStoreValue = L"ActiveStore";
+	const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
+	THROW_IF_FAILED(policyStoreContext->SetValue(
+		L"PolicyStore",
+		0,
+		wil::make_variant_bstr(policyStoreValue).addressof()));
+
+	for (const auto& profile : ctl::ctWmiEnumerateInstance::Query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
+	{
+		std::wstring profile_name;
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"Name", &profile_name));
+
+		int32_t is_enabled{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"Enabled", &is_enabled));
+
+		int32_t default_inbound_action{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"DefaultInboundAction", &default_inbound_action));
+
+		int32_t default_outbound_action{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"DefaultOutboundAction", &default_outbound_action));
+
+		int32_t inbound_rules_allowed{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowInboundRules", &inbound_rules_allowed));
+
+		int32_t local_rules_allowed{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowLocalFirewallRules", &local_rules_allowed));
+
+		int32_t user_apps_allowed{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowUserApps", &user_apps_allowed));
+
+		int32_t user_ports_allowed{};
+		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"AllowUserPorts", &user_ports_allowed));
+
+		int32_t unicast_response_to_multicast_allowed{};
+		THROW_HR_IF(E_UNEXPECTED,
+			!profile.get(L"AllowUnicastResponseToMulticast", &unicast_response_to_multicast_allowed));
+
+		// get() will return false if the property is null or empty - which will happen when no interfaces are disabled
+		std::vector<std::wstring> disabledInterfaces;
+		profile.get(L"DisabledInterfaceAliases", &disabledInterfaces);
+
+		if (VerboseOutputEnabled())
+		{
+			std::printf(
+				"Firewall Policies for profile: %ls\n"
+				"    Enabled: %d\n"
+				"    Default Inbound Action: %d\n"
+				"    Default Outbound Action: %d\n"
+				"    Allow Inbound Rules: %d\n"
+				"    Allow Local Firewall Rules: %d\n"
+				"    Allow User Apps: %d\n"
+				"    Allow User Ports: %d\n"
+				"    Allow Unicast Response To Multicast: %d\n",
+				profile_name.c_str(),
+				is_enabled,
+				default_inbound_action,
+				default_outbound_action,
+				inbound_rules_allowed,
+				local_rules_allowed,
+				user_apps_allowed,
+				user_ports_allowed,
+				unicast_response_to_multicast_allowed);
+			if (disabledInterfaces.empty())
+			{
+				wprintf(L"    Disabled Interface Aliases: None\n");
+			}
+			else
+			{
+				wprintf(L"    Disabled Interface Aliases:\n");
+				for (const auto& name : disabledInterfaces)
+				{
+					wprintf(L"    %ws\n", name.c_str());
+				}
+			}
+		}
+
+		if (is_enabled == 0)
+		{
+			std::printf("Firewall profile %ls is Disabled\n", profile_name.c_str());
+		}
+		else
+		{
+			std::printf("Firewall profile %ls is Enabled\n", profile_name.c_str());
+
+			// <Value Name="Allow" Value="2"/>
+			// <Value Name="Block" Value="4"/>
+			std::printf("    - DefaultInboundAction set to %hs\n", default_inbound_action == 4 ? "Block" : "Allow");
+			std::printf("    - DefaultOutboundAction set to %hs\n", default_outbound_action == 4 ? "Block" : "Allow");
+
+			if (inbound_rules_allowed == 0)
+			{
+				std::printf("    - AllowInboundRules is Disabled\n");
+			}
+			if (local_rules_allowed == 0)
+			{
+				std::printf("    - AllowLocalFirewallRules is Disabled\n");
+			}
+			if (user_apps_allowed == 0)
+			{
+				std::printf("    - AllowUserApps is Disabled\n");
+			}
+			if (user_ports_allowed == 0)
+			{
+				std::printf("    - AllowUserPorts is Disabled\n");
+			}
+
+			if (!disabledInterfaces.empty())
+			{
+				std::printf("    - DisabledInterfaceAliases is set on the following interfaces:\n");
+				for (const auto& name : disabledInterfaces)
+				{
+					std::printf("      - %ls\n", name.c_str());
+				}
+			}
+		}
+
+		std::printf("\n");
+	}
+}
+catch (const std::exception& ex)
+{
+	std::printf("An unexpected error occurred while processing firewall rules: %s\n", ex.what());
 }
 
 void ProcessFirewallRules()
