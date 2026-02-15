@@ -1097,7 +1097,7 @@ std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE
 	result += L"    EmAuthMethod: " + std::to_wstring(event->emAuthMethod) + L"\n";
 
 	result += L"    EndCertHash: ";
-	for (unsigned char i : event->endCertHash)
+	for (const unsigned char i : event->endCertHash)
 	{
 		WCHAR buf[4];
 		swprintf_s(buf, L"%02x", i);

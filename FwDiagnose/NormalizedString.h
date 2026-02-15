@@ -7,7 +7,8 @@ struct NormalizedString
 	std::wstring value;
 	bool containsNonAsciiCharacters{ false };
 
-	~NormalizedString() noexcept = default;
+	NormalizedString() noexcept = default;
+    ~NormalizedString() noexcept = default;
 
 	NormalizedString(const NormalizedString&) = delete;
 	NormalizedString& operator=(const NormalizedString&) = delete;
@@ -25,7 +26,7 @@ struct NormalizedString
 	// not using copy constructor or copy assignment operator
 	void swap(NormalizedString& rhs) noexcept
 	{
-		NormalizedString& lhs = *this;
+        NormalizedString& lhs = *this;
 		std::swap(lhs.value, rhs.value);
 		std::swap(lhs.containsNonAsciiCharacters, rhs.containsNonAsciiCharacters);
 	}
@@ -64,6 +65,7 @@ struct NormalizedString
 		return normalized_string;
 	}
 
+    // returns -1 if lhs < rhs, 0 if lhs == rhs, 1 if lhs > rhs
 	static int StringCompare(const NormalizedString& lhs, const NormalizedString& rhs) noexcept
 	{
 		if (lhs.value.size() != rhs.value.size())
@@ -105,9 +107,35 @@ struct NormalizedString
 		}
 	}
 
-private:
-	// callers are required to call Create() or Copy() to create an instance
-	NormalizedString() noexcept = default;
+    // returns -1 if lhs < rhs, 0 if lhs == rhs, 1 if lhs > rhs
+    static int StrStrComparison(const NormalizedString& haystack, const NormalizedString& needle) noexcept
+    {
+        if (!haystack.containsNonAsciiCharacters && !needle.containsNonAsciiCharacters)
+        {
+            // if neither contain non-ascii characters, can just do a raw search without any conversions
+            // as they are both already lower-case
+            const wchar_t* match = wcsstr(haystack.value.c_str(), needle.value.c_str());
+            return match != nullptr ? 0 : -1;
+        }
+
+        // CompareStringOrdinal doesn't have a way to do culture-invariant substring searches, so just do a brute-force search
+        const auto& haystackValue = haystack.value;
+        const auto& needleValue = needle.value;
+        for (size_t i = 0; i <= haystackValue.size() - needleValue.size(); ++i)
+        {
+            const auto ruleDetailsMatch = CompareStringOrdinal(
+                haystackValue.c_str() + i,
+                static_cast<int>(needleValue.size()),
+                needleValue.c_str(),
+                static_cast<int>(needleValue.size()),
+                TRUE);
+            if (ruleDetailsMatch == CSTR_EQUAL)
+            {
+                return 0;
+            }
+        }
+        return -1;
+    }
 };
 
 inline bool operator<(const NormalizedString& lhs, const NormalizedString& rhs) noexcept

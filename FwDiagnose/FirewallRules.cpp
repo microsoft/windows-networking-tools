@@ -98,8 +98,8 @@ namespace details
 		}
 
 		// try all supported versions of the Firewall API - from most recent to oldest supported
-		DWORD openStoreError{};
-		WORD versionSelected{};
+        DWORD openStoreError{};
+        WORD versionSelected{};
 		for (const auto version : { FW_BINARY_VERSION_33, FW_BINARY_VERSION_31, FW_BINARY_VERSION_27 })
 		{
 			versionSelected = version;
@@ -163,7 +163,7 @@ namespace details
 		// cannot FWFreeFirewallRules - we keep those pointers around to read later
 
 		timer.start("Normalizing Firewall rules into a vector");
-		FW_RULE* rule_iterator = policy.parent_rule;
+        FW_RULE* rule_iterator = policy.parent_rule;
 		while (rule_iterator)
 		{
 			policy.normalizedRules.emplace_back(rule_iterator, versionSelected);
@@ -414,7 +414,7 @@ namespace details
 			}
 		}
 
-		size_t derived_total = 0;
+        size_t derived_total = 0;
 		for (const auto& rule : duplicate_rules)
 		{
 			derived_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
@@ -439,8 +439,8 @@ namespace details
 
 	static void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rules)
 	{
-		bool printed_deletion_header = false;
-		bool delete_all_with_no_more_prompts = false;
+        bool printed_deletion_header = false;
+        bool delete_all_with_no_more_prompts = false;
 
 		for (const auto& duplicate_rule : duplicate_rules)
 		{
@@ -633,7 +633,7 @@ namespace details
 
 	static void CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		size_t count_of_rules_with_local_application = 0;
+        size_t count_of_rules_with_local_application = 0;
 
 		std::vector<std::wstring> verbose_output_of_error_strings;
 
@@ -673,10 +673,10 @@ namespace details
 
 	static void CheckForMissingAppPackage(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		size_t count_of_rules_with_package_id = 0;
-		size_t count_of_rules_with_missing_package_id = 0;
-		size_t count_of_rules_with_package_family_name = 0;
-		size_t count_of_rules_with_missing_package_family_name = 0;
+        size_t count_of_rules_with_package_id = 0;
+        size_t count_of_rules_with_missing_package_id = 0;
+        size_t count_of_rules_with_package_family_name = 0;
+        size_t count_of_rules_with_missing_package_family_name = 0;
 
 		std::vector<std::wstring> verbose_output_of_error_strings;
 
@@ -743,8 +743,8 @@ namespace details
 
 	static void DeleteMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		bool delete_all_with_no_more_prompts = false;
-		bool printed_deletion_header = false;
+        bool delete_all_with_no_more_prompts = false;
+        bool printed_deletion_header = false;
 
 		for (const auto& rule : normalized_rules)
 		{
@@ -948,7 +948,7 @@ namespace details
 			}
 		}
 
-		size_t count_of_rules_with_local_user_owner = 0;
+        size_t count_of_rules_with_local_user_owner = 0;
 		std::vector<std::wstring> rules_with_unknown_sid_owners;
 		std::vector<std::wstring> rules_with_no_local_profile;
 		for (auto& rule : normalized_rules)
@@ -1047,8 +1047,8 @@ namespace details
 
 	static void DeleteUnresolvedUserAccountRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		bool delete_all_with_no_more_prompts = false;
-		bool printed_deletion_header = false;
+        bool delete_all_with_no_more_prompts = false;
+        bool printed_deletion_header = false;
 
 		for (const auto& rule : normalized_rules)
 		{
@@ -1196,7 +1196,7 @@ namespace details
 
 	static void CheckForRulesWithErrorStatus(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		size_t rules_with_no_errors = 0;
+        size_t rules_with_no_errors = 0;
 
 		std::vector<std::wstring> verbose_rules_partially_ignored_error_strings;
 		std::vector<std::wstring> verbose_rules_completely_ignored_error_strings;

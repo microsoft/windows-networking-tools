@@ -14,9 +14,9 @@
 
 struct NormalizedFirewallRule
 {
-	NormalizedFirewallRule(FW_RULE* fwRule, WORD requestedRuleVersion);
+	NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion);
 
-	FW_RULE* fw_rule{};
+	const FW_RULE* fw_rule{};
 	WORD requested_rule_version{};
 	std::wstring rule_id{};
 	NormalizedString rule_name{ NormalizedString::Create(L"") };

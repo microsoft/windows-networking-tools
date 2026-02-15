@@ -397,7 +397,7 @@ namespace details
 	}
 } // namespace details
 
-NormalizedFirewallRule::NormalizedFirewallRule(FW_RULE* fwRule, WORD requestedRuleVersion)
+NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion)
 {
 	fw_rule = fwRule;
 	// we must store the version we requested, not the version in the rule
