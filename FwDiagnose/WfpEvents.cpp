@@ -5,21 +5,20 @@
 
 #include <windows.h>
 #include <Objbase.h>
-#include <fwpmu.h>
-#include <winsock2.h>
-#include <ws2ipdef.h>
-#include <mstcpip.h>
 #include <Sddl.h>
 #include <nldef.h>
 
-#include "WfpEvents.h"
-
-#include <wil/stl.h>
-#include <wil/resource.h>
+#include <fwpmu.h>
 
 #include "FirewallRules.h"
 #include "IpProperties.h"
 #include "WfpCounters.h"
+#include "WfpEvents.h"
+
+#include <wil/stl.h>
+#include <wil/network.h>
+#include <wil/resource.h>
+
 
 static
 std::wstring

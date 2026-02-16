@@ -1,13 +1,8 @@
+#include <optional>
 #include "IpProperties.h"
 
-#include <cinttypes>
-#include <winsock2.h>
-#include <ws2ipdef.h>
-#include <iphlpapi.h>
-#include <netioapi.h>
-#include <optional>
-
 #include <wil/stl.h>
+#include <wil/network.h>
 #include <wil/resource.h>
 
 #include "FwDiagnose.h"

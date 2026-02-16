@@ -14,18 +14,18 @@
 #include <vector>
 
 #include <Windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.H>
 #include <Rpc.h>
 #include <Sddl.h>
 #include <Tdh.h>
-#include <mstcpip.h>
+
 // these headers 4 needed ETW APIs
 #include <evntcons.h>
 #include <evntrace.h>
 #include <winmeta.h>
 #include <wmistr.h>
 
+#include "wil/stl.h"
+#include "wil/network.h"
 #include "wil/resource.h"
 // clang-format on
 
