@@ -197,7 +197,7 @@ BomType GetBomType(std::vector<uint8_t>& buffer) noexcept
 
 	// check for UTF-16 LE formatted file without BOM
 	bool has_utf16_le_pattern = true;
-	for (auto count = 0; count < buffer.size(); ++count)
+	for (size_t count = 0; count < buffer.size(); ++count)
 	{
 		// quick check for a UTF16 formatted string: every other char is 0x00
 		if (count % 2 == 1)

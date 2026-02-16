@@ -535,7 +535,7 @@ void PrintHelp() noexcept
 	println("  -process-damaged-crlf : only report files that have damaged CRLF line endings");
 	println("  -process-disallowed-chars : only report files that have disallowed characters");
 }
-int main(int argc, char** argv) {
+int __cdecl main(int argc, char** argv) {
 	if (argc == 2)
 	{
 		string_view arg = argv[1];
