@@ -124,10 +124,8 @@ private:
 	}
 };
 
-void LoadAllAppPackages();
+void LoadAllAppPackages() noexcept;
 void PrintAllAppPackages();
-
-const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept;
 
 std::tuple<std::wstring, AppContainerName> FindPackageSid(PCWSTR package_sid) noexcept;
 std::tuple<std::wstring, AppContainerName> FindPackageFamilyName(const NormalizedString& package_family_name) noexcept;

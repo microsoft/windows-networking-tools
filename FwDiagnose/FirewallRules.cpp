@@ -270,14 +270,14 @@ namespace details
 
 				if (rule_details.duplicate_rule_count > 1)
 				{
-					std::printf("    [%zu] '%ls' [ %zu rules match this name ]\n",
+					std::printf("    [%zu filters] '%ls' [ %zu rules match this name ]\n",
 						rule_details.filter_count,
 						rule_details.rule_name.value.c_str(),
 						rule_details.duplicate_rule_count);
 				}
 				else
 				{
-					std::printf("    [%zu] '%ls'\n",
+					std::printf("    [%zu filters] '%ls'\n",
 						rule_details.filter_count,
 						rule_details.rule_name.value.c_str());
 				}
@@ -1503,7 +1503,7 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 void ProcessFirewallPolicy() noexcept
 try
 {
-	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
+    // PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
 	// analogous to the powershell command: Get-NetFirewallProfile -PolicyStore ActiveStore
 
 	constexpr auto* policyStoreValue = L"ActiveStore";
@@ -1513,9 +1513,25 @@ try
 		0,
 		wil::make_variant_bstr(policyStoreValue).addressof()));
 
-	for (const auto& profile : ctl::ctWmiEnumerateInstance::Query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
+	std::wstring banner_header;
+	banner_header.insert(banner_header.begin(), 86, L'*');
+
+    auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the currently active Firewall Profile configuration");
+	const size_t prefix_spaces = (banner_header.size() - banner_output.size()) / 2;
+	banner_output.insert(0, prefix_spaces, L' ');
+
+	std::printf(
+		"\n"
+		"%ls\n"
+		"%ls\n"
+		"%ls\n",
+		banner_header.c_str(),
+		banner_output.c_str(),
+		banner_header.c_str());
+
+    for (const auto& profile : ctl::ctWmiEnumerateInstance::Query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
 	{
-		std::wstring profile_name;
+	    std::wstring profile_name;
 		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"Name", &profile_name));
 
 		int32_t is_enabled{};
@@ -1675,6 +1691,12 @@ void ProcessFirewallRules()
 				banner_header.c_str(),
 				banner_output.c_str(),
 				banner_header.c_str());
+
+			if (policy.normalizedRules.empty())
+			{
+				std::printf("  * No Rules in this store\n");
+				continue;
+			}
 
 			ChronoTimer timer;
 			timer.start("FillRulesWithFilterDetails");

@@ -20,6 +20,7 @@
 #include <wil/resource.h>
 
 #include "AppContainers.h"
+#include "IpProperties.h"
 
 // manually turn on debug output for lower-level debugging
 static bool g_debugOutputEnabled = false;
@@ -217,12 +218,14 @@ int __cdecl main(int argc, char* argv[]) try
 	} };
 	auto firewall_thread = std::thread{ [] { LoadFirewallRules(); } };
 	auto app_package_thread = std::thread{ [] { LoadAllAppPackages(); } };
+	auto network_properties_thread = std::thread{ [] { LoadIpProperties(); } };
 
 	// joining in the order of expected time-to-complete
 	// (WFP often taking a while)
 	app_package_thread.join();
 	firewall_thread.join();
 	wfp_thread.join();
+	network_properties_thread.join();
 
 	if (AnalyzeRulesEnabled() || CleanBrokenRulesEnabled())
 	{
@@ -240,7 +243,7 @@ int __cdecl main(int argc, char* argv[]) try
 		TemporarilyRemoveWfpCalloutFilters();
 	}
 
-	if (g_wfpEventEnumeration)
+	if (WfpEventEnumerationEnabled())
 	{
 		ListenForWfpNetEvents();
 	}

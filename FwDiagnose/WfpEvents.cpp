@@ -18,6 +18,7 @@
 #include <wil/resource.h>
 
 #include "FirewallRules.h"
+#include "IpProperties.h"
 #include "WfpCounters.h"
 
 static
@@ -651,7 +652,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 	if (flags & FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET)
 	{
 		result += L"           Reauth-Reason-set\n";
-		flags &= ~FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET;
+		flags &= ~FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET; <<<<<<<<<<<<<<<<<<<<<<<<<<
 	}
 	if (flags & FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET)
 	{
@@ -679,6 +680,11 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		result += L"           (unknown flags remaining: 0x" + std::to_wstring(flags) + L")\n";
 	}
 	*/
+
+	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET)
+	{
+		result += L"    Reauthorization Event\n";
+	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_IP_VERSION_SET)
 	{
@@ -711,22 +717,25 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_ADDR_SET)
 	{
 		result += L"    LocalAddr: ";
+		in_addr local_inaddr{};
+		in6_addr local_in6addr{};
+
 		if (net_event->header.ipVersion == FWP_IP_VERSION_V4)
 		{
-			WCHAR result_buf[17]{}; // documented to be large enough for a IPv4 address string
 			// the UINT32 is in host-byte order, so must convert it before printing
-			const auto fixed_address = ntohl(net_event->header.localAddrV4);
-			FAIL_FAST_IF(nullptr == RtlIpv4AddressToStringW(
-				reinterpret_cast<const in_addr*>(&fixed_address),
-				result_buf));
+			local_inaddr.s_addr = ntohl(net_event->header.localAddrV4);
+
+			WCHAR result_buf[17]{}; // documented to be large enough for a IPv4 address string
+			FAIL_FAST_IF(nullptr == RtlIpv4AddressToStringW(&local_inaddr, result_buf));
 			result += result_buf;
 		}
 		else if (net_event->header.ipVersion == FWP_IP_VERSION_V6)
 		{
+			static_assert(sizeof(local_in6addr.u.Byte) == sizeof(net_event->header.localAddrV6), "localAddrV6 size does not match in6_addr size");
+			memcpy(&local_in6addr.u.Byte, &net_event->header.localAddrV6, sizeof(local_in6addr));
+
 			WCHAR result_buf[47]{}; // documented to be large enough for a IPv6 address string
-			FAIL_FAST_IF(nullptr == RtlIpv6AddressToStringW(
-				reinterpret_cast<const in6_addr*>(&net_event->header.localAddrV6),
-				result_buf));
+			FAIL_FAST_IF(nullptr == RtlIpv6AddressToStringW(&local_in6addr, result_buf));
 			result += result_buf;
 			if (net_event->header.scopeId != 0)
 			{
@@ -751,8 +760,17 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 				result += L" : " + std::to_wstring(net_event->header.localPort);
 			}
 		}
-
 		result += L"\n";
+
+		// print the interface information for this address
+		// 15 == number of spaces so it lines up with the address above - "LocalAddr: "
+		if (net_event->header.ipVersion == FWP_IP_VERSION_V4)
+		{
+			result += PrintIPInterfaceInfo(15, local_inaddr);
+		} else if (net_event->header.ipVersion == FWP_IP_VERSION_V6)
+		{
+			result += PrintIPInterfaceInfo(15, local_in6addr);
+		}
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET)
@@ -1396,7 +1414,8 @@ std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC
 
 	result += L"    Direction: " + DirectionToString(event->msFwpDirection) + L"\n";
 	result += L"    MediaType: " + std::to_wstring(event->mediaType) + L"\n";
-	result += L"    IfType: " + std::to_wstring(event->ifType) + L"\n";
+	result += L"    IfType: " + std::to_wstring(event->ifType);
+	result += wil::str_printf<std::wstring>(L" (%hs)\n", IfTypeToString(event->ifType).c_str());
 	result += L"    EtherType: 0x" + std::to_wstring(event->etherType) + L"\n";
 	result += L"    NdisPortNumber: " + std::to_wstring(event->ndisPortNumber) + L"\n";
 	result += L"    Reserved: " + std::to_wstring(event->reserved) + L"\n";

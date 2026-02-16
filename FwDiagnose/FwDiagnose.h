@@ -7,6 +7,8 @@
 #include <iostream>
 
 #include <Windows.h>
+#include <Objbase.h>
+#include <wil/result_macros.h>
 
 bool DebugOutputEnabled() noexcept;
 bool VerboseOutputEnabled() noexcept;
@@ -16,6 +18,18 @@ bool CleanBrokenRulesEnabled() noexcept;
 bool WfpOutputEnabled() noexcept;
 bool WfpEventEnumerationEnabled() noexcept;
 bool RemoveWfpCalloutFiltersEnabled() noexcept;
+
+inline std::wstring GuidToString(const GUID& guid)
+{
+	wchar_t buffer[39]{};
+	const auto string_length = StringFromGUID2(guid, buffer, std::size(buffer));
+	FAIL_FAST_IF(string_length != std::size(buffer));
+
+	// remove trailing null when constructing the std::wstring
+	std::wstring return_string;
+	return_string.assign(buffer, string_length - 1);
+	return return_string;
+}
 
 enum class PromptResponse
 {

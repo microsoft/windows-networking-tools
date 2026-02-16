@@ -18,7 +18,13 @@
 
 static std::vector<AppContainerPackage> g_app_packages;
 
-void LoadAllAppPackages()
+static const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept
+{
+	return g_app_packages;
+}
+
+void LoadAllAppPackages() noexcept
+try
 {
 	const winrt::Windows::Management::Deployment::PackageManager packageManager;
 	const auto packages = packageManager.FindPackages();
@@ -54,6 +60,14 @@ void LoadAllAppPackages()
 		g_app_packages.emplace_back(std::move(app_package));
 	}
 }
+catch (const winrt::hresult_error& ex)
+{
+	std::wcerr << L"Failed to load app packages: " << ex.message().c_str() << L" (0x" << std::hex << ex.code() << L")" << std::endl;
+}
+catch (const std::exception& ex)
+{
+	std::cerr << "Failed to load app packages: " << ex.what() << std::endl;
+}
 
 void PrintAllAppPackages()
 {
@@ -74,11 +88,6 @@ void PrintAllAppPackages()
 		std::wprintf(L"  FamilyName: %ws\n", package.family_name.value.c_str());
 		std::wprintf(L"   - FamilyName SID: %ws\n", package.family_name_sid.c_str());
 	}
-}
-
-const std::vector<AppContainerPackage>& ReadAllAppPackages() noexcept
-{
-	return g_app_packages;
 }
 
 // return {family_name_sid, AppContainerName}

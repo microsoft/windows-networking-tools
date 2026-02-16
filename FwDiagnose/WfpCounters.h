@@ -22,18 +22,6 @@
 bool InitializeWfpPerfCounters() noexcept;
 uint64_t ReadWfpPerfCounters();
 
-inline std::wstring GuidToString(const GUID& guid)
-{
-	wchar_t buffer[39]{};
-	const auto string_length = StringFromGUID2(guid, buffer, std::size(buffer));
-	FAIL_FAST_IF(string_length != std::size(buffer));
-
-	// remove trailing null when constructing the std::wstring
-	std::wstring return_string;
-	return_string.assign(buffer, string_length - 1);
-	return return_string;
-}
-
 void OutputWfpDetails();
 
 HANDLE GetFwpmEngineHandle();
