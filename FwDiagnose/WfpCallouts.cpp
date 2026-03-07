@@ -5,6 +5,7 @@
 #include <string>
 #include <windows.h>
 #include <fwpmu.h>
+#include <aclapi.h>
 #include <vector>
 
 #include "WfpCounters.h"
@@ -755,8 +756,97 @@ static PCWSTR BuiltInCalloutsToString(const GUID& guid) noexcept
 	FAIL_FAST();
 }
 
+// Attempts to take ownership of a WFP filter by setting its security information
+// using the current user's SID and granting full control
+// Returns ERROR_SUCCESS on success, or the error code on failure
+static DWORD TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
+{
+	// Get the current process token
+	wil::unique_handle processToken;
+	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &processToken))
+	{
+		const auto error = GetLastError();
+		std::printf("TakeOwnershipOfWfpFilter: OpenProcessToken failed: 0x%lx\n", error);
+		return error;
+	}
 
-static std::vector<FWPM_FILTER*> g_deletedWfpFilters;
+	// Get the token user information (contains the user's SID)
+	DWORD tokenUserSize = 0;
+	GetTokenInformation(processToken.get(), TokenUser, nullptr, 0, &tokenUserSize);
+	if (tokenUserSize == 0)
+	{
+		const auto error = GetLastError();
+		std::printf("TakeOwnershipOfWfpFilter: GetTokenInformation (size query) failed: 0x%lx\n", error);
+		return error;
+	}
+
+	std::vector<BYTE> tokenUserBuffer(tokenUserSize);
+	if (!GetTokenInformation(processToken.get(), TokenUser, tokenUserBuffer.data(), tokenUserSize, &tokenUserSize))
+	{
+		const auto error = GetLastError();
+		std::printf("TakeOwnershipOfWfpFilter: GetTokenInformation failed: 0x%lx\n", error);
+		return error;
+	}
+
+	const auto* tokenUser = reinterpret_cast<TOKEN_USER*>(tokenUserBuffer.data());
+	const PSID userSid = tokenUser->User.Sid;
+
+	// Create a DACL that grants full control to the current user
+	EXPLICIT_ACCESS_W explicitAccess{};
+	explicitAccess.grfAccessPermissions = WRITE_OWNER | WRITE_DAC;
+	explicitAccess.grfAccessMode = SET_ACCESS;
+	explicitAccess.grfInheritance = NO_INHERITANCE;
+	explicitAccess.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+	explicitAccess.Trustee.TrusteeType = TRUSTEE_IS_USER;
+	explicitAccess.Trustee.ptstrName = static_cast<LPWSTR>(userSid);
+
+	wil::unique_hlocal_ptr<ACL> newDacl;
+	PACL rawDacl = nullptr;
+	const auto setEntriesResult = SetEntriesInAclW(1, &explicitAccess, nullptr, &rawDacl);
+	if (setEntriesResult != ERROR_SUCCESS)
+	{
+		std::printf("TakeOwnershipOfWfpFilter: SetEntriesInAclW failed: 0x%lx\n", setEntriesResult);
+		return setEntriesResult;
+	}
+	newDacl.reset(rawDacl);
+	rawDacl = nullptr; // ownership transferred to newDacl
+
+	// Set the owner and DACL on the filter
+	constexpr SECURITY_INFORMATION securityInfo = OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
+	const auto setSecurityError = FwpmFilterSetSecurityInfoByKey0(
+		GetFwpmEngineHandle(),
+		&filterKey,
+		securityInfo,
+		static_cast<const SID*>(userSid),
+		nullptr,  // group SID not needed for ownership
+		newDacl.get(),
+		nullptr); // SACL not needed for ownership
+
+	if (setSecurityError != ERROR_SUCCESS)
+	{
+		if (setSecurityError == ERROR_PRIVILEGE_NOT_HELD)
+		{
+			std::printf("TakeOwnershipOfWfpFilter: FwpmFilterSetSecurityInfoByKey0 failed with ERROR_PRIVILEGE_NOT_HELD\n");
+		}
+		else if (setSecurityError == ERROR_ACCESS_DENIED)
+		{
+			std::printf("TakeOwnershipOfWfpFilter: FwpmFilterSetSecurityInfoByKey0 failed with ERROR_ACCESS_DENIED\n");
+		}
+		else
+		{
+			std::printf("TakeOwnershipOfWfpFilter: FwpmFilterSetSecurityInfoByKey0 failed: 0x%lx\n", setSecurityError);
+		}
+	}
+
+	return setSecurityError;
+}
+
+struct RemovedFilterDetails
+{
+	FWPM_FILTER* filter{};
+	PSECURITY_DESCRIPTOR filter_sd{};
+};
+static std::vector<RemovedFilterDetails> g_deletedWfpFilters;
 static void RestoreDeletedFilters() noexcept
 {
 	if (g_deletedWfpFilters.empty())
@@ -765,14 +855,14 @@ static void RestoreDeletedFilters() noexcept
 	}
 
 	auto* const engine_handle = GetFwpmEngineHandle();
-	for (auto& filter : g_deletedWfpFilters)
+	for (auto& [filter, filter_sd] : g_deletedWfpFilters)
 	{
 		if (filter)
 		{
 			const auto fwpm_error = FwpmFilterAdd0(
 				engine_handle,
 				filter,
-				nullptr,
+				filter_sd,
 				nullptr);
 			if (fwpm_error != ERROR_SUCCESS)
 			{
@@ -784,6 +874,7 @@ static void RestoreDeletedFilters() noexcept
 			}
 
 			FwpmFreeMemory(reinterpret_cast<void**>(&filter));
+			FwpmFreeMemory(&filter_sd);
 		}
 	}
 	g_deletedWfpFilters.clear();
@@ -894,22 +985,66 @@ void TemporarilyRemoveWfpCalloutFilters()
 
 					FWPM_FILTER* deleted_filter{};
 					// ensure we have space in our vector before deleting the filter
-					g_deletedWfpFilters.push_back(deleted_filter);
+					g_deletedWfpFilters.emplace_back();
+
 					const auto filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &deleted_filter);
 					if (filter_get_error != 0)
 					{
 						std::printf("         - FwpmFilterGetByKey failed: 0x%lx -- cannot delete filter %llu\n", filter_get_error, current_fwpm_filter.filterId);
+						continue;
 					}
-					else
+
+					// take ownership of the WFP filter so we can get the SECURITY_DESCRIPTOR
+					const auto ownership_error = TakeOwnershipOfWfpFilter(current_fwpm_filter.filterKey);
+					if (ownership_error != ERROR_SUCCESS)
 					{
-						const auto delete_error = FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
-						if (delete_error != 0)
+						std::printf("         - TakeOwnershipOfWfpFilter failed: 0x%lx -- cannot delete filter %llu\n", ownership_error, current_fwpm_filter.filterId);
+						continue;
+					}
+
+					PSID owner_sid{};
+					PSID group_sid{};
+					PACL dacl{};
+					PACL sacl{};
+					PSECURITY_DESCRIPTOR filter_security_descriptor{};
+					constexpr SECURITY_INFORMATION getFilterSecurityInfo{};
+					const auto get_security_error = FwpmFilterGetSecurityInfoByKey0(
+						GetFwpmEngineHandle(),
+						&current_fwpm_filter.filterKey,
+						getFilterSecurityInfo,
+						&owner_sid,
+						&group_sid,
+						&dacl,
+						&sacl,
+						&filter_security_descriptor);
+					if (get_security_error != 0)
+					{
+						if (get_security_error == ERROR_PRIVILEGE_NOT_HELD)
 						{
-							std::printf("         - FwpmFilterDeleteByKey failed: 0x%lx\n", delete_error);
+							std::printf("         - FwpmFilterGetSecurityInfoByKey0 failed with ERROR_PRIVILEGE_NOT_HELD -- cannot delete filter %llu\n", current_fwpm_filter.filterId);
 						}
 						else
 						{
-							*g_deletedWfpFilters.rbegin() = deleted_filter;
+							std::printf("         - FwpmFilterGetSecurityInfoByKey0 failed: 0x%lx -- cannot delete filter %llu\n", get_security_error, current_fwpm_filter.filterId);
+						}
+						continue;
+					}
+
+					const auto delete_error = FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
+					if (delete_error != 0)
+					{
+						std::printf("         - FwpmFilterDeleteByKey failed: 0x%lx\n", delete_error);
+					}
+					else
+					{
+						const auto verify_filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &deleted_filter);
+						if (verify_filter_get_error == 0)
+						{
+							std::printf("         - found the filter after FwpmFilterDeleteByKey succeeded -- cannot delete the filter (it likely applied security privileges to its filter)\n");
+						}
+						else
+						{
+							*g_deletedWfpFilters.rbegin() = {.filter = deleted_filter, .filter_sd = filter_security_descriptor };
 						}
 					}
 				}

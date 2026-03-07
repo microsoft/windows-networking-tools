@@ -60,9 +60,14 @@ bool WfpEventEnumerationEnabled() noexcept
 }
 
 static bool g_removeWfpCalloutFilters = false;
+static std::wstring g_removeCalloutDriverName;
 bool RemoveWfpCalloutFiltersEnabled() noexcept
 {
 	return g_removeWfpCalloutFilters;
+}
+static const std::wstring& RemoveCalloutDriverName() noexcept
+{
+	return g_removeCalloutDriverName;
 }
 
 static void PrintUsage() noexcept
@@ -89,6 +94,9 @@ static void PrintUsage() noexcept
 		"  -wfp-events      : Listen for and print all NetEvents from WFP\n"
 		"  -remove-callouts : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
 		"                     Will restore any removed filters before this program exits\n"
+        "      -driver <driver_name> : Specify the driver name for the callout removal\n"
+        "                            : Optional - by default callouts for all drivers are temporarily removed\n"
+        "                            : Can only be specified after -remove-callouts\n"
 		"  -list-app-packages : Output details of all app-container packages\n"
         "  -analyze-app-package-rules: Analyzes Firewall rules referencing app-packages\n"
 		"\n"
@@ -174,6 +182,13 @@ int __cdecl main(int argc, char* argv[]) try
 		// remove-callouts will automatically enable wfp output
 		g_wfpOutput = true;
 		g_removeWfpCalloutFilters = true;
+
+		if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-driver") == 0; }) != args.end())
+		{
+			// TODO: read the each -driver <driver_name> pair, then remove them from args
+
+			// g_removeCalloutDriverName = removed_driver_args;
+		}
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-packages") == 0; }) != args.end())
