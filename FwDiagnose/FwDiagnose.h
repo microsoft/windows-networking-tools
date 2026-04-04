@@ -19,6 +19,9 @@ bool WfpOutputEnabled() noexcept;
 bool WfpEventEnumerationEnabled() noexcept;
 bool RemoveWfpCalloutFiltersEnabled() noexcept;
 
+const std::wstring& RemoveCalloutDriverName() noexcept;
+PCWSTR GetNamedEventForRestoringFilters() noexcept;
+
 inline std::wstring GuidToString(const GUID& guid)
 {
 	wchar_t buffer[39]{};

@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <fwpmu.h>
 #include <aclapi.h>
+#include <thread>
 #include <vector>
 
 #include "WfpCounters.h"
@@ -18,6 +19,8 @@
 
 
 static std::vector<CalloutDetails> g_all_callouts;
+
+static wil::unique_event g_callouts_loaded_event{ wil::EventOptions::ManualReset };
 
 // Firewall defined a number of built-in callouts
 // most are by well-known GUIDs
@@ -888,6 +891,7 @@ void TemporarilyRemoveWfpCalloutFilters()
 		"               Temporarily Remove Filters for 3rd Party WFP Callouts                \n"
 		"**************************************************************************************\n");
 	std::vector<std::wstring> callout_drivers;
+	const auto& specific_callout_driver = RemoveCalloutDriverName();
 	for (const auto& callout : g_all_callouts)
 	{
 		if (callout.is_third_party_callout)
@@ -896,6 +900,13 @@ void TemporarilyRemoveWfpCalloutFilters()
 			{
 				continue;
 			}
+			if (!specific_callout_driver.empty())
+			{
+				if (0 != NormalizedString::StrStrComparison(NormalizedString::Create(callout.driver_name), NormalizedString::Create(specific_callout_driver)))
+				{
+					continue;
+				}
+			}
 			if (std::ranges::find(callout_drivers, callout.driver_name) != callout_drivers.end())
 			{
 				continue;
@@ -903,20 +914,22 @@ void TemporarilyRemoveWfpCalloutFilters()
 			callout_drivers.emplace_back(callout.driver_name);
 		}
 	}
+
+	if (callout_drivers.empty())
+	{
+		std::printf("  * No 3rd party callout drivers found to temporarily remove\n");
+		return;
+	}
+
 	std::printf(
-		"  * Total 3rd party callout drivers: %zu\n",
+		"  * 3rd party callout drivers (%zu)\n",
 		callout_drivers.size());
 	for (const auto& driver_name : callout_drivers)
 	{
 		std::printf("    - %ls\n", driver_name.c_str());
 	}
 
-	const auto restore_deleted_filters_on_exit = wil::scope_exit([]
-		{
-			RestoreDeletedFilters();
-		});
-
-	bool delete_all_with_no_more_prompts = false;
+	bool delete_all_with_no_more_prompts = !RemoveCalloutDriverName().empty();
 	for (const auto& driver : callout_drivers)
 	{
 		std::printf("\n  * Temporarily deleting filters for the callout driver: %ls\n", driver.c_str());
@@ -1044,13 +1057,21 @@ void TemporarilyRemoveWfpCalloutFilters()
 						}
 						else
 						{
-							*g_deletedWfpFilters.rbegin() = {.filter = deleted_filter, .filter_sd = filter_security_descriptor };
+							*g_deletedWfpFilters.rbegin() = { .filter = deleted_filter, .filter_sd = filter_security_descriptor };
 						}
 					}
 				}
 			}
 		}
 	}
+
+	if (g_deletedWfpFilters.empty())
+	{
+		std::printf("\n * No filters were found to be removed\n");
+		return;
+	}
+
+	std::printf(" * temporarily removed %zu filters\n", g_deletedWfpFilters.size());
 
 	// work hard to guarantee we restore the filters we deleted
 	SetConsoleCtrlHandler([](DWORD) -> BOOL
@@ -1059,11 +1080,42 @@ void TemporarilyRemoveWfpCalloutFilters()
 			RestoreDeletedFilters();
 			TerminateProcess(GetCurrentProcess(), 0);
 			return TRUE;
-		}, TRUE);
-	std::printf("Press Enter to restore filters to callout drivers\n");
-	std::wstring userInput;
-	std::getline(std::wcin, userInput);
+		},
+		TRUE);
+
+	const auto cmd_prompt_thread = CreateThread(
+		nullptr,
+		0,
+		[](LPVOID) -> DWORD
+		{
+			std::printf("Press Enter to restore filters to callout drivers\n");
+			std::wstring userInput;
+			std::getline(std::wcin, userInput);
+			g_callouts_loaded_event.SetEvent();
+			return 0;
+		},
+		nullptr,
+		0,
+		nullptr);
+	FAIL_FAST_IF_MSG(!cmd_prompt_thread, "Failed to create command prompt thread to wait for user input. Error: 0x%lx\n", GetLastError());
+
+	// open the named event if another FwDiagnose instance will signal us to restore the filters
+	const wil::unique_event named_event{ CreateEventW(nullptr, TRUE, FALSE, GetNamedEventForRestoringFilters()) };
+	if (!named_event)
+	{
+		std::printf(" ** Failed to open event to wait for callouts loaded signal. Error: 0x%lx\n", GetLastError());
+		WaitForSingleObject(g_callouts_loaded_event.get(), INFINITE);
+	}
+	else
+	{
+		const HANDLE wait_handles[]{ g_callouts_loaded_event.get(), named_event.get() };
+		WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+	}
 
 	std::printf("Restoring filters to callout drivers...\n");
 	RestoreDeletedFilters();
+
+	// we must terminate process in this path - as the thread we created might still be waiting for user input
+	// and this causes the CRT to break on process exit since the thread is still running and waiting on user input
+	TerminateProcess(GetCurrentProcess(), 0);
 }

@@ -65,9 +65,14 @@ bool RemoveWfpCalloutFiltersEnabled() noexcept
 {
 	return g_removeWfpCalloutFilters;
 }
-static const std::wstring& RemoveCalloutDriverName() noexcept
+const std::wstring& RemoveCalloutDriverName() noexcept
 {
 	return g_removeCalloutDriverName;
+}
+
+PCWSTR GetNamedEventForRestoringFilters() noexcept
+{
+	return L"FwDiagnoseCalloutsLoadedEvent";
 }
 
 static void PrintUsage() noexcept
@@ -94,115 +99,144 @@ static void PrintUsage() noexcept
 		"  -wfp-events      : Listen for and print all NetEvents from WFP\n"
 		"  -remove-callouts : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
 		"                     Will restore any removed filters before this program exits\n"
-        "      -driver <driver_name> : Specify the driver name for the callout removal\n"
-        "                            : Optional - by default callouts for all drivers are temporarily removed\n"
-        "                            : Can only be specified after -remove-callouts\n"
+		"      -driver <driver_name> : Specify the driver name for the callout removal\n"
+		"                            : Optional - by default will prompt for all drivers to be temporarily removed\n"
+		"                            : Can only be specified after -remove-callouts\n"
+		"  -signal-restore-callouts : automatically unblocks another instance of FwDiagnose -remove-callouts\n"
+		"                             that is waiting to be signaled to restore the removed callout\n"
 		"  -list-app-packages : Output details of all app-container packages\n"
-        "  -analyze-app-package-rules: Analyzes Firewall rules referencing app-packages\n"
+		"  -analyze-app-package-rules: Analyzes Firewall rules referencing app-packages\n"
 		"\n"
 		"  -verbose         : Output details of rules and/or WFP objects\n");
 }
 
-int __cdecl main(int argc, char* argv[]) try
+int __cdecl wmain(int argc, wchar_t* argv[]) try
 {
 	const auto coInit = wil::CoInitializeEx();
 
-	if (argc != 2 && argc != 3)
+	if (argc < 2)
 	{
 		PrintUsage();
 		return E_INVALIDARG;
 	}
 
-	std::vector<PCSTR> args(argv + 1, argv + argc);
-	if (args.size() != 1 && args.size() != 2)
-	{
-		std::printf("An invalid parameter was specified (argument count of %zu)\n", args.size());
-		std::printf("When specifying -verbose, only one other option can be used\n");
-		PrintUsage();
-		return E_INVALIDARG;
-	}
-
-	if (args.size() == 2)
-	{
-		// one of the 2 must be -verbose
-		if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-verbose") == 0; }) != args.end())
-		{
-			auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-verbose") == 0; });
-			args.erase(removed_args.cbegin(), args.end());
-			g_verboseOutput = true;
-		}
-	}
-	if (args.size() == 2)
-	{
-		// if we didn't remove the -verbose option, something invalid was specified
-		std::printf("An invalid parameter was specified [%hs, %hs]\n", args[0], args[1]);
-		std::printf("When specifying -verbose, only one other option can be used\n");
-		PrintUsage();
-		return E_INVALIDARG;
-	}
-
-	if (std::ranges::find(args, "-?") != args.end())
+	std::vector<PCWSTR> args(argv + 1, argv + argc);
+	if (std::ranges::find(args, L"-?") != args.end())
 	{
 		PrintUsage();
 		return 0;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-rules") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-verbose") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-rules") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-verbose") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_verboseOutput = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-signal-restore-callouts") == 0; }) != args.end())
+	{
+		if (args.size() != 1)
+		{
+			std::printf("The -signal-restore-callouts option cannot be specified with any other options\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+
+		const auto restore_filters_event{ OpenEventW(EVENT_MODIFY_STATE, FALSE, GetNamedEventForRestoringFilters()) };
+		if (!restore_filters_event)
+		{
+			std::printf("Failed to open event to signal restore of callouts. Error: 0x%lx\n", GetLastError());
+			return ERROR_INTERNAL_ERROR;
+		}
+
+		SetEvent(restore_filters_event);
+		std::printf("Signaled another instance of FwDiagnose to restore filters to callouts (named event: %ws)\n", GetNamedEventForRestoringFilters());
+		CloseHandle(restore_filters_event);
+		return 0;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-rules") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-rules") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_analyzeRules = true;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-clean-rules") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-clean-rules") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-clean-rules") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-clean-rules") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_cleanBrokenRules = true;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-wfp") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-wfp") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-wfp") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-wfp") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_wfpOutput = true;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-wfp-events") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-wfp-events") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-wfp-events") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-wfp-events") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_wfpEventEnumeration = true;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-remove-callouts") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-remove-callouts") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-remove-callouts") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-remove-callouts") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
-		// remove-callouts will automatically enable wfp output
+		std::printf("std::ranges::find_if found  -remove-callouts\n");
+
 		g_wfpOutput = true;
 		g_removeWfpCalloutFilters = true;
 
-		if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-driver") == 0; }) != args.end())
+		if (auto found_driver_iter = std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-driver") == 0; }); found_driver_iter != args.end())
 		{
-			// TODO: read the each -driver <driver_name> pair, then remove them from args
+			std::printf("std::ranges::find_if found  -driver\n");
+			auto driver_name_iter = std::next(found_driver_iter);
+			if (driver_name_iter != args.end())
+			{
+				std::printf("std::next found driver name %ws\n", *driver_name_iter);
+				g_removeCalloutDriverName = *driver_name_iter;
+				// remove the driver name as well so that we don't have any unrecognized arguments later
+				args.erase(driver_name_iter, std::next(driver_name_iter));
+			}
+			else
+			{
+				std::printf("A driver name must be specified after -driver\n");
+				PrintUsage();
+				return E_INVALIDARG;
+			}
+			std::printf(" - Temporarily removing filters for callout driver: %ws\n", g_removeCalloutDriverName.c_str());
 
-			// g_removeCalloutDriverName = removed_driver_args;
+			auto removed_driver_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-driver") == 0; });
+			args.erase(removed_driver_args.cbegin(), args.end());
+		}
+		else
+		{
+			std::printf("std::ranges::find_if did not find  -driver\n");
 		}
 	}
-
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-packages") == 0; }) != args.end())
+	else
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-list-app-packages") == 0; });
+		std::printf("std::ranges::find_if did not find  -remove-callouts\n");
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-list-app-packages") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-list-app-packages") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		LoadAllAppPackages();
 		PrintAllAppPackages();
 		return 0;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-app-package-rules") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-app-package-rules") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _stricmp(lhs, "-analyze-app-package-rules") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-app-package-rules") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		LoadAllAppPackages();
 		LoadFirewallRules();
@@ -215,7 +249,7 @@ int __cdecl main(int argc, char* argv[]) try
 		std::printf("Unrecognized arguments: ");
 		for (const auto& arg : args)
 		{
-			std::printf(" %s ", arg);
+			std::printf(" %ws ", arg);
 		}
 
 		std::printf("\n");
@@ -245,7 +279,7 @@ int __cdecl main(int argc, char* argv[]) try
 	if (AnalyzeRulesEnabled() || CleanBrokenRulesEnabled())
 	{
 		ProcessFirewallPolicy();
-	    ProcessFirewallRules();
+		ProcessFirewallRules();
 	}
 
 	if (WfpOutputEnabled())

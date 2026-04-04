@@ -98,8 +98,8 @@ namespace details
 		}
 
 		// try all supported versions of the Firewall API - from most recent to oldest supported
-        DWORD openStoreError{};
-        WORD versionSelected{};
+		DWORD openStoreError{};
+		WORD versionSelected{};
 		for (const auto version : { FW_BINARY_VERSION_33, FW_BINARY_VERSION_31, FW_BINARY_VERSION_27 })
 		{
 			versionSelected = version;
@@ -163,7 +163,7 @@ namespace details
 		// cannot FWFreeFirewallRules - we keep those pointers around to read later
 
 		timer.start("Normalizing Firewall rules into a vector");
-        FW_RULE* rule_iterator = policy.parent_rule;
+		FW_RULE* rule_iterator = policy.parent_rule;
 		while (rule_iterator)
 		{
 			policy.normalizedRules.emplace_back(rule_iterator, versionSelected);
@@ -414,7 +414,7 @@ namespace details
 			}
 		}
 
-        size_t derived_total = 0;
+		size_t derived_total = 0;
 		for (const auto& rule : duplicate_rules)
 		{
 			derived_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
@@ -439,8 +439,8 @@ namespace details
 
 	static void DeleteDuplicateRules(const std::vector<DuplicateRuleDetails>& duplicate_rules)
 	{
-        bool printed_deletion_header = false;
-        bool delete_all_with_no_more_prompts = false;
+		bool printed_deletion_header = false;
+		bool delete_all_with_no_more_prompts = false;
 
 		for (const auto& duplicate_rule : duplicate_rules)
 		{
@@ -633,7 +633,7 @@ namespace details
 
 	static void CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-        size_t count_of_rules_with_local_application = 0;
+		size_t count_of_rules_with_local_application = 0;
 
 		std::vector<std::wstring> verbose_output_of_error_strings;
 
@@ -673,10 +673,10 @@ namespace details
 
 	static void CheckForMissingAppPackage(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-        size_t count_of_rules_with_package_id = 0;
-        size_t count_of_rules_with_missing_package_id = 0;
-        size_t count_of_rules_with_package_family_name = 0;
-        size_t count_of_rules_with_missing_package_family_name = 0;
+		size_t count_of_rules_with_package_id = 0;
+		size_t count_of_rules_with_missing_package_id = 0;
+		size_t count_of_rules_with_package_family_name = 0;
+		size_t count_of_rules_with_missing_package_family_name = 0;
 
 		std::vector<std::wstring> verbose_output_of_error_strings;
 
@@ -743,8 +743,8 @@ namespace details
 
 	static void DeleteMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-        bool delete_all_with_no_more_prompts = false;
-        bool printed_deletion_header = false;
+		bool delete_all_with_no_more_prompts = false;
+		bool printed_deletion_header = false;
 
 		for (const auto& rule : normalized_rules)
 		{
@@ -948,7 +948,7 @@ namespace details
 			}
 		}
 
-        size_t count_of_rules_with_local_user_owner = 0;
+		size_t count_of_rules_with_local_user_owner = 0;
 		std::vector<std::wstring> rules_with_unknown_sid_owners;
 		std::vector<std::wstring> rules_with_no_local_profile;
 		for (auto& rule : normalized_rules)
@@ -1047,8 +1047,8 @@ namespace details
 
 	static void DeleteUnresolvedUserAccountRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-        bool delete_all_with_no_more_prompts = false;
-        bool printed_deletion_header = false;
+		bool delete_all_with_no_more_prompts = false;
+		bool printed_deletion_header = false;
 
 		for (const auto& rule : normalized_rules)
 		{
@@ -1196,7 +1196,7 @@ namespace details
 
 	static void CheckForRulesWithErrorStatus(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-        size_t rules_with_no_errors = 0;
+		size_t rules_with_no_errors = 0;
 
 		std::vector<std::wstring> verbose_rules_partially_ignored_error_strings;
 		std::vector<std::wstring> verbose_rules_completely_ignored_error_strings;
@@ -1500,10 +1500,34 @@ HRESULT AnalyzeFirewallRulesReferencingAppPackages()
 	return S_OK;
 }
 
+static std::string PrintFirewallAction(int32_t value)
+{
+	switch (value)
+	{
+	case 0: return "Not Configured";
+	case 2: return "Allow";
+	case 4: return "Block";
+	default:
+		return "<Unknown Action value: " + std::to_string(value) + ">";
+	}
+}
+
+static std::string PrintFirewallBoolean(uint32_t value)
+{
+	switch (value)
+	{
+	case 0: return "False";
+	case 1: return "True";
+	case 2: return "Not Configured";
+	default:
+		return "<Unknown Boolean value: " + std::to_string(value) + ">";
+	}
+}
+
 void ProcessFirewallPolicy() noexcept
 try
 {
-    // PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
+	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
 	// analogous to the powershell command: Get-NetFirewallProfile -PolicyStore ActiveStore
 
 	constexpr auto* policyStoreValue = L"ActiveStore";
@@ -1516,7 +1540,7 @@ try
 	std::wstring banner_header;
 	banner_header.insert(banner_header.begin(), 86, L'*');
 
-    auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the currently active Firewall Profile configuration");
+	auto banner_output = wil::str_printf<std::wstring>(L"Analyzing the currently active Firewall Profile configuration");
 	const size_t prefix_spaces = (banner_header.size() - banner_output.size()) / 2;
 	banner_output.insert(0, prefix_spaces, L' ');
 
@@ -1529,9 +1553,9 @@ try
 		banner_output.c_str(),
 		banner_header.c_str());
 
-    for (const auto& profile : ctl::ctWmiEnumerateInstance::Query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
+	for (const auto& profile : ctl::ctWmiEnumerateInstance::Query(L"SELECT * FROM MSFT_NetFirewallProfile", policyStoreContext))
 	{
-	    std::wstring profile_name;
+		std::wstring profile_name;
 		THROW_HR_IF(E_UNEXPECTED, !profile.get(L"Name", &profile_name));
 
 		int32_t is_enabled{};
@@ -1563,78 +1587,35 @@ try
 		std::vector<std::wstring> disabledInterfaces;
 		profile.get(L"DisabledInterfaceAliases", &disabledInterfaces);
 
-		if (VerboseOutputEnabled())
+		std::printf(
+			"Firewall Policies for profile: %ls\n"
+			"    Enabled: %d\n"
+			"    Default Inbound Action: %hs\n"
+			"    Default Outbound Action: %hs\n"
+			"    Allow Inbound Rules: %hs\n"
+			"    Allow Local Firewall Rules: %hs\n"
+			"    Allow User Apps: %hs\n"
+			"    Allow User Ports: %hs\n"
+			"    Allow Unicast Response To Multicast: %hs\n",
+			profile_name.c_str(),
+			is_enabled,
+			PrintFirewallAction(default_inbound_action).c_str(),
+			PrintFirewallAction(default_outbound_action).c_str(),
+			PrintFirewallBoolean(inbound_rules_allowed).c_str(),
+			PrintFirewallBoolean(local_rules_allowed).c_str(),
+			PrintFirewallBoolean(user_apps_allowed).c_str(),
+			PrintFirewallBoolean(user_ports_allowed).c_str(),
+			PrintFirewallBoolean(unicast_response_to_multicast_allowed).c_str());
+		if (disabledInterfaces.empty())
 		{
-			std::printf(
-				"Firewall Policies for profile: %ls\n"
-				"    Enabled: %d\n"
-				"    Default Inbound Action: %d\n"
-				"    Default Outbound Action: %d\n"
-				"    Allow Inbound Rules: %d\n"
-				"    Allow Local Firewall Rules: %d\n"
-				"    Allow User Apps: %d\n"
-				"    Allow User Ports: %d\n"
-				"    Allow Unicast Response To Multicast: %d\n",
-				profile_name.c_str(),
-				is_enabled,
-				default_inbound_action,
-				default_outbound_action,
-				inbound_rules_allowed,
-				local_rules_allowed,
-				user_apps_allowed,
-				user_ports_allowed,
-				unicast_response_to_multicast_allowed);
-			if (disabledInterfaces.empty())
-			{
-				wprintf(L"    Disabled Interface Aliases: None\n");
-			}
-			else
-			{
-				wprintf(L"    Disabled Interface Aliases:\n");
-				for (const auto& name : disabledInterfaces)
-				{
-					wprintf(L"    %ws\n", name.c_str());
-				}
-			}
-		}
-
-		if (is_enabled == 0)
-		{
-			std::printf("Firewall profile %ls is Disabled\n", profile_name.c_str());
+			wprintf(L"    Disabled Interface Aliases: None\n");
 		}
 		else
 		{
-			std::printf("Firewall profile %ls is Enabled\n", profile_name.c_str());
-
-			// <Value Name="Allow" Value="2"/>
-			// <Value Name="Block" Value="4"/>
-			std::printf("    - DefaultInboundAction set to %hs\n", default_inbound_action == 4 ? "Block" : "Allow");
-			std::printf("    - DefaultOutboundAction set to %hs\n", default_outbound_action == 4 ? "Block" : "Allow");
-
-			if (inbound_rules_allowed == 0)
+			wprintf(L"    Disabled Interface Aliases:\n");
+			for (const auto& name : disabledInterfaces)
 			{
-				std::printf("    - AllowInboundRules is Disabled\n");
-			}
-			if (local_rules_allowed == 0)
-			{
-				std::printf("    - AllowLocalFirewallRules is Disabled\n");
-			}
-			if (user_apps_allowed == 0)
-			{
-				std::printf("    - AllowUserApps is Disabled\n");
-			}
-			if (user_ports_allowed == 0)
-			{
-				std::printf("    - AllowUserPorts is Disabled\n");
-			}
-
-			if (!disabledInterfaces.empty())
-			{
-				std::printf("    - DisabledInterfaceAliases is set on the following interfaces:\n");
-				for (const auto& name : disabledInterfaces)
-				{
-					std::printf("      - %ls\n", name.c_str());
-				}
+				wprintf(L"    %ws\n", name.c_str());
 			}
 		}
 
@@ -1643,7 +1624,7 @@ try
 }
 catch (const std::exception& ex)
 {
-	std::printf("An unexpected error occurred while processing firewall rules: %s\n", ex.what());
+	std::printf("An unexpected error occurred while processing firewall policies: %s\n", ex.what());
 }
 
 void ProcessFirewallRules()
