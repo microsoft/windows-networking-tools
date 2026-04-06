@@ -225,6 +225,49 @@ catch (...)
 	std::printf("*** Exception occurred while reading filters (0x%x)\n", wil::ResultFromCaughtException());
 }
 
+void UpdateCalloutsByFilterCounts() noexcept
+{
+	// updates which callouts are referenced by filters
+
+	// first reset all counts to 0 before iterating through filters
+	for (auto& callout : ReadWfpCallouts())
+	{
+		callout.referenced_by_filter_count_disabled = 0;
+		callout.referenced_by_filter_count_enabled = 0;
+	}
+
+	for (const auto& current_fwpm_filter : g_all_filters)
+	{
+		if (current_fwpm_filter.InvokesCallout())
+		{
+			auto found_callout =
+				std::ranges::find_if(
+					ReadWfpCallouts(),
+					[&](const CalloutDetails& callout) {
+						return callout.callout_key == current_fwpm_filter.action_type.calloutKey;
+					});
+			if (found_callout == ReadWfpCallouts().end())
+			{
+				std::printf("  ** WARNING: Filter %ls references a callout that is not present on the system: %ls\n", \
+					current_fwpm_filter.name.value.c_str(),
+					GuidToString(current_fwpm_filter.action_type.calloutKey).c_str());
+			}
+			else
+			{
+				if (current_fwpm_filter.IsDisabled())
+				{
+					++found_callout->referenced_by_filter_count_disabled;
+				}
+				else
+				{
+					++found_callout->referenced_by_filter_count_enabled;
+				}
+
+			}
+		}
+	}
+}
+
 const std::vector<FilterDetails>& SortFilterDetailsByFilterId()
 {
 	std::ranges::sort(
@@ -258,6 +301,8 @@ const FilterDetails& FindFilterByFilterId(UINT64 filter_id)
 
 			// if the filter ID wasn't found, we need to refresh the filters and try again
 			LoadWfpFilters();
+			UpdateCalloutsByFilterCounts();
+			SortCalloutsByFilterCounts();
 			SortFilterDetailsByFilterId();
 			retried_when_not_found = true;
 		}

@@ -188,18 +188,13 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	{
 		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-remove-callouts") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
-		std::printf("std::ranges::find_if found  -remove-callouts\n");
-
-		g_wfpOutput = true;
 		g_removeWfpCalloutFilters = true;
 
 		if (auto found_driver_iter = std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-driver") == 0; }); found_driver_iter != args.end())
 		{
-			std::printf("std::ranges::find_if found  -driver\n");
 			auto driver_name_iter = std::next(found_driver_iter);
 			if (driver_name_iter != args.end())
 			{
-				std::printf("std::next found driver name %ws\n", *driver_name_iter);
 				g_removeCalloutDriverName = *driver_name_iter;
 				// remove the driver name as well so that we don't have any unrecognized arguments later
 				args.erase(driver_name_iter, std::next(driver_name_iter));
@@ -210,19 +205,11 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 				PrintUsage();
 				return E_INVALIDARG;
 			}
-			std::printf(" - Temporarily removing filters for callout driver: %ws\n", g_removeCalloutDriverName.c_str());
+			std::printf("* Temporarily removing filters for callout driver: %ws\n", g_removeCalloutDriverName.c_str());
 
 			auto removed_driver_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-driver") == 0; });
 			args.erase(removed_driver_args.cbegin(), args.end());
 		}
-		else
-		{
-			std::printf("std::ranges::find_if did not find  -driver\n");
-		}
-	}
-	else
-	{
-		std::printf("std::ranges::find_if did not find  -remove-callouts\n");
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-list-app-packages") == 0; }) != args.end())
@@ -264,7 +251,18 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		LoadWfpSubLayers();
 		LoadWfpProviders();
 		LoadWfpFilters();
-	} };
+		UpdateCalloutsByFilterCounts();
+		SortCalloutsByFilterCounts();
+		SortFilterDetailsByFilterId();
+		} };
+
+	if (RemoveWfpCalloutFiltersEnabled())
+	{
+		wfp_thread.join();
+		TemporarilyRemoveWfpCalloutFilters();
+		return 0;
+	}
+
 	auto firewall_thread = std::thread{ [] { LoadFirewallRules(); } };
 	auto app_package_thread = std::thread{ [] { LoadAllAppPackages(); } };
 	auto network_properties_thread = std::thread{ [] { LoadIpProperties(); } };
@@ -285,11 +283,6 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	if (WfpOutputEnabled())
 	{
 		OutputWfpDetails();
-	}
-
-	if (RemoveWfpCalloutFiltersEnabled())
-	{
-		TemporarilyRemoveWfpCalloutFilters();
 	}
 
 	if (WfpEventEnumerationEnabled())

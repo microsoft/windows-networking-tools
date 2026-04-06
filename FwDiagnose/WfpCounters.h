@@ -100,6 +100,8 @@ void LoadWfpFilters() noexcept;
 const std::vector<FilterDetails>& ReadWfpFilters() noexcept;
 void WriteWfpFilters() noexcept;
 
+void UpdateCalloutsByFilterCounts() noexcept;
+
 const std::vector<FilterDetails>& SortFilterDetailsByFilterId();
 const FilterDetails& FindFilterByFilterId(UINT64 filter_id);
 
@@ -129,6 +131,8 @@ void LoadWfpCallouts() noexcept;
 std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
 void WriteWfpCallouts() noexcept;
 void WriteThirdPartyCalloutDetails() noexcept;
+
+const std::vector<CalloutDetails>& SortCalloutsByFilterCounts();
 
 void TemporarilyRemoveWfpCalloutFilters();
 

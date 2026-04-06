@@ -35,55 +35,8 @@ void OutputWfpDetails()
 	WriteWfpFilters();
 	const auto& filter_details = ReadWfpFilters();
 
-	// updates which callouts are referenced by filters
-	for (const auto& current_fwpm_filter : filter_details)
-	{
-		if (current_fwpm_filter.InvokesCallout())
-		{
-			auto found_callout =
-				std::ranges::find_if(
-					wfp_callouts,
-					[&](const CalloutDetails& callout) {
-						return callout.callout_key == current_fwpm_filter.action_type.calloutKey;
-					});
-			if (found_callout == wfp_callouts.end())
-			{
-				std::printf("  ** WARNING: Filter %ls references a callout that is not present on the system: %ls\n", \
-					current_fwpm_filter.name.value.c_str(),
-					GuidToString(current_fwpm_filter.action_type.calloutKey).c_str());
-			}
-			else
-			{
-				if (current_fwpm_filter.IsDisabled())
-				{
-					++found_callout->referenced_by_filter_count_disabled;
-				}
-				else
-				{
-					++found_callout->referenced_by_filter_count_enabled;
-				}
-
-			}
-		}
-	}
-
-	// resort callouts by # of filters referencing them
-	std::ranges::sort(
-		wfp_callouts,
-		[](const CalloutDetails& lhs, const CalloutDetails& rhs) noexcept
-		{
-			if (lhs.referenced_by_filter_count_enabled > rhs.referenced_by_filter_count_enabled)
-			{
-				return true;
-			}
-			if (lhs.referenced_by_filter_count_enabled < rhs.referenced_by_filter_count_enabled)
-			{
-				return false;
-			}
-			return GuidToString(lhs.callout_key) < GuidToString(rhs.callout_key);
-		}
-	);
-
+	UpdateCalloutsByFilterCounts();
+	SortCalloutsByFilterCounts();
 	if (VerboseOutputEnabled())
 	{
 		std::printf("\n");

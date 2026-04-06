@@ -272,6 +272,28 @@ std::vector<CalloutDetails>& ReadWfpCallouts() noexcept
 	return g_all_callouts;
 }
 
+const std::vector<CalloutDetails>& SortCalloutsByFilterCounts()
+{
+	// resort callouts by # of filters referencing them
+	std::ranges::sort(
+		g_all_callouts,
+		[](const CalloutDetails& lhs, const CalloutDetails& rhs) noexcept
+		{
+			if (lhs.referenced_by_filter_count_enabled > rhs.referenced_by_filter_count_enabled)
+			{
+				return true;
+			}
+			if (lhs.referenced_by_filter_count_enabled < rhs.referenced_by_filter_count_enabled)
+			{
+				return false;
+			}
+			return GuidToString(lhs.callout_key) < GuidToString(rhs.callout_key);
+		}
+	);
+
+	return g_all_callouts;
+}
+
 void WriteWfpCallouts() noexcept
 {
 	std::printf(
@@ -846,6 +868,10 @@ static DWORD TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 
 struct RemovedFilterDetails
 {
+	RemovedFilterDetails(FWPM_FILTER* input_filter, PSECURITY_DESCRIPTOR input_filter_sd)
+		: filter(input_filter), filter_sd(input_filter_sd)
+	{
+	}
 	FWPM_FILTER* filter{};
 	PSECURITY_DESCRIPTOR filter_sd{};
 };
@@ -854,8 +880,11 @@ static void RestoreDeletedFilters() noexcept
 {
 	if (g_deletedWfpFilters.empty())
 	{
+		std::printf("No WFP filters were deleted - no filters to restore\n");
 		return;
 	}
+
+	uint32_t failed_filters_restored = 0;
 
 	auto* const engine_handle = GetFwpmEngineHandle();
 	for (auto& [filter, filter_sd] : g_deletedWfpFilters)
@@ -869,73 +898,220 @@ static void RestoreDeletedFilters() noexcept
 				nullptr);
 			if (fwpm_error != ERROR_SUCCESS)
 			{
-				std::printf("Failed to restore deleted WFP filter %llu. Error: 0x%lx\n", filter->filterId, fwpm_error);
+				// Fwpm* functions can return both Win32 errors and HRESULT values
+				// investigate these specific error cases
+				if (static_cast<HRESULT>(fwpm_error) == FWP_E_PROVIDER_CONTEXT_NOT_FOUND)
+				{
+					++failed_filters_restored;
+
+					// see if we can find that context
+					FWPM_PROVIDER_CONTEXT* provider_context{};
+					const auto provider_context_error = FwpmProviderContextGetByKey(engine_handle, &filter->providerContextKey, &provider_context);
+					if (provider_context_error != ERROR_SUCCESS)
+					{
+						std::printf("Failed to retrieve provider context for filter %llu (provider GUID %ls). Error: 0x%lx\n", filter->filterId, GuidToString(filter->providerContextKey).c_str(), provider_context_error);
+					}
+					else
+					{
+						std::printf("Provider context for filter %llu (provider GUID %ls) was found - even though FWP_E_PROVIDER_CONTEXT_NOT_FOUND was returned from FwpmFilterAdd",
+							filter->filterId,
+							GuidToString(filter->providerContextKey).c_str());
+					}
+				}
+				else if (static_cast<HRESULT>(fwpm_error) == FWP_E_WRONG_SESSION)
+				{
+					++failed_filters_restored;
+					std::printf(
+						"\nFWP_E_WRONG_SESSION was returned when trying to restore filter %llu.\n"
+						" This may indicate that the filter was originally added in a different session that is still active.\n"
+						" Attempting to investigate active sessions to find the correct session for this filter...\n", filter->filterId);
+
+					// enumerate sessions to see if the session is still active
+					HANDLE enumHandle{};
+					const auto session_enum_create_error = FwpmSessionCreateEnumHandle(engine_handle, nullptr, &enumHandle);
+					if (session_enum_create_error != ERROR_SUCCESS)
+					{
+						std::printf("   - Failed to create session enum handle (0x%lx) to investigate FWP_E_WRONG_SESSION error for filter %llu\n", session_enum_create_error, filter->filterId);
+						continue;
+					}
+
+					FWPM_SESSION0** sessions{};
+					const auto free_sessions = wil::scope_exit([&] {
+						if (sessions)
+						{
+							FwpmFreeMemory(reinterpret_cast<void**>(&sessions));
+						}
+						});
+					UINT32 num_sessions{};
+					const auto session_enum_error = FwpmSessionEnum0(engine_handle, enumHandle, 1000, &sessions, &num_sessions);
+					if (session_enum_error != ERROR_SUCCESS)
+					{
+						std::printf("   - Failed to enumerate sessions to investigate FWP_E_WRONG_SESSION error for filter %llu. Error: 0x%lx\n", filter->filterId, session_enum_error);
+						continue;
+					}
+
+					std::printf("   - Enumerated %u sessions to investigate FWP_E_WRONG_SESSION error for filter %llu:\n", num_sessions, filter->filterId);
+					for (UINT32 i = 0; i < num_sessions; ++i)
+					{
+						const auto& session = sessions[i];
+						std::printf(
+							"   - Trying to restore the filters with this session %u: %hs mode, userName=%ls, displayName=%ls\n",
+							i,
+							!!session->kernelMode ? "kernel" : "user",
+							session->username ? session->username : L"(no userName)",
+							session->displayData.name ? session->displayData.name : L"(no displayName)");
+
+						HANDLE engineHandleForSession{};
+						const auto delete_engine_handle = wil::scope_exit([&] {
+							if (engineHandleForSession)
+							{
+								FwpmEngineClose0(engineHandleForSession);
+							}
+							});
+						const auto fwpm_engine_open_error = FwpmEngineOpen0(nullptr, RPC_C_AUTHN_WINNT, nullptr, session, &engineHandleForSession);
+						if (fwpm_engine_open_error != ERROR_SUCCESS)
+						{
+							std::printf("   - Failed to restore deleted WFP filter %llu using session %u. FwpmEngineOpen error: 0x%lx\n", filter->filterId, i, fwpm_engine_open_error);
+							continue;
+						}
+
+						const auto fwpm_error_for_session = FwpmFilterAdd0(
+							engineHandleForSession,
+							filter,
+							filter_sd,
+							nullptr);
+						if (fwpm_error_for_session != ERROR_SUCCESS)
+						{
+							std::printf("   - Failed to restore deleted WFP filter %llu using session %u. FwpmFilterAdd error: 0x%lx\n", filter->filterId, i, fwpm_error_for_session);
+							continue;
+						}
+
+						std::printf("   - Successfully restored deleted WFP filter %llu using session %u\n", filter->filterId, i);
+						--failed_filters_restored;
+						break;
+					}
+					FwpmSessionDestroyEnumHandle(engine_handle, enumHandle);
+				}
+				else
+				{
+					++failed_filters_restored;
+					std::printf("Failed to restore deleted WFP filter %llu. Error: 0x%lx\n", filter->filterId, fwpm_error);
+				}
 			}
 			else
 			{
-				std::printf("Restored deleted WFP filter %llu\n", filter->filterId);
+				std::printf("Successfully restored deleted WFP filter %llu\n", filter->filterId);
 			}
 
 			FwpmFreeMemory(reinterpret_cast<void**>(&filter));
 			FwpmFreeMemory(&filter_sd);
 		}
+		else
+		{
+			std::printf("   * Invalid filter (null FWPM_FILTER*) for a deleted filter - cannot restore this filter\n");
+		}
 	}
 	g_deletedWfpFilters.clear();
+
+	if (failed_filters_restored > 0)
+	{
+		std::printf(
+			"\n*** There were some filters for callout drivers that failed to be restored.\n"
+			"    The callout drivers likely prevented others from manipulating their filters.\n"
+			"\n"
+			"*** IT IS HIGHLY RECOMMENDED TO REBOOT AS SOON AS POSSIBLE ***\n");
+	}
 }
 
 void TemporarilyRemoveWfpCalloutFilters()
+try
 {
 	std::printf(
 		"\n"
 		"**************************************************************************************\n"
-		"               Temporarily Remove Filters for 3rd Party WFP Callouts                \n"
+		"               Temporarily Remove Filters for 3rd Party WFP Callouts                  \n"
 		"**************************************************************************************\n");
-	std::vector<std::wstring> callout_drivers;
 	const auto& specific_callout_driver = RemoveCalloutDriverName();
+	const auto normalized_specific_callout_driver = NormalizedString::Create(specific_callout_driver);
+
+	struct CalloutNames
+	{
+		NormalizedString driver_name;
+		std::vector<NormalizedString> callout_names;
+	};
+	std::vector<CalloutNames> callout_drivers;
 	for (const auto& callout : g_all_callouts)
 	{
 		if (callout.is_third_party_callout)
 		{
-			if (callout.driver_name.empty())
-			{
-				continue;
-			}
+			auto normalized_driver_name = NormalizedString::Create(callout.driver_name);
+
 			if (!specific_callout_driver.empty())
 			{
-				if (0 != NormalizedString::StrStrComparison(NormalizedString::Create(callout.driver_name), NormalizedString::Create(specific_callout_driver)))
+				if (!NormalizedString::StrStrComparison(normalized_driver_name, normalized_specific_callout_driver))
 				{
 					continue;
 				}
 			}
-			if (std::ranges::find(callout_drivers, callout.driver_name) != callout_drivers.end())
+
+			const auto existing_entry = std::ranges::find_if(callout_drivers, [&](const auto& lhs) { return lhs.driver_name == normalized_driver_name; });
+			if (existing_entry != callout_drivers.end())
 			{
-				continue;
+				// add the callout name to the existing entry for this driver
+				auto normalized_callout_name = NormalizedString::Create(callout.name);
+				if (std::ranges::find(existing_entry->callout_names, normalized_callout_name) == existing_entry->callout_names.end())
+				{
+					existing_entry->callout_names.emplace_back(std::move(normalized_callout_name));
+				}
 			}
-			callout_drivers.emplace_back(callout.driver_name);
+			else
+			{
+				auto& insertion = callout_drivers.emplace_back(std::move(normalized_driver_name));
+				insertion.callout_names.emplace_back(NormalizedString::Create(callout.name));
+			}
 		}
 	}
 
 	if (callout_drivers.empty())
 	{
-		std::printf("  * No 3rd party callout drivers found to temporarily remove\n");
+		std::printf("  * No 3rd party callout drivers found to remove\n");
 		return;
 	}
 
-	std::printf(
-		"  * 3rd party callout drivers (%zu)\n",
-		callout_drivers.size());
-	for (const auto& driver_name : callout_drivers)
+	std::printf("The following 3rd party drivers were found - associated with the listed callouts\n");
+	for (const auto& callout_entry : callout_drivers)
 	{
-		std::printf("    - %ls\n", driver_name.c_str());
+		std::printf("  * %ls\n", callout_entry.driver_name.value.c_str());
+		for (const auto& callout_name : callout_entry.callout_names)
+		{
+			std::printf("      - %ls\n", callout_name.value.c_str());
+		}
 	}
+	std::printf("\n");
 
-	bool delete_all_with_no_more_prompts = !RemoveCalloutDriverName().empty();
-	for (const auto& driver : callout_drivers)
+	for (const auto& callout_entry : callout_drivers)
 	{
-		std::printf("\n  * Temporarily deleting filters for the callout driver: %ls\n", driver.c_str());
+		if (specific_callout_driver.empty())
+		{
+			const auto deletionPrompt = wil::str_printf<std::wstring>(L"Temporarily delete all filters referencing the callout driver '%ls'", callout_entry.driver_name.value.c_str());
+			constexpr bool onlyAllowYesOrNo = true;
+			if (PromptForDeletion(deletionPrompt.c_str(), onlyAllowYesOrNo) == PromptResponse::No)
+			{
+				continue;
+			}
+		}
+
 		for (const auto& callout : g_all_callouts)
 		{
-			if (callout.driver_name != driver)
+			if (!callout.is_third_party_callout)
+			{
+				continue;
+			}
+			if (callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled == 0)
+			{
+				continue;
+			}
+			if (!NormalizedString::StrStrComparison(callout_entry.driver_name, NormalizedString::Create(callout.driver_name)))
 			{
 				continue;
 			}
@@ -943,50 +1119,13 @@ void TemporarilyRemoveWfpCalloutFilters()
 			std::printf(
 				"\n"
 				"    * Temporarily deleting the filters for WFP callout %ls - registered with driver %ls\n"
-				"       Callout id %ld\n"
-				"       Filters for this callout: %llu\n",
+				"       Callout id %u\n"
+				"       Filter count for this callout id for this driver: %llu\n",
 				callout.name.c_str(),
 				callout.driver_name.c_str(),
 				callout.callout_id,
 				callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled);
 
-			if (callout.referenced_by_filter_count_enabled + callout.referenced_by_filter_count_disabled == 0)
-			{
-				std::printf("      * No Filters to delete for this callout\n");
-				continue;
-			}
-
-			bool skip_remaining_callouts = false;
-			if (!delete_all_with_no_more_prompts)
-			{
-				const auto DeletionPrompt = wil::str_printf<std::wstring>(L"Temporarily delete all filters referencing this callout (%ls) referencing driver (%ls)", callout.name.c_str(), callout.driver_name.c_str());
-				switch (PromptForDeletion(DeletionPrompt.c_str()))
-				{
-				case PromptResponse::Yes:
-					// continue to delete filters for this callout
-					break;
-
-				case PromptResponse::No:
-					std::printf("       - Skipping filters for this one callout (%ls)\n", callout.name.c_str());
-					continue;
-
-				case PromptResponse::Skip:
-					std::printf("       - Skipping the remainder of the callouts for this driver (%ls)\n", driver.c_str());
-					skip_remaining_callouts = true;
-					break;
-
-				case PromptResponse::All:
-					std::printf("       - Deleting all filters referencing all callouts for all drivers\n");
-					delete_all_with_no_more_prompts = true;
-					break;
-				}
-			}
-			if (skip_remaining_callouts)
-			{
-				break;
-			}
-
-			std::printf("       - Temporarily deleting filters referencing this callout\n");
 			for (const auto& current_fwpm_filter : ReadWfpFilters())
 			{
 				if (current_fwpm_filter.InvokesCallout(callout.callout_key))
@@ -996,16 +1135,22 @@ void TemporarilyRemoveWfpCalloutFilters()
 						current_fwpm_filter.name.value.c_str(),
 						FwpmLayerToString(current_fwpm_filter.layerKey).c_str());
 
-					FWPM_FILTER* deleted_filter{};
 					// ensure we have space in our vector before deleting the filter
-					g_deletedWfpFilters.emplace_back();
-
+					g_deletedWfpFilters.reserve(g_deletedWfpFilters.size() + 1);
+					FWPM_FILTER* deleted_filter{};
 					const auto filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &deleted_filter);
 					if (filter_get_error != 0)
 					{
 						std::printf("         - FwpmFilterGetByKey failed: 0x%lx -- cannot delete filter %llu\n", filter_get_error, current_fwpm_filter.filterId);
 						continue;
 					}
+
+					auto free_filter_on_failure = wil::scope_exit([&] {
+						if (deleted_filter)
+						{
+							FwpmFreeMemory(reinterpret_cast<void**>(&deleted_filter));
+						}
+						});
 
 					// take ownership of the WFP filter so we can get the SECURITY_DESCRIPTOR
 					const auto ownership_error = TakeOwnershipOfWfpFilter(current_fwpm_filter.filterKey);
@@ -1043,23 +1188,35 @@ void TemporarilyRemoveWfpCalloutFilters()
 						continue;
 					}
 
+					auto free_filter_security_descriptor_on_failure = wil::scope_exit([&] {
+						if (filter_security_descriptor)
+						{
+							FwpmFreeMemory(&filter_security_descriptor);
+						}
+						});
+
 					const auto delete_error = FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
 					if (delete_error != 0)
 					{
 						std::printf("         - FwpmFilterDeleteByKey failed: 0x%lx\n", delete_error);
+						continue;
 					}
-					else
+
+					FWPM_FILTER* verify_deleted_filter{};
+					const auto verify_filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &verify_deleted_filter);
+					if (verify_filter_get_error == 0)
 					{
-						const auto verify_filter_get_error = FwpmFilterGetByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey, &deleted_filter);
-						if (verify_filter_get_error == 0)
-						{
-							std::printf("         - found the filter after FwpmFilterDeleteByKey succeeded -- cannot delete the filter (it likely applied security privileges to its filter)\n");
-						}
-						else
-						{
-							*g_deletedWfpFilters.rbegin() = { .filter = deleted_filter, .filter_sd = filter_security_descriptor };
-						}
+						FwpmFreeMemory(reinterpret_cast<void**>(&verify_deleted_filter));
+						std::printf("         - found the filter after FwpmFilterDeleteByKey succeeded -- cannot delete the filter (it likely applied security privileges to its filter)\n");
+						continue;
 					}
+
+					g_deletedWfpFilters.emplace_back(deleted_filter, filter_security_descriptor);
+					std::printf("         - Successfully deleted filter %llu (stored to restore later)\n", current_fwpm_filter.filterId);
+
+					// successfully moved pointers to g_deletedWfpFilters, so release the scope guard's ownership of the filter memory
+					free_filter_on_failure.release();
+					free_filter_security_descriptor_on_failure.release();
 				}
 			}
 		}
@@ -1071,12 +1228,12 @@ void TemporarilyRemoveWfpCalloutFilters()
 		return;
 	}
 
-	std::printf(" * temporarily removed %zu filters\n", g_deletedWfpFilters.size());
+	std::printf("\n * temporarily removed %zu filters\n", g_deletedWfpFilters.size());
 
 	// work hard to guarantee we restore the filters we deleted
 	SetConsoleCtrlHandler([](DWORD) -> BOOL
 		{
-			std::printf("Restoring filters to callout drivers...\n");
+			std::printf("\n * Restoring filters to callout drivers...\n");
 			RestoreDeletedFilters();
 			TerminateProcess(GetCurrentProcess(), 0);
 			return TRUE;
@@ -1088,7 +1245,7 @@ void TemporarilyRemoveWfpCalloutFilters()
 		0,
 		[](LPVOID) -> DWORD
 		{
-			std::printf("Press Enter to restore filters to callout drivers\n");
+			std::printf("\n\n --- Press Enter to restore filters to callout drivers ---\n");
 			std::wstring userInput;
 			std::getline(std::wcin, userInput);
 			g_callouts_loaded_event.SetEvent();
@@ -1112,10 +1269,15 @@ void TemporarilyRemoveWfpCalloutFilters()
 		WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
 	}
 
-	std::printf("Restoring filters to callout drivers...\n");
+	std::printf("\n * Restoring filters to callout drivers...\n");
 	RestoreDeletedFilters();
 
 	// we must terminate process in this path - as the thread we created might still be waiting for user input
 	// and this causes the CRT to break on process exit since the thread is still running and waiting on user input
 	TerminateProcess(GetCurrentProcess(), 0);
+}
+catch (...)
+{
+	std::printf("*** Exception occurred while temporarily removing WFP filters for 3rd party callouts (0x%x)\n", wil::ResultFromCaughtException());
+	RestoreDeletedFilters();
 }

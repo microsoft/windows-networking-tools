@@ -47,7 +47,7 @@ static void PrintDeletionHeader(PCSTR str) noexcept
 		"     - indicate 'A' to delete ALL duplicate rules from this store without further prompts\n",
 		str);
 }
-static PCSTR DeletionPrompt = "Delete all duplicates of this rule";
+static PCSTR DeletionPrompt = "       Delete all duplicates of this rule";
 
 
 static FirewallPolicyObjects g_policy_objects[] =

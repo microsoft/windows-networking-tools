@@ -107,15 +107,19 @@ struct NormalizedString
 		}
 	}
 
-    // returns -1 if lhs < rhs, 0 if lhs == rhs, 1 if lhs > rhs
-    static int StrStrComparison(const NormalizedString& haystack, const NormalizedString& needle) noexcept
+    static bool StrStrComparison(const NormalizedString& haystack, const NormalizedString& needle) noexcept
     {
+		if (haystack.value.empty() || needle.value.empty())
+		{
+			return haystack.value.empty() && needle.value.empty();
+		}
+
         if (!haystack.containsNonAsciiCharacters && !needle.containsNonAsciiCharacters)
         {
             // if neither contain non-ascii characters, can just do a raw search without any conversions
             // as they are both already lower-case
             const wchar_t* match = wcsstr(haystack.value.c_str(), needle.value.c_str());
-            return match != nullptr ? 0 : -1;
+            return match != nullptr;
         }
 
         // CompareStringOrdinal doesn't have a way to do culture-invariant substring searches, so just do a brute-force search
@@ -131,10 +135,10 @@ struct NormalizedString
                 TRUE);
             if (ruleDetailsMatch == CSTR_EQUAL)
             {
-                return 0;
+                return true;
             }
         }
-        return -1;
+        return false;
     }
 };
 

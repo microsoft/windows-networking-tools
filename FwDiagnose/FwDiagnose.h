@@ -70,12 +70,22 @@ inline PromptResponse PromptForDeletion(PCSTR deletion_prompt)
 		}
 	}
 }
-inline PromptResponse PromptForDeletion(PCWSTR deletion_prompt)
+
+// by default allow all 4 options (y/n/s/a), but if onlyAllowYesNo is set to true, only allow y/n and ignore s/a inputs (treat them as invalid and re-prompt)
+inline PromptResponse PromptForDeletion(PCWSTR deletion_prompt, bool onlyAllowYesNo = false)
 {
 	std::wstring userInput;
 	for (;;)
 	{
-		std::printf("       %ls (y/n/s/a)? ", deletion_prompt);
+		if (onlyAllowYesNo)
+		{
+			std::printf("%ls (y/n)? ", deletion_prompt);
+		}
+		else
+		{
+			std::printf("%ls (y/n/s/a)? ", deletion_prompt);
+		}
+
 		userInput.clear();
 		std::getline(std::wcin, userInput);
 
@@ -86,6 +96,11 @@ inline PromptResponse PromptForDeletion(PCWSTR deletion_prompt)
 		if (userInput == L"n" || userInput == L"N")
 		{
 			return PromptResponse::No;
+		}
+
+		if (onlyAllowYesNo)
+		{
+			continue;
 		}
 
 		if (userInput == L"s" || userInput == L"S")
