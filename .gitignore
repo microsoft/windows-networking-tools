@@ -28,12 +28,12 @@
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
-/QueryFirewallProperties/.vs
-/QueryFirewallProperties/packages
-/QueryFirewallProperties/ARM64
-/QueryFirewallProperties/Debug
-/QueryFirewallProperties/Release
-/QueryFirewallProperties/x64
+/QueryIpProperties/.vs
+/QueryIpProperties/packages
+/QueryIpProperties/ARM64
+/QueryIpProperties/Debug
+/QueryIpProperties/Release
+/QueryIpProperties/x64
 
 /FwDiagnose/.vs
 /FwDiagnose/packages
@@ -41,4 +41,3 @@
 /FwDiagnose/Debug
 /FwDiagnose/Release
 /FwDiagnose/x64
-/QueryIpProperties/x64/Debug

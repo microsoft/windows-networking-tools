@@ -7,7 +7,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "NetworkInformationTools", "
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "FirewallTools", "FirewallTools", "{AFAF1BA6-2F8A-4A4E-9F56-7BE0E40C2BAC}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "QueryFirewallProperties", "QueryFirewallProperties\QueryFirewallProperties.vcxproj", "{1B5B06BC-43EF-4860-9E5E-C59149F83748}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "QueryIpProperties", "QueryIpProperties\QueryIpProperties.vcxproj", "{1B5B06BC-43EF-4860-9E5E-C59149F83748}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FwDiagnose", "FwDiagnose\FwDiagnose.vcxproj", "{8095000F-04C6-47B6-8095-92095D42E25B}"
 EndProject

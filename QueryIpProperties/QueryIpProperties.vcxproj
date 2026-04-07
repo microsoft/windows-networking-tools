@@ -31,7 +31,7 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{1b5b06bc-43ef-4860-9e5e-c59149f83748}</ProjectGuid>
-    <RootNamespace>QueryFirewallProperties</RootNamespace>
+    <RootNamespace>QueryIpProperties</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>QueryIPProperties</ProjectName>
   </PropertyGroup>
