@@ -69,7 +69,7 @@ struct RecordedRouteProperties
 	RouteProperties PersistentStoreProperties;
 };
 
-static std::vector<RecordedRouteProperties> QueryIPRouteProperties(uint32_t interfaceIndex)
+inline std::vector<RecordedRouteProperties> QueryIPRouteProperties(uint32_t interfaceIndex)
 {
 	std::vector<RecordedRouteProperties> allRecordedProperties{};
 
@@ -156,3 +156,223 @@ static std::vector<RecordedRouteProperties> QueryIPRouteProperties(uint32_t inte
 	std::printf("\n * Found %d matching routes\n", static_cast<int>(allRecordedProperties.size()));
 	return allRecordedProperties;
 }
+
+inline void MigrateIPRouteProperties(std::vector<RecordedRouteProperties> originalProperties, uint32_t interfaceIndex)
+{
+	ctl::ctWmiService wmiService(L"ROOT\\StandardCimv2"); // MSFT_NetRoute is in ROOT\StandardCimv2 namespace
+
+	for (auto& original_route : originalProperties)
+	{
+		// [implemented, static: DisableOverride ToSubClass] uint32 Create(
+		//	[In] uint32 InterfaceIndex,
+		//	[In] string InterfaceAlias,
+		//	[In] string DestinationPrefix,
+		//	[In] string NextHop,
+		//	[In] uint8 Publish,
+		//	[In] uint16 RouteMetric,
+		//	[In] uint16 Protocol,
+		//	[In] uint32 CompartmentId,
+		//	[In] datetime ValidLifetime,
+		//	[In] datetime PreferredLifetime,
+		//	[In] string PolicyStore,
+		//	[In] uint16 AddressFamily,
+		//	[In] boolean PassThru,
+		//	[Out, EmbeddedInstance("MSFT_NetRoute"): ToSubClass] MSFT_NetRoute CmdletOutput[]);
+
+		ctl::ctWmiStaticMethod create_route(L"MSFT_NetRoute", L"Create", wmiService);
+		create_route.add_parameter(L"InterfaceIndex", ctl::ctWmiMakeVariant(interfaceIndex).addressof());
+		create_route.add_parameter(L"InterfaceAlias", nullptr);
+		create_route.add_parameter(L"DestinationPrefix", original_route.ActiveStoreProperties.DestinationPrefix.addressof());
+		create_route.add_parameter(L"NextHop", original_route.ActiveStoreProperties.NextHop.addressof());
+		create_route.add_parameter(L"Publish", original_route.ActiveStoreProperties.Publish.addressof());
+		create_route.add_parameter(L"RouteMetric", original_route.ActiveStoreProperties.RouteMetric.addressof());
+		create_route.add_parameter(L"Protocol", original_route.ActiveStoreProperties.Protocol.addressof());
+		create_route.add_parameter(L"CompartmentId", original_route.ActiveStoreProperties.CompartmentId.addressof());
+		create_route.add_parameter(L"ValidLifetime", original_route.ActiveStoreProperties.ValidLifetime.addressof());
+		create_route.add_parameter(L"PreferredLifetime", original_route.ActiveStoreProperties.PreferredLifetime.addressof());
+		create_route.add_parameter(L"PolicyStore", wil::make_variant_bstr(L"ActiveStore").addressof());
+		create_route.add_parameter(L"AddressFamily", ctl::ctWmiMakeVariant(0).addressof()); // AddressFamily is not a property of MSFT_NetRoute, so we can pass in any value (e.g. 0)
+		create_route.add_parameter(L"PassThru", ctl::ctWmiMakeVariant(false).addressof());
+		const auto hr = create_route.execute_method_nothrow();
+
+		// print the result of the execute_method call, but continue with the next route even if it failed
+		if (SUCCEEDED(hr))
+		{
+			std::wprintf(L"Successfully created route with DestinationPrefix %ls and NextHop %ls\n",
+				ctl::VariantToString(original_route.ActiveStoreProperties.DestinationPrefix.addressof()).c_str(),
+				ctl::VariantToString(original_route.ActiveStoreProperties.NextHop.addressof()).c_str());
+		}
+		else
+		{
+			std::wprintf(L"Failed to create route with DestinationPrefix %ls and NextHop %ls. HRESULT: 0x%08X\n",
+				ctl::VariantToString(original_route.ActiveStoreProperties.DestinationPrefix.addressof()).c_str(),
+				ctl::VariantToString(original_route.ActiveStoreProperties.NextHop.addressof()).c_str(),
+				hr);
+		}
+	}
+}
+
+/*
+ *
+ * Calling a static method example (not related to IP properties, just for demonstration purposes of how to call static methods in WMI):
+ * 
+ int wmain()
+{
+    HRESULT hr;
+
+    //---------------------------------------------
+    // 1. Initialize COM
+    //---------------------------------------------
+    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
+    if (FAILED(hr)) return 1;
+
+    hr = CoInitializeSecurity(
+        NULL,
+        -1,
+        NULL,
+        NULL,
+        RPC_C_AUTHN_LEVEL_DEFAULT,
+        RPC_C_IMP_LEVEL_IMPERSONATE,
+        NULL,
+        EOAC_NONE,
+        NULL);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 2. Get IWbemLocator
+    //---------------------------------------------
+    IWbemLocator* pLoc = nullptr;
+
+    hr = CoCreateInstance(
+        CLSID_WbemLocator,
+        0,
+        CLSCTX_INPROC_SERVER,
+        IID_IWbemLocator,
+        (LPVOID*)&pLoc);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 3. Connect to root\cimv2
+    //---------------------------------------------
+    IWbemServices* pSvc = nullptr;
+
+    hr = pLoc->ConnectServer(
+        _bstr_t(L"ROOT\\CIMV2"),
+        NULL,
+        NULL,
+        0,
+        NULL,
+        0,
+        0,
+        &pSvc);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 4. Set security on proxy
+    //---------------------------------------------
+    hr = CoSetProxyBlanket(
+        pSvc,
+        RPC_C_AUTHN_WINNT,
+        RPC_C_AUTHZ_NONE,
+        NULL,
+        RPC_C_AUTHN_LEVEL_CALL,
+        RPC_C_IMP_LEVEL_IMPERSONATE,
+        NULL,
+        EOAC_NONE);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // ***** STATIC METHOD PART STARTS HERE *****
+    //---------------------------------------------
+
+    IWbemClassObject* pClass = nullptr;
+
+    // Get the class object itself
+    hr = pSvc->GetObject(
+        _bstr_t(L"Win32_Process"),
+        0,
+        NULL,
+        &pClass,
+        NULL);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 5. Get Create() method definition
+    //---------------------------------------------
+    IWbemClassObject* pInParamsDef = nullptr;
+
+    hr = pClass->GetMethod(
+        L"Create",
+        0,
+        &pInParamsDef,
+        NULL);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 6. Spawn input parameter instance
+    //---------------------------------------------
+    IWbemClassObject* pInParams = nullptr;
+
+    hr = pInParamsDef->SpawnInstance(
+        0,
+        &pInParams);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 7. Set CommandLine parameter
+    //---------------------------------------------
+    VARIANT varCmd;
+    VariantInit(&varCmd);
+
+    varCmd.vt = VT_BSTR;
+    varCmd.bstrVal = SysAllocString(L"notepad.exe");
+
+    hr = pInParams->Put(
+        L"CommandLine",
+        0,
+        &varCmd,
+        0);
+
+    VariantClear(&varCmd);
+
+    if (FAILED(hr)) return 1;
+
+    //---------------------------------------------
+    // 8. Invoke STATIC METHOD
+    //---------------------------------------------
+    IWbemClassObject* pOutParams = nullptr;
+
+    hr = pSvc->ExecMethod(
+        _bstr_t(L"Win32_Process"),   // <-- CLASS PATH (STATIC!)
+        _bstr_t(L"Create"),
+        0,
+        NULL,
+        pInParams,
+        &pOutParams,
+        NULL);
+
+    if (FAILED(hr)) return 1;
+
+    std::wcout << L"Static method invoked successfully\n";
+
+    //---------------------------------------------
+    // Cleanup
+    //---------------------------------------------
+    if (pOutParams) pOutParams->Release();
+    if (pInParams) pInParams->Release();
+    if (pInParamsDef) pInParamsDef->Release();
+    if (pClass) pClass->Release();
+    if (pSvc) pSvc->Release();
+    if (pLoc) pLoc->Release();
+
+    CoUninitialize();
+    return 0;
+}
+ */

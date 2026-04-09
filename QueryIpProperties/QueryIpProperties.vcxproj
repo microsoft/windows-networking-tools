@@ -232,6 +232,13 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\ctl\ctEtwReader.hpp" />
+    <ClInclude Include="..\ctl\ctEtwRecord.hpp" />
+    <ClInclude Include="..\ctl\ctPerformanceCounter.hpp" />
+    <ClInclude Include="..\ctl\ctThreadpoolQueue.hpp" />
+    <ClInclude Include="..\ctl\ctWmiInstance.hpp" />
+    <ClInclude Include="..\ctl\ctWmiService.hpp" />
+    <ClInclude Include="..\ctl\ctWmiVariant.hpp" />
     <ClInclude Include="QueryIpAddresses.h" />
     <ClInclude Include="QueryIpInterfaces.h" />
     <ClInclude Include="QueryIpRoutes.h" />
