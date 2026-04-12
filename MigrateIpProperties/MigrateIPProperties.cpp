@@ -10,9 +10,9 @@
 
 #include "ctWmiInstance.hpp"
 
-#include "QueryIpInterfaces.h"
-#include "QueryIpAddresses.h"
-#include "QueryIpRoutes.h"
+#include "MigrateIpInterfaces.h"
+#include "MigrateIpAddresses.h"
+#include "MigrateIpRoutes.h"
 
 #include <wil/com.h>
 #include <wil/resource.h>
@@ -22,10 +22,10 @@
 static void PrintUsage() noexcept
 {
 	std::printf(
-		"QueryIPProperties.exe\n"
+		"MigrateIpProperties.exe\n"
 		"Reads and displays the properties of MSFT_NetIPInterface and MSFT_NetIPAddress from a specified network interface.\n"
 		"\n"
-		"Usage: QueryIPProperties.exe <InterfaceIndex>\n"
+		"Usage: MigrateIpProperties.exe <InterfaceIndex>\n"
 		"     : InterfaceIndex specifies the index of the network interface to query\n");
 }
 
@@ -40,15 +40,15 @@ try
 	uint32_t interfaceIndex = 0;
 	std::wcout << L"Enter the index of the network interface: ";
 	std::wcin >> interfaceIndex;
-	auto properties = QueryIPInterfaceProperties(interfaceIndex);
+	auto properties = MigrateIpInterfaceProperties(interfaceIndex);
 
 	// write the properties - in this case back to the same interface for demonstration purposes
 	properties.ActiveStoreProperties[0].InterfaceMetric.lVal++;
 	properties.ActiveStoreProperties[1].InterfaceMetric.lVal++;
 	WriteIPInterfaceProperties(properties);
 
-	QueryIPAddressProperties(interfaceIndex);
-	QueryIPRouteProperties(interfaceIndex);
+	MigrateIpAddressProperties(interfaceIndex);
+	MigrateIpRouteProperties(interfaceIndex);
 }
 catch (const std::exception& e)
 {

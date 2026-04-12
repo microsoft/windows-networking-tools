@@ -31,9 +31,9 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{1b5b06bc-43ef-4860-9e5e-c59149f83748}</ProjectGuid>
-    <RootNamespace>QueryIpProperties</RootNamespace>
+    <RootNamespace>MigrateIpProperties</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>QueryIPProperties</ProjectName>
+    <ProjectName>MigrateIpProperties</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -226,7 +226,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="QueryIPProperties.cpp" />
+    <ClCompile Include="MigrateIpProperties.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -239,9 +239,9 @@
     <ClInclude Include="..\ctl\ctWmiInstance.hpp" />
     <ClInclude Include="..\ctl\ctWmiService.hpp" />
     <ClInclude Include="..\ctl\ctWmiVariant.hpp" />
-    <ClInclude Include="QueryIpAddresses.h" />
-    <ClInclude Include="QueryIpInterfaces.h" />
-    <ClInclude Include="QueryIpRoutes.h" />
+    <ClInclude Include="MigrateIpAddresses.h" />
+    <ClInclude Include="MigrateIpInterfaces.h" />
+    <ClInclude Include="MigrateIpRoutes.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

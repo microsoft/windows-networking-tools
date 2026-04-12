@@ -67,7 +67,7 @@ struct RecordedAddressProperties
 	WritableAddressProperties PersistentStoreProperties;
 };
 
-static std::vector<RecordedAddressProperties> QueryIPAddressProperties(uint32_t interfaceIndex)
+static std::vector<RecordedAddressProperties> MigrateIPAddressProperties(uint32_t interfaceIndex)
 {
 	std::vector<RecordedAddressProperties> allRecordedProperties{};
 

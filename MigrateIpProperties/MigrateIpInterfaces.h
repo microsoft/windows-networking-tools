@@ -95,7 +95,7 @@ struct RecordedIpInterfaceProperties
 	WritableIpInterfaceProperties PersistentStoreProperties[2];
 };
 
-static RecordedIpInterfaceProperties QueryIPInterfaceProperties(uint32_t interfaceIndex)
+static RecordedIpInterfaceProperties MigrateIPInterfaceProperties(uint32_t interfaceIndex)
 {
 	RecordedIpInterfaceProperties recordedProperties{};
 	recordedProperties.InterfaceIndex = interfaceIndex;

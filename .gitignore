@@ -28,12 +28,12 @@
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
-/QueryIpProperties/.vs
-/QueryIpProperties/packages
-/QueryIpProperties/ARM64
-/QueryIpProperties/Debug
-/QueryIpProperties/Release
-/QueryIpProperties/x64
+/MigrateIpProperties/.vs
+/MigrateIpProperties/packages
+/MigrateIpProperties/ARM64
+/MigrateIpProperties/Debug
+/MigrateIpProperties/Release
+/MigrateIpProperties/x64
 
 /FwDiagnose/.vs
 /FwDiagnose/packages

@@ -69,7 +69,7 @@ struct RecordedRouteProperties
 	RouteProperties PersistentStoreProperties;
 };
 
-inline std::vector<RecordedRouteProperties> QueryIPRouteProperties(uint32_t interfaceIndex)
+inline std::vector<RecordedRouteProperties> MigrateIpRouteProperties(uint32_t interfaceIndex)
 {
 	std::vector<RecordedRouteProperties> allRecordedProperties{};
 
