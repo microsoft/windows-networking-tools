@@ -399,14 +399,19 @@ namespace ctl
 			THROW_IF_FAILED(m_instanceObject->Delete(property_name));
 		}
 
-		HRESULT set_if_not_null_no_throw(_In_ PCWSTR property_name, const wil::unique_variant& value) const noexcept
+		HRESULT set_if_not_null_no_throw(_In_ PCWSTR property_name, _Inout_opt_ const VARIANT* value) const noexcept
 		{
-			const VARIANT* pValue = const_cast<wil::unique_variant*>(&value)->addressof();
-			if (IsVariantEmptyOrNull(pValue))
+			if (IsVariantEmptyOrNull(value))
 			{
 				return S_FALSE;
 			}
-			return set_property_no_throw(property_name, pValue);
+			return set_property_no_throw(property_name, value);
+		}
+
+		HRESULT set_if_not_null_no_throw(_In_ PCWSTR property_name, const wil::unique_variant& value) const noexcept
+		{
+			const VARIANT* pValue = const_cast<wil::unique_variant*>(&value)->addressof();
+			return set_if_not_null_no_throw(property_name, pValue);
 		}
 
 	private:

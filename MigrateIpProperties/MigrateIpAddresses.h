@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+
 #pragma once
 #include <cstdio>
 #include <cstdint>
@@ -67,7 +68,7 @@ struct RecordedAddressProperties
 	WritableAddressProperties PersistentStoreProperties;
 };
 
-static std::vector<RecordedAddressProperties> MigrateIPAddressProperties(uint32_t interfaceIndex)
+inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interfaceIndex)
 {
 	std::vector<RecordedAddressProperties> allRecordedProperties{};
 
@@ -154,4 +155,9 @@ static std::vector<RecordedAddressProperties> MigrateIPAddressProperties(uint32_
 
 	std::printf("\n * Found %d matching addresses\n", static_cast<int>(allRecordedProperties.size()));
 	return allRecordedProperties;
+}
+
+inline HRESULT WriteIPAddresses(const std::vector<RecordedAddressProperties>& , uint32_t )
+{
+	return S_OK;
 }

@@ -117,8 +117,8 @@ namespace ctl
 	public:
 		ctWmiStaticMethod(_In_ PCWSTR className, _In_ PCWSTR methodName, ctWmiService wbemService = ctWmiService{ L"ROOT\\StandardCimv2" }) :
 			m_wbemService(std::move(wbemService)),
-			m_className(className),
-			m_methodName(className)
+			m_className(wil::make_bstr(className)),
+			m_methodName(wil::make_bstr(methodName))
 		{
 			THROW_IF_FAILED(m_wbemService->GetObjectW(
 				m_className.get(),
@@ -127,7 +127,7 @@ namespace ctl
 				m_wbemClassObject.put(),
 				nullptr));
 
-			THROW_IF_FAILED(m_wbemMethodClass->GetMethod(
+			THROW_IF_FAILED(m_wbemClassObject->GetMethod(
 				m_methodName.get(),
 				0,
 				m_wbemFunctionObject.put(),
@@ -139,7 +139,17 @@ namespace ctl
 
 		}
 
-		void add_parameter(_In_ PCWSTR parameterName, const VARIANT* value)
+		HRESULT add_parameter_nothrow(_In_ PCWSTR parameterName, _In_opt_ const VARIANT* value) const noexcept
+		{
+			RETURN_IF_FAILED(m_wbemParameterObject->Put(
+				wil::make_bstr(parameterName).get(),
+				0,
+				const_cast<VARIANT*>(value),
+				0));
+			return S_OK;
+		}
+
+		void add_parameter(_In_ PCWSTR parameterName, _In_opt_ const VARIANT* value) const
 		{
 			THROW_IF_FAILED(m_wbemParameterObject->Put(
 				wil::make_bstr(parameterName).get(),
@@ -163,7 +173,7 @@ namespace ctl
 			// wait for the call to complete
 			HRESULT status{};
 			RETURN_IF_FAILED(result->GetCallStatus(WBEM_INFINITE, &status));
-			RETURN_IF_FAILED(status);
+			return status;
 		}
 		void execute_method()
 		{

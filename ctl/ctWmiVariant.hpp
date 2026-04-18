@@ -18,9 +18,9 @@
 // since WMI has limitations on what VARIANT types it accepts
 namespace ctl
 {
-	inline bool IsVariantEmptyOrNull(_In_ const VARIANT* variant) noexcept
+	inline bool IsVariantEmptyOrNull(_In_opt_ const VARIANT* variant) noexcept
 	{
-		return V_VT(variant) == VT_EMPTY || V_VT(variant) == VT_NULL;
+		return variant == nullptr || V_VT(variant) == VT_EMPTY || V_VT(variant) == VT_NULL;
 	}
 
 	inline wil::unique_variant ctWmiMakeVariant(const bool value)
@@ -31,7 +31,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ bool* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ bool* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -51,7 +51,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ char* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ char* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -71,7 +71,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned char* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned char* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -91,7 +91,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ short* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ short* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -111,7 +111,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned short* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned short* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -131,7 +131,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ long* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ long* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -151,7 +151,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned long* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned long* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -171,7 +171,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ int* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ int* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -191,7 +191,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned int* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned int* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -211,7 +211,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ float* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ float* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -231,7 +231,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ double* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ double* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -253,7 +253,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ SYSTEMTIME* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ SYSTEMTIME* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -269,12 +269,19 @@ namespace ctl
 	{
 		wil::unique_variant localVariant;
 		V_VT(localVariant.addressof()) = VT_BSTR;
-		V_BSTR(localVariant.addressof()) = SysAllocString(value);
-		THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+		if (!value)
+		{
+			V_BSTR(localVariant.addressof()) = nullptr;
+		}
+		else
+		{
+			V_BSTR(localVariant.addressof()) = SysAllocString(value);
+			THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+		}
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ BSTR* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ BSTR* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -282,8 +289,15 @@ namespace ctl
 			return false;
 		}
 		THROW_HR_IF(E_INVALIDARG, V_VT(variant) != VT_BSTR);
-		*value = SysAllocString(V_BSTR(variant));
-		THROW_IF_NULL_ALLOC(*value);
+		if (V_BSTR(variant) == nullptr)
+		{
+			*value = nullptr;
+		}
+		else
+		{
+			*value = SysAllocString(V_BSTR(variant));
+			THROW_IF_NULL_ALLOC(*value);
+		}
 		return true;
 	}
 
@@ -291,12 +305,19 @@ namespace ctl
 	{
 		wil::unique_variant localVariant;
 		V_VT(localVariant.addressof()) = VT_BSTR;
-		V_BSTR(localVariant.addressof()) = SysAllocString(value);
-		THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+		if (!value)
+		{
+			V_BSTR(localVariant.addressof()) = nullptr;
+		}
+		else
+		{
+			V_BSTR(localVariant.addressof()) = SysAllocString(value);
+			THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+		}
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::wstring* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::wstring* value)
 	{
 		value->clear();
 		if (IsVariantEmptyOrNull(variant))
@@ -318,7 +339,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned long long* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned long long* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -340,7 +361,7 @@ namespace ctl
 		return localVariant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ long long* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ long long* value)
 	{
 		*value = {};
 		if (IsVariantEmptyOrNull(variant))
@@ -364,8 +385,9 @@ namespace ctl
 	}
 
 	template <typename T>
-	bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ wil::com_ptr<T>* value)
+	bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ wil::com_ptr<T>* value)
 	{
+		*value = {};
 		if (IsVariantEmptyOrNull(variant))
 		{
 			return false;
@@ -376,8 +398,9 @@ namespace ctl
 	}
 
 	template <typename T>
-	bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<wil::com_ptr<T>>* value)
+	bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<wil::com_ptr<T>>* value)
 	{
+		value->clear();
 		if (IsVariantEmptyOrNull(variant))
 		{
 			return false;
@@ -425,8 +448,9 @@ namespace ctl
 		return variant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<std::wstring>* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<std::wstring>* value)
 	{
+		value->clear();
 		if (IsVariantEmptyOrNull(variant))
 		{
 			return false;
@@ -471,8 +495,9 @@ namespace ctl
 		return variant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<uint32_t>* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<uint32_t>* value)
 	{
+		value->clear();
 		if (IsVariantEmptyOrNull(variant))
 		{
 			return false;
@@ -519,13 +544,14 @@ namespace ctl
 		return variant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<unsigned short>* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<unsigned short>* value)
 	{
-		// WMI marshaller complains type mismatch using VT_UI2 | VT_ARRAY, and VT_I4 | VT_ARRAY works fine.
+		value->clear();
 		if (IsVariantEmptyOrNull(variant))
 		{
 			return false;
 		}
+		// WMI marshaller complains type mismatch using VT_UI2 | VT_ARRAY, while VT_I4 | VT_ARRAY works fine.
 		THROW_HR_IF(E_INVALIDARG, V_VT(variant) != (VT_I4 | VT_ARRAY));
 
 		long* intArray{};
@@ -567,8 +593,9 @@ namespace ctl
 		return variant;
 	}
 
-	inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<unsigned char>* value)
+	inline bool ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<unsigned char>* value)
 	{
+		value->clear();
 		if (IsVariantEmptyOrNull(variant))
 		{
 			return false;
@@ -604,7 +631,7 @@ namespace ctl
 		}
 		if (V_VT(variant) == VT_BSTR)
 		{
-			return V_BSTR(variant);
+			return (V_BSTR(variant) == nullptr) ? std::wstring{} : V_BSTR(variant);
 		}
 
 		// all other types, try to just use VariantChangeType

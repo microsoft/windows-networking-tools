@@ -86,8 +86,6 @@ struct WritableIpInterfaceProperties
 };
 struct RecordedIpInterfaceProperties
 {
-	uint32_t InterfaceIndex{};
-
 	static constexpr auto IPv4AddressFamily = 0;
 	static constexpr auto IPv6AddressFamily = 1;
 
@@ -95,10 +93,9 @@ struct RecordedIpInterfaceProperties
 	WritableIpInterfaceProperties PersistentStoreProperties[2];
 };
 
-static RecordedIpInterfaceProperties MigrateIPInterfaceProperties(uint32_t interfaceIndex)
+inline RecordedIpInterfaceProperties ReadIPInterfaceProperties(uint32_t interfaceIndex)
 {
 	RecordedIpInterfaceProperties recordedProperties{};
-	recordedProperties.InterfaceIndex = interfaceIndex;
 
 	bool persistentStoreQuery = true;
 	for (const auto& store : { L"PersistentStore", L"ActiveStore" })
@@ -245,7 +242,8 @@ static RecordedIpInterfaceProperties MigrateIPInterfaceProperties(uint32_t inter
 	return recordedProperties;
 }
 
-static void WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& recordedProperties)
+inline HRESULT WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& recordedProperties, uint32_t interface_index)
+try
 {
 	// for demonstration purposes, we'll just write the same properties back to the interface
 	// in a real-world scenario, you would likely modify some of these properties before writing them back
@@ -253,14 +251,14 @@ static void WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& reco
 	bool persistentStoreQuery = true;
 	for (const auto& store : { L"PersistentStore", L"ActiveStore" })
 	{
-		wprintf(L"\n\nEnumerating NetIPInterface settings for interface index %u (%s)\n", recordedProperties.InterfaceIndex, store);
+		wprintf(L"\n\nEnumerating NetIPInterface objects for the target interface %u (%s)\n", interface_index, store);
 		const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
 		THROW_IF_FAILED(policyStoreContext->SetValue(
 			L"PolicyStore",
 			0,
 			wil::make_variant_bstr(store).addressof()));
 
-		const std::wstring query = L"SELECT * FROM MSFT_NetIPInterface WHERE InterfaceIndex = " + std::to_wstring(recordedProperties.InterfaceIndex);
+		const std::wstring query = L"SELECT * FROM MSFT_NetIPInterface WHERE InterfaceIndex = " + std::to_wstring(interface_index);
 		for (auto& interface_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
 			// InterfaceIndex, AddressFamily, and Store are required properties
@@ -268,10 +266,10 @@ static void WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& reco
 
 			uint32_t InterfaceIndexValue{};
 			THROW_HR_IF(E_UNEXPECTED, !interface_instance.get(L"InterfaceIndex", &InterfaceIndexValue));
-			if (InterfaceIndexValue != recordedProperties.InterfaceIndex)
+			if (InterfaceIndexValue != interface_index)
 			{
-				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", InterfaceIndexValue, recordedProperties.InterfaceIndex);
-				//THROW_HR(E_UNEXPECTED);
+				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", InterfaceIndexValue, interface_index);
+				THROW_HR(E_UNEXPECTED);
 			}
 
 			uint8_t Store{}; // VT_UI1
@@ -313,137 +311,140 @@ static void WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& reco
 				continue;
 			}
 
-			wil::unique_variant InterfaceMetric{};
-			interface_instance.get(L"InterfaceMetric", &InterfaceMetric);
-			std::printf("Current InterfaceMetric %ls for AddressFamily %u in %ls\n", ctl::VariantToString(InterfaceMetric).c_str(), AddressFamily, store);
-			std::printf("Setting InterfaceMetric %ls for AddressFamily %u in %ls\n", ctl::VariantToString(properties->InterfaceMetric).c_str(), AddressFamily, store);
+			const auto LogFailure = [&](PCWSTR propertyName, HRESULT hr)  noexcept {
+				std::printf(" - Failed to set %ls property for AddressFamily %u in %ls (0x%08X)\n", propertyName, AddressFamily, store, hr);
+				};
 
-			HRESULT hrFailed = S_OK;
+			HRESULT hrAggregate = S_OK;
 			HRESULT hr{};
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"Forwarding", properties->Forwarding)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set Forwarding property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"Forwarding", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"ClampMss", properties->ClampMss)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set ClampMss property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"ClampMss", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"Advertising", properties->Advertising)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set Advertising property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"Advertising", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"NlMtu", properties->NlMtu)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set NlMtu property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"NlMtu", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"InterfaceMetric", properties->InterfaceMetric)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set InterfaceMetric property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"InterfaceMetric", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"BaseReachableTime", properties->BaseReachableTime)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set BaseReachableTime property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"BaseReachableTime", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"RetransmitTime", properties->RetransmitTime)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set RetransmitTime property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"RetransmitTime", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"DadTransmits", properties->DadTransmits)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set DadTransmits property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"DadTransmits", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"RouterDiscovery", properties->RouterDiscovery)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set RouterDiscovery property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"RouterDiscovery", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"ManagedAddressConfiguration", properties->ManagedAddressConfiguration)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set ManagedAddressConfiguration property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"ManagedAddressConfiguration", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"OtherStatefulConfiguration", properties->OtherStatefulConfiguration)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set OtherStatefulConfiguration property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"OtherStatefulConfiguration", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"WeakHostSend", properties->WeakHostSend)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set WeakHostSend property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"WeakHostSend", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"WeakHostReceive", properties->WeakHostReceive)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set WeakHostReceive property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"WeakHostReceive", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"IgnoreDefaultRoutes", properties->IgnoreDefaultRoutes)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set IgnoreDefaultRoutes property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"IgnoreDefaultRoutes", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"AdvertisedRouterLifetime", properties->AdvertisedRouterLifetime)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set AdvertisedRouterLifetime property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"AdvertisedRouterLifetime", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"AdvertiseDefaultRoute", properties->AdvertiseDefaultRoute)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set AdvertiseDefaultRoute property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"AdvertiseDefaultRoute", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"CurrentHopLimit", properties->CurrentHopLimit)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set CurrentHopLimit property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"CurrentHopLimit", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"ForceArpNdWolPattern", properties->ForceArpNdWolPattern)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set ForceArpNdWolPattern property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"ForceArpNdWolPattern", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"DirectedMacWolPattern", properties->DirectedMacWolPattern)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set DirectedMacWolPattern property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"DirectedMacWolPattern", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"EcnMarking", properties->EcnMarking)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set EcnMarking property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"EcnMarking", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"Dhcp", properties->Dhcp)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set Dhcp property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"Dhcp", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"AutomaticMetric", properties->AutomaticMetric)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set AutomaticMetric property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"AutomaticMetric", hr);
 			}
 			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"DadRetransmitTime", properties->DadRetransmitTime)))
 			{
-				hrFailed = hr;
-				std::printf(" - Failed to set DadRetransmitTime property for AddressFamily %u in %ls (0x%08X)\n", AddressFamily, store, hr);
+				hrAggregate = hr;
+				LogFailure(L"DadRetransmitTime", hr);
 			}
 
-			if (SUCCEEDED(hrFailed))
-			{
-				hr = interface_instance.write_instance_no_throw(policyStoreContext.get());
-				std::printf("Successfully updated properties for AddressFamily %u in %ls -- writing the instance returned 0x%08lX\n", AddressFamily, store, hr);
-			}
+			hr = interface_instance.write_instance_no_throw(policyStoreContext.get());
+			std::printf("Attempting to update all properties for AddressFamily %u in %ls %ls -- writing the instance returned 0x%08lX\n",
+				AddressFamily,
+				store,
+				FAILED(hrAggregate) ? L"failed" : L"succeeded",
+				hr);
 		}
 
 		// 2nd pass is for ActiveStore
 		persistentStoreQuery = false;
 	}
+
+	return S_OK;
 }
+CATCH_RETURN()
