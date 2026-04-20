@@ -53,6 +53,7 @@ struct WritableAddressProperties
 	wil::unique_variant IPAddress{};
 	wil::unique_variant PrefixOrigin{};
 	wil::unique_variant SuffixOrigin{};
+	wil::unique_variant AddressState{};
 	wil::unique_variant ValidLifetime{};
 	wil::unique_variant PreferredLifetime{};
 	wil::unique_variant SkipAsSource{};
@@ -61,18 +62,15 @@ struct WritableAddressProperties
 
 struct RecordedAddressProperties
 {
-	uint32_t InterfaceIndex{};
+	uint8_t Store{};
 	std::wstring InterfaceAlias{};
-
-	WritableAddressProperties ActiveStoreProperties;
-	WritableAddressProperties PersistentStoreProperties;
+	WritableAddressProperties properties{};
 };
 
 inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interfaceIndex)
 {
-	std::vector<RecordedAddressProperties> allRecordedProperties{};
+	std::vector<RecordedAddressProperties> saved_addresses{};
 
-	bool persistentStoreQuery = true;
 	for (const auto& store : { L"PersistentStore", L"ActiveStore" })
 	{
 		wprintf(L"\n\nEnumerating NetIPAddress settings for interface index %u (%s)\n", interfaceIndex, store);
@@ -83,46 +81,33 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 			wil::make_variant_bstr(store).addressof()));
 
 		// filters for addresses that are statically assigned (i.e. not from DHCP, SLAAC, etc.)
-		const std::wstring query = L"SELECT * FROM MSFT_NetIPAddress WHERE InterfaceIndex = " + std::to_wstring(interfaceIndex) + L" AND PrefixOrigin = 1 AND SuffixOrigin = 1";
+		// only querying for unicast addresses (Type = 1)
+		const std::wstring query = L"SELECT * FROM MSFT_NetIPAddress WHERE InterfaceIndex = " + std::to_wstring(interfaceIndex) + L" AND Type = 1 AND PrefixOrigin = 1 AND SuffixOrigin = 1";
 		std::wprintf(L"Querying WMI with: %ls\n", query.c_str());
 		for (const auto& address_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
-			uint8_t Store{};
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"Store", &Store));
-			if (persistentStoreQuery && Store != 0)
+			uint32_t queried_interface_index{};
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceIndex", &queried_interface_index));
+			if (queried_interface_index != interfaceIndex)
 			{
-				std::printf("Unexpected Store value %u for PersistentStore query (expected Store value of 0)\n", Store);
-				THROW_HR(E_UNEXPECTED);
-			}
-			if (!persistentStoreQuery && Store != 1)
-			{
-				std::printf("Unexpected Store value %u for ActiveStore query (expected Store value of 1)\n", Store);
+				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", queried_interface_index, interfaceIndex);
 				THROW_HR(E_UNEXPECTED);
 			}
 
-			allRecordedProperties.push_back(RecordedAddressProperties{});
-			RecordedAddressProperties& recordedProperties = allRecordedProperties.back();
+			saved_addresses.push_back(RecordedAddressProperties{});
+			RecordedAddressProperties& address_properties = saved_addresses.back();
 
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceIndex", &recordedProperties.InterfaceIndex));
-			if (recordedProperties.InterfaceIndex != interfaceIndex)
-			{
-				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", recordedProperties.InterfaceIndex, interfaceIndex);
-				THROW_HR(E_UNEXPECTED);
-			}
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceAlias", &recordedProperties.InterfaceAlias));
-
-			WritableAddressProperties* properties = persistentStoreQuery ?
-				&recordedProperties.PersistentStoreProperties :
-				&recordedProperties.ActiveStoreProperties;
-
-			address_instance.get(L"AddressFamily", &properties->AddressFamily);
-			address_instance.get(L"IPAddress", &properties->IPAddress);
-			address_instance.get(L"PrefixOrigin", &properties->PrefixOrigin);
-			address_instance.get(L"SuffixOrigin", &properties->SuffixOrigin);
-			address_instance.get(L"ValidLifetime", &properties->ValidLifetime);
-			address_instance.get(L"PreferredLifetime", &properties->PreferredLifetime);
-			address_instance.get(L"SkipAsSource", &properties->SkipAsSource);
-			address_instance.get(L"PrefixLength", &properties->PrefixLength);
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceAlias", &address_properties.InterfaceAlias));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"Store", &address_properties.Store));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"AddressFamily", &address_properties.properties.AddressFamily));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"IPAddress", &address_properties.properties.IPAddress));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"PrefixOrigin", &address_properties.properties.PrefixOrigin));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"SuffixOrigin", &address_properties.properties.SuffixOrigin));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"AddressState", &address_properties.properties.AddressState));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"ValidLifetime", &address_properties.properties.ValidLifetime));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"PreferredLifetime", &address_properties.properties.PreferredLifetime));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"SkipAsSource", &address_properties.properties.SkipAsSource));
+			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"PrefixLength", &address_properties.properties.PrefixLength));
 
 			wprintf(
 				L"\n"
@@ -133,31 +118,94 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 				L"  AddressFamily: %ls\n"
 				L"  PrefixOrigin: %ls\n"
 				L"  SuffixOrigin: %ls\n"
+				L"  AddressState: %ls\n"
 				L"  ValidLifetime: %ls\n"
 				L"  PreferredLifetime: %ls\n"
 				L"  SkipAsSource: %ls\n"
 				L"  PrefixLength: %ls\n",
-				Store,
-				recordedProperties.InterfaceIndex,
-				recordedProperties.InterfaceAlias.c_str(),
-				ctl::VariantToString(properties->IPAddress).c_str(),
-				ctl::VariantToString(properties->AddressFamily).c_str(),
-				ctl::VariantToString(properties->PrefixOrigin.addressof()).c_str(),
-				ctl::VariantToString(properties->SuffixOrigin.addressof()).c_str(),
-				ctl::VariantToString(properties->ValidLifetime.addressof()).c_str(),
-				ctl::VariantToString(properties->PreferredLifetime.addressof()).c_str(),
-				ctl::VariantToString(properties->SkipAsSource.addressof()).c_str(),
-				ctl::VariantToString(properties->PrefixLength.addressof()).c_str());
+				address_properties.Store,
+				interfaceIndex,
+				address_properties.InterfaceAlias.c_str(),
+				ctl::VariantToString(address_properties.properties.IPAddress).c_str(),
+				ctl::VariantToString(address_properties.properties.AddressFamily).c_str(),
+				ctl::VariantToString(address_properties.properties.PrefixOrigin.addressof()).c_str(),
+				ctl::VariantToString(address_properties.properties.SuffixOrigin.addressof()).c_str(),
+				ctl::VariantToString(address_properties.properties.AddressState.addressof()).c_str(),
+				ctl::VariantToString(address_properties.properties.ValidLifetime.addressof()).c_str(),
+				ctl::VariantToString(address_properties.properties.PreferredLifetime.addressof()).c_str(),
+				ctl::VariantToString(address_properties.properties.SkipAsSource.addressof()).c_str(),
+				ctl::VariantToString(address_properties.properties.PrefixLength.addressof()).c_str());
 		}
-
-		persistentStoreQuery = false;
 	}
 
-	std::printf("\n * Found %d matching addresses\n", static_cast<int>(allRecordedProperties.size()));
-	return allRecordedProperties;
+	std::printf("\n * Found %d matching addresses\n", static_cast<int>(saved_addresses.size()));
+	return saved_addresses;
 }
 
-inline HRESULT WriteIPAddresses(const std::vector<RecordedAddressProperties>& , uint32_t )
+inline void WriteIPAddresses(std::vector<RecordedAddressProperties>&& originalProperties, uint32_t interfaceIndex)
 {
-	return S_OK;
+	ctl::ctWmiService wmiService(L"ROOT\\StandardCimv2"); // MSFT_NetRoute is in ROOT\StandardCimv2 namespace
+
+	for (auto& original_address : originalProperties)
+	{
+		// [implemented, static: DisableOverride ToSubClass] uint32 Create(
+		//  [In] uint32 InterfaceIndex,
+		//  [In] string InterfaceAlias,
+		//  [In] string IPAddress,
+		//  [In] uint16 AddressFamily,
+		//  [In] uint8 PrefixLength,
+		//  [In] uint8 Type,
+		//  [In] uint16 PrefixOrigin,
+		//  [In] uint16 SuffixOrigin,
+		//  [In] uint16 AddressState,
+		//  [In] datetime ValidLifetime,
+		//  [In] datetime PreferredLifetime,
+		//  [In] boolean SkipAsSource,
+		//  [In] string DefaultGateway,
+		//  [In] string PolicyStore,
+		//  [In] boolean PassThru,
+		//  [Out, EmbeddedInstance("MSFT_NetIPAddress"): ToSubClass] MSFT_NetIPAddress CmdletOutput[]);
+
+		ctl::ctWmiStaticMethod create_address(L"MSFT_NetIPAddress", L"Create", wmiService);
+		create_address.add_parameter(L"InterfaceIndex", ctl::ctWmiMakeVariant(interfaceIndex).addressof());
+		create_address.add_parameter(L"InterfaceAlias", nullptr);
+		create_address.add_parameter(L"IPAddress", original_address.properties.IPAddress.addressof());
+		create_address.add_parameter(L"AddressFamily", original_address.properties.AddressFamily.addressof());
+		create_address.add_parameter(L"PrefixLength", original_address.properties.PrefixLength.addressof());
+		create_address.add_parameter(L"Type", ctl::ctWmiMakeVariant(1).addressof());
+		create_address.add_parameter(L"PrefixOrigin", original_address.properties.PrefixOrigin.addressof());
+		create_address.add_parameter(L"SuffixOrigin", original_address.properties.SuffixOrigin.addressof());
+		create_address.add_parameter(L"AddressState", original_address.properties.AddressState.addressof());
+		create_address.add_parameter(L"ValidLifetime", original_address.properties.ValidLifetime.addressof());
+		create_address.add_parameter(L"PreferredLifetime", original_address.properties.PreferredLifetime.addressof());
+		create_address.add_parameter(L"SkipAsSource", original_address.properties.SkipAsSource.addressof());
+		create_address.add_parameter(L"DefaultGateway", nullptr);
+		create_address.add_parameter(L"PolicyStore", original_address.Store == 0 ? nullptr : ctl::ctWmiMakeVariant(L"ActiveStore").addressof());
+		create_address.add_parameter(L"PassThru", ctl::ctWmiMakeVariant(false).addressof());
+		const auto hr = create_address.execute_method_nothrow();
+
+		// print the result of the execute_method call, but continue with the next route even if it failed
+		if (SUCCEEDED(hr))
+		{
+			std::wprintf(L"Successfully created address (%ls) from Store %u with PrefixLength %ls\n",
+				ctl::VariantToString(original_address.properties.IPAddress.addressof()).c_str(),
+				original_address.Store,
+				ctl::VariantToString(original_address.properties.PrefixLength.addressof()).c_str());
+		}
+		else
+		{
+			std::wprintf(L"Failed to create address (%ls) from Store %u with PrefixLength %ls (0x%x)\n",
+				ctl::VariantToString(original_address.properties.IPAddress.addressof()).c_str(),
+				original_address.Store,
+				ctl::VariantToString(original_address.properties.PrefixLength.addressof()).c_str(),
+				hr);
+		}
+	}
 }
+
+/*
+        ctWmiInstance instance(this->wmiService, L"MSFT_NetIPAddress");
+        instance.set(L"IPAddress", this->placeholder_address.c_str());
+        instance.set(L"InterfaceIndex", this->ifIndex);
+        instance.write_instance(NetIPAddressTracking::get_policystore(L"ActiveStore"), WBEM_FLAG_CREATE_ONLY);
+*/

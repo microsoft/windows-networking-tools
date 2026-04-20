@@ -64,7 +64,6 @@ struct RouteProperties
 struct RecordedRouteProperties
 {
 	uint8_t Store{};
-	uint32_t InterfaceIndex{};
 	wil::unique_variant InterfaceAlias{};
 	RouteProperties properties{};
 };
@@ -88,14 +87,17 @@ inline std::vector<RecordedRouteProperties> ReadIPRoutes(uint32_t interfaceIndex
 		std::wprintf(L"Querying WMI with: %ls\n", query.c_str());
 		for (const auto& route_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
-			saved_routes.push_back(RecordedRouteProperties{});
-			RecordedRouteProperties& route_properties = saved_routes.back();
-			THROW_HR_IF(E_UNEXPECTED, !route_instance.get(L"InterfaceIndex", &route_properties.InterfaceIndex));
-			if (route_properties.InterfaceIndex != interfaceIndex)
+			uint32_t queried_interface_index{};
+			THROW_HR_IF(E_UNEXPECTED, !route_instance.get(L"InterfaceIndex", &queried_interface_index));
+			if (queried_interface_index != interfaceIndex)
 			{
-				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", route_properties.InterfaceIndex, interfaceIndex);
+				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", queried_interface_index, interfaceIndex);
 				THROW_HR(E_UNEXPECTED);
 			}
+
+			saved_routes.push_back(RecordedRouteProperties{});
+			RecordedRouteProperties& route_properties = saved_routes.back();
+
 			THROW_HR_IF(E_UNEXPECTED, !route_instance.get(L"InterfaceAlias", &route_properties.InterfaceAlias));
 			THROW_HR_IF(E_UNEXPECTED, !route_instance.get(L"Store", &route_properties.Store));
 			THROW_HR_IF(E_UNEXPECTED, !route_instance.get(L"AddressFamily", &route_properties.properties.AddressFamily));
@@ -140,7 +142,7 @@ inline std::vector<RecordedRouteProperties> ReadIPRoutes(uint32_t interfaceIndex
 	return saved_routes;
 }
 
-inline void WriteIPRoutes(std::vector<RecordedRouteProperties> originalProperties, uint32_t interfaceIndex)
+inline void WriteIPRoutes(std::vector<RecordedRouteProperties>&& originalProperties, uint32_t interfaceIndex)
 {
 	ctl::ctWmiService wmiService(L"ROOT\\StandardCimv2"); // MSFT_NetRoute is in ROOT\StandardCimv2 namespace
 

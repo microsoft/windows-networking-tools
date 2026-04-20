@@ -20,8 +20,9 @@ static void PrintUsage() noexcept
 {
 	std::printf(
 		"\nMigrateIpProperties.exe\n"
-		"\nMigrates properties of MSFT_NetIPInterface, migrates static MSFT_NetIPAddress objects, and migrates MSFTNetRoute objects from one network interface to another.\n"
-		"\nUsage: MigrateIpProperties.exe <from-ifIndex> <to-ifIndex>\n");
+		"\tMigrates properties of MSFT_NetIPInterface, migrates static MSFT_NetIPAddress objects, and migrates MSFTNetRoute objects from one network interface to another.\n"
+		"\nUsage: MigrateIpProperties.exe <from-ifIndex> <to-ifIndex>\n"
+	    "\n");
 }
 
 int __cdecl main(int argc, char** argv)
