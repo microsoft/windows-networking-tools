@@ -146,17 +146,22 @@ namespace ctl
 
 		void delete_instance()
 		{
+			THROW_IF_FAILED(delete_instance_no_throw());
+		}
+		HRESULT delete_instance_no_throw() noexcept
+		{
 			// delete the instance based off the __REPATH property
 			::wil::com_ptr<IWbemCallResult> result;
-			THROW_IF_FAILED(m_wbemServices->DeleteInstance(
+			RETURN_IF_FAILED(m_wbemServices->DeleteInstance(
 				get_path().get(),
 				WBEM_FLAG_RETURN_IMMEDIATELY,
 				nullptr,
 				result.addressof()));
 			// wait for the call to complete
 			HRESULT status{};
-			THROW_IF_FAILED(result->GetCallStatus(WBEM_INFINITE, &status));
-			THROW_IF_FAILED(status);
+			RETURN_IF_FAILED(result->GetCallStatus(WBEM_INFINITE, &status));
+			RETURN_IF_FAILED(status);
+			return status;
 		}
 
 

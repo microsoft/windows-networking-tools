@@ -84,7 +84,7 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 		// only querying for unicast addresses (Type = 1)
 		const std::wstring query = L"SELECT * FROM MSFT_NetIPAddress WHERE InterfaceIndex = " + std::to_wstring(interfaceIndex) + L" AND Type = 1 AND PrefixOrigin = 1 AND SuffixOrigin = 1";
 		std::wprintf(L"Querying WMI with: %ls\n", query.c_str());
-		for (const auto& address_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
+		for (auto& address_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
 			uint32_t queried_interface_index{};
 			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceIndex", &queried_interface_index));
@@ -135,6 +135,9 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 				ctl::VariantToString(address_properties.properties.PreferredLifetime.addressof()).c_str(),
 				ctl::VariantToString(address_properties.properties.SkipAsSource.addressof()).c_str(),
 				ctl::VariantToString(address_properties.properties.PrefixLength.addressof()).c_str());
+
+			const auto delete_hr = address_instance.delete_instance_no_throw();
+			wprintf(L"  Deleting original address instance... %s (0x%x)\n", SUCCEEDED(delete_hr) ? L"Succeeded" : L"Failed", delete_hr);
 		}
 	}
 
