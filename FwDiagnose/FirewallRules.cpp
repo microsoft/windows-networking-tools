@@ -16,6 +16,7 @@
 #include "firewall.h"
 #include "FirewallRules.h"
 
+#include <icftypes.h>
 #include <netioapi.h>
 
 #include "NormalizedFirewallRule.h"
@@ -150,7 +151,7 @@ namespace details
 			g_policyStore,
 			static_cast<DWORD>(FW_RULE_STATUS_CLASS_ALL),
 			FW_PROFILE_TYPE_ALL,
-			FW_ENUM_RULES_FLAG_INCLUDE_METADATA,
+			FW_ENUM_RULES_FLAG_INCLUDE_METADATA | FW_ENUM_RULES_FLAG_RESOLVE_NAME | FW_ENUM_RULES_FLAG_RESOLVE_DESCRIPTION,
 			&num_rules,
 			&policy.parent_rule);
 		if (enumRulesError != ERROR_SUCCESS)
@@ -329,6 +330,369 @@ namespace details
 				}
 			}
 		}
+	}
+
+	static std::string AddressKeywordToString(DWORD keyword)
+	{
+		FW_ADDRESS_KEYWORD address_keyword = static_cast<FW_ADDRESS_KEYWORD>(keyword);
+
+		if (address_keyword == FW_ADDRESS_KEYWORD_NONE)
+		{
+			return "None";
+		}
+
+		std::string result;
+		if (address_keyword & FW_ADDRESS_KEYWORD_LOCAL_SUBNET)
+		{
+			result += "LocalSubnet ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_DNS)
+		{
+			result += "DNS ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_DHCP)
+		{
+			result += "DHCP ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_WINS)
+		{
+			result += "WINS ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_DEFAULT_GATEWAY)
+		{
+			result += "DefaultGateway ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_INTRANET)
+		{
+			result += "Intranet ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_INTERNET)
+		{
+			result += "Internet ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_PLAYTO_RENDERERS)
+		{
+			result += "PlayToRenderers ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_REMOTE_INTRANET)
+		{
+			result += "RemoteIntranet ";
+		}
+		if (address_keyword & FW_ADDRESS_KEYWORD_CAPTIVE_PORTAL)
+		{
+			result += "CaptivePortal ";
+		}
+		if (!result.empty())
+		{
+			// strip off the trailing space
+			result.pop_back();
+		}
+
+		if (result.empty())
+		{
+			result = "<Unknown FW_ADDRESS_KEYWORD> " + std::to_string(address_keyword);
+		}
+		return result;
+	}
+
+	static bool IsAnyAddressSpecified(const FW_RULE* fw_rule) noexcept
+	{
+		return
+			fw_rule->LocalAddresses.V4Ranges.dwNumEntries > 0 ||
+			fw_rule->LocalAddresses.V4SubNets.dwNumEntries > 0 ||
+			fw_rule->LocalAddresses.V6Ranges.dwNumEntries > 0 ||
+			fw_rule->LocalAddresses.V6SubNets.dwNumEntries > 0 ||
+			fw_rule->RemoteAddresses.V4Ranges.dwNumEntries > 0 ||
+			fw_rule->RemoteAddresses.V4SubNets.dwNumEntries > 0 ||
+			fw_rule->RemoteAddresses.V6Ranges.dwNumEntries > 0 ||
+			fw_rule->RemoteAddresses.V6SubNets.dwNumEntries > 0;
+	}
+
+	static std::string PortKeywordToString(DWORD keyword)
+	{
+		FW_PORT_KEYWORD port_keyword = static_cast<FW_PORT_KEYWORD>(keyword);
+
+		if (port_keyword == FW_PORT_KEYWORD_NONE)
+		{
+			return "None ";
+		}
+
+		std::string result;
+		if (port_keyword & FW_PORT_KEYWORD_DYNAMIC_RPC_PORTS)
+		{
+			result += "DynamicRpcPorts ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_RPC_EP)
+		{
+			result += "RpcEphemeralPorts ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_TEREDO_PORT)
+		{
+			result += "TeredoPort ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_IP_TLS_IN)
+		{
+			result += "IpTlsIn ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_IP_TLS_OUT)
+		{
+			result += "IpTlsOut ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_DHCP)
+		{
+			result += "Dhcp ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_PLAYTO_DISCOVERY)
+		{
+			result += "PlayToDiscovery ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_MDNS)
+		{
+			result += "Mdns ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_CORTANA_OUT)
+		{
+			result += "CortanaOut ";
+		}
+		if (port_keyword & FW_PORT_KEYWORD_PROXIMAL_TCP_CDP)
+		{
+			result += "ProximalTcpCdp ";
+		}
+
+		if (result.empty())
+		{
+			result = "<Unknown FW_PORT_KEYWORD> " + std::to_string(port_keyword);
+		}
+		return result;
+	}
+
+	static bool IsLocalPortKeywordsSpecified(const FW_RULE* fw_rule)
+	{
+		if (fw_rule->wIpProtocol != IPPROTO_TCP && fw_rule->wIpProtocol != IPPROTO_UDP)
+		{
+			// local port keywords only apply to TCP and UDP rules
+			return false;
+		}
+		return fw_rule->LocalPorts.wPortKeywords != 0;
+	}
+
+	static bool IsRemotePortKeywordsSpecified(const FW_RULE* fw_rule)
+	{
+		if (fw_rule->wIpProtocol != IPPROTO_TCP && fw_rule->wIpProtocol != IPPROTO_UDP)
+		{
+			// remote port keywords only apply to TCP and UDP rules
+			return false;
+		}
+		return fw_rule->LocalPorts.wPortKeywords != 0;
+	}
+
+	static std::string IsAnyLocalPortSpecified(const FW_RULE* fw_rule) noexcept
+	{
+		if (!details::IsLocalPortKeywordsSpecified(fw_rule))
+		{
+			return {};
+		}
+
+		std::string result;
+		for (const auto& port_range : wil::make_range(fw_rule->LocalPorts.Ports.pPorts, fw_rule->LocalPorts.Ports.dwNumEntries))
+		{
+			if (port_range.wBegin == port_range.wEnd)
+			{
+				result += std::to_string(port_range.wBegin) + ",";
+			}
+			else
+			{
+				result += std::to_string(port_range.wBegin) + "-" + std::to_string(port_range.wEnd) + ",";
+			}
+		}
+
+		if (!result.empty())
+		{
+			// strip off the trailing comma
+			result.pop_back();
+		}
+		if (result.empty())
+		{
+			result = "<Any Local Port>";
+		}
+		return result;
+	}
+
+	static std::string IsAnyRemotePortSpecified(const FW_RULE* fw_rule) noexcept
+	{
+		if (!details::IsRemotePortKeywordsSpecified(fw_rule))
+		{
+			return {};
+		}
+
+		std::string result;
+		for (const auto& port_range : wil::make_range(fw_rule->RemotePorts.Ports.pPorts, fw_rule->RemotePorts.Ports.dwNumEntries))
+		{
+			if (port_range.wBegin == port_range.wEnd)
+			{
+				result += std::to_string(port_range.wBegin) + ",";
+			}
+			else
+			{
+				result += std::to_string(port_range.wBegin) + "-" + std::to_string(port_range.wEnd) + ",";
+			}
+		}
+
+		if (!result.empty())
+		{
+			// strip off the trailing comma
+			result.pop_back();
+		}
+		if (result.empty())
+		{
+			result = "<Any Remote Port>";
+		}
+		return result;
+	}
+
+	static std::string IsAnyIcmpTypeCodeSpecified(const FW_RULE* fw_rule)
+	{
+		if (fw_rule->wIpProtocol != IPPROTO_ICMP && fw_rule->wIpProtocol != IPPROTO_ICMPV6)
+		{
+			// ICMP type/code keywords only apply to ICMP and ICMPv6 rules
+			return {};
+		}
+
+		if (fw_rule->wIpProtocol == IPPROTO_ICMP)
+		{
+			std::string result{"ICMPv4: "};
+			for (const auto& type_code_range : wil::make_range(fw_rule->V4TypeCodeList.pEntries, fw_rule->V4TypeCodeList.dwNumEntries))
+			{
+				result += "[type] " + std::to_string(type_code_range.bType) + " - [code] " + std::to_string(type_code_range.wCode) + ",";
+			}
+			if (!result.empty())
+			{
+				// strip off the trailing comma
+				result.pop_back();
+			}
+			if (result.empty())
+			{
+				result = "<Any ICMPv4 Type/Code>";
+			}
+			return result;
+		}
+		if (fw_rule->wIpProtocol == IPPROTO_ICMPV6)
+		{
+			std::string result{"ICMPv6: "};
+			for (const auto& type_code_range : wil::make_range(fw_rule->V6TypeCodeList.pEntries, fw_rule->V6TypeCodeList.dwNumEntries))
+			{
+				result += "[type] " + std::to_string(type_code_range.bType) + " - [code] " + std::to_string(type_code_range.wCode) + ",";
+			}
+			if (!result.empty())
+			{
+				// strip off the trailing comma
+				result.pop_back();
+			}
+			if (result.empty())
+			{
+				result = "<Any ICMPv6 Type/Code>";
+			}
+			return result;
+		}
+
+		return "<Unknown protocol: " + std::to_string(fw_rule->wIpProtocol) + ">";
+	}
+
+	static void PrintPublicInboundRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		std::printf("\n  * Firewall rules allowing Inbound connections on the Public profile:\n");
+		for (const auto& rule_details : normalized_rules)
+		{
+			if (rule_details.filter_count == 0)
+			{
+				continue;
+			}
+			if (!(rule_details.fw_rule->dwProfiles & FW_PROFILE_TYPE_PUBLIC) && !(rule_details.fw_rule->dwProfiles & FW_PROFILE_TYPE_ALL))
+			{
+				continue;
+			}
+			if (rule_details.fw_rule->Direction != FW_DIR_IN)
+			{
+				continue;
+			}
+			if (rule_details.fw_rule->Action != FW_RULE_ACTION_ALLOW && rule_details.fw_rule->Action != FW_RULE_ACTION_ALLOW_BYPASS)
+			{
+				continue;
+			}
+			if (!rule_details.is_rule_enabled)
+			{
+				continue;
+			}
+
+			std::printf("\n");
+			std::printf("    Rule Name:   %ls\n", rule_details.rule_name.value.empty() ? L"<empty>" : rule_details.rule_name.value.c_str());
+			if (!rule_details.rule_description.empty())
+			{
+				std::printf("    Rule Description:   %ls\n", rule_details.rule_description.c_str());
+			}
+			if (rule_details.fw_rule->wszLocalService)
+			{
+				std::printf("    Local Service: %ls\n", rule_details.fw_rule->wszLocalService);
+			}
+			if (rule_details.fw_rule->wszLocalApplication)
+			{
+				std::printf("    Application: %ls\n", rule_details.fw_rule->wszLocalApplication);
+			}
+			if (rule_details.fw_rule->wszPackageFamilyName)
+			{
+				std::printf("    PackageFamilyName: %ls\n", rule_details.fw_rule->wszPackageFamilyName);
+			}
+			if (rule_details.fw_rule->wszPackageId)
+			{
+				std::printf("    Package ID: %ls\n", rule_details.fw_rule->wszPackageId);
+			}
+			if (rule_details.successfully_resolved_user_name.value_or(false))
+			{
+				std::printf("    User Owner: %ls\\%ls\n", rule_details.local_user_domain_name.empty() ? L"<empty>" : rule_details.local_user_domain_name.c_str(), rule_details.local_user_owner_name.empty() ? L"<empty>" : rule_details.local_user_owner_name.c_str());
+			}
+			if (rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords != 0 || rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords != 0)
+			{
+				std::printf("    Local Addresses Constraints: IPv4 (%hs) IPv6 (%hs)\n",
+					details::AddressKeywordToString(rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords).c_str(),
+					details::AddressKeywordToString(rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords).c_str());
+			}
+			if (rule_details.fw_rule->RemoteAddresses.dwV4AddressKeywords != 0 || rule_details.fw_rule->RemoteAddresses.dwV6AddressKeywords != 0)
+			{
+				std::printf("    Remote Addresses Constraints: IPv4 (%hs) IPv6 (%hs)\n",
+					details::AddressKeywordToString(rule_details.fw_rule->RemoteAddresses.dwV4AddressKeywords).c_str(),
+					details::AddressKeywordToString(rule_details.fw_rule->RemoteAddresses.dwV6AddressKeywords).c_str());
+			}
+			if (details::IsAnyAddressSpecified(rule_details.fw_rule))
+			{
+				std::printf("    Target Address Constraints: exist\n");
+			}
+			if (details::IsLocalPortKeywordsSpecified(rule_details.fw_rule))
+			{
+				std::printf("    Local Port Constraints: %hs\n",
+					details::PortKeywordToString(rule_details.fw_rule->LocalPorts.wPortKeywords).c_str());
+			}
+			if (details::IsRemotePortKeywordsSpecified(rule_details.fw_rule))
+			{
+				std::printf("    Remote Port Constraints: %hs\n",
+					details::PortKeywordToString(rule_details.fw_rule->RemotePorts.wPortKeywords).c_str());
+			}
+			auto local_port_string = details::IsAnyLocalPortSpecified(rule_details.fw_rule);
+			if (!local_port_string.empty())
+			{
+				std::printf("    Local Ports: %hs\n", local_port_string.c_str());
+			}
+			auto remote_port_string = details::IsAnyRemotePortSpecified(rule_details.fw_rule);
+			if (!remote_port_string.empty())
+			{
+				std::printf("    Remote Ports: %hs\n", remote_port_string.c_str());
+			}
+			auto icmp_type_code_string = details::IsAnyIcmpTypeCodeSpecified(rule_details.fw_rule);
+			if (!icmp_type_code_string.empty())
+			{
+				std::printf("    ICMP Type/Code Constraints: %hs\n", icmp_type_code_string.c_str());
+			}
+		}
+		std::printf("\n");
 	}
 
 	static std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules)
@@ -1729,6 +2093,16 @@ void ProcessFirewallRules()
 			{
 				std::printf("\n");
 			}
+
+
+			timer.start("PrintRulesSortedOnFilterCounts");
+			details::PrintRulesSortedOnFilterCounts(policy.normalizedRules);
+			timer.end();
+
+			timer.start("PrintPublicInboundRules");
+			details::PrintPublicInboundRules(policy.normalizedRules);
+			timer.end();
+
 			timer.start("Counting duplicate rules");
 			const auto duplicateRules = details::CheckForDuplicateRules(policy.normalizedRules);
 			timer.end();
@@ -1738,11 +2112,6 @@ void ProcessFirewallRules()
 				std::printf("\n");
 				details::DeleteDuplicateRules(duplicateRules);
 			}
-
-			timer.start("PrintRulesSortedOnFilterCounts");
-			details::PrintRulesSortedOnFilterCounts(policy.normalizedRules);
-			timer.end();
-
 		}
 		catch (const wil::ResultException& ex)
 		{
