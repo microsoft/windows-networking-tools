@@ -17,6 +17,7 @@
 #include "FirewallRules.h"
 
 #include <icftypes.h>
+#include <netfw.h>
 #include <netioapi.h>
 
 #include "NormalizedFirewallRule.h"
@@ -29,6 +30,9 @@
 #include <wil/resource.h>
 #include <wil/registry.h>
 
+
+// Shield's Up Mode
+// INetFwPolicy2::get/put_BlockAllInboundTraffic
 
 static HMODULE g_FirewallApiModule = nullptr;
 static decltype(FWOpenPolicyStore)* g_FWOpenPolicyStore = nullptr;
@@ -488,7 +492,7 @@ namespace details
 
 	static std::string IsAnyLocalPortSpecified(const FW_RULE* fw_rule) noexcept
 	{
-		if (!details::IsLocalPortKeywordsSpecified(fw_rule))
+		if (!fw_rule->LocalPorts.Ports.pPorts)
 		{
 			return {};
 		}
@@ -520,7 +524,7 @@ namespace details
 
 	static std::string IsAnyRemotePortSpecified(const FW_RULE* fw_rule) noexcept
 	{
-		if (!details::IsRemotePortKeywordsSpecified(fw_rule))
+		if (!fw_rule->RemotePorts.Ports.pPorts)
 		{
 			return {};
 		}
@@ -560,7 +564,7 @@ namespace details
 
 		if (fw_rule->wIpProtocol == IPPROTO_ICMP)
 		{
-			std::string result{"ICMPv4: "};
+			std::string result{ "ICMPv4: " };
 			for (const auto& type_code_range : wil::make_range(fw_rule->V4TypeCodeList.pEntries, fw_rule->V4TypeCodeList.dwNumEntries))
 			{
 				result += "[type] " + std::to_string(type_code_range.bType) + " - [code] " + std::to_string(type_code_range.wCode) + ",";
@@ -578,7 +582,7 @@ namespace details
 		}
 		if (fw_rule->wIpProtocol == IPPROTO_ICMPV6)
 		{
-			std::string result{"ICMPv6: "};
+			std::string result{ "ICMPv6: " };
 			for (const auto& type_code_range : wil::make_range(fw_rule->V6TypeCodeList.pEntries, fw_rule->V6TypeCodeList.dwNumEntries))
 			{
 				result += "[type] " + std::to_string(type_code_range.bType) + " - [code] " + std::to_string(type_code_range.wCode) + ",";
@@ -676,15 +680,22 @@ namespace details
 				std::printf("    Remote Port Constraints: %hs\n",
 					details::PortKeywordToString(rule_details.fw_rule->RemotePorts.wPortKeywords).c_str());
 			}
-			auto local_port_string = details::IsAnyLocalPortSpecified(rule_details.fw_rule);
-			if (!local_port_string.empty())
+
+			PCSTR protocol_string{ "any protocol" };
+			if (rule_details.fw_rule->wIpProtocol == IPPROTO_TCP || rule_details.fw_rule->wIpProtocol == IPPROTO_UDP)
 			{
-				std::printf("    Local Ports: %hs\n", local_port_string.c_str());
+				protocol_string = rule_details.fw_rule->wIpProtocol == IPPROTO_TCP ? "TCP" : "UDP";
 			}
+			auto local_port_string = details::IsAnyLocalPortSpecified(rule_details.fw_rule);
+			std::printf(
+				"    Local Ports (%hs): %hs\n",
+				protocol_string,
+				local_port_string.empty() ? "(all ports)" : local_port_string.c_str());
+
 			auto remote_port_string = details::IsAnyRemotePortSpecified(rule_details.fw_rule);
 			if (!remote_port_string.empty())
 			{
-				std::printf("    Remote Ports: %hs\n", remote_port_string.c_str());
+				std::printf("    Remote Ports (%hs): %hs\n", protocol_string, remote_port_string.c_str());
 			}
 			auto icmp_type_code_string = details::IsAnyIcmpTypeCodeSpecified(rule_details.fw_rule);
 			if (!icmp_type_code_string.empty())
@@ -1891,6 +1902,24 @@ static std::string PrintFirewallBoolean(uint32_t value)
 void ProcessFirewallPolicy() noexcept
 try
 {
+	const auto convert_profile = [](PCWSTR profile_string)-> NET_FW_PROFILE_TYPE2
+		{
+			if (_wcsicmp(profile_string, L"Domain") == 0)
+			{
+				return NET_FW_PROFILE2_DOMAIN;
+			}
+			if (_wcsicmp(profile_string, L"Private") == 0)
+			{
+				return NET_FW_PROFILE2_PRIVATE;
+			}
+			if (_wcsicmp(profile_string, L"Public") == 0)
+			{
+				return NET_FW_PROFILE2_PUBLIC;
+			}
+			THROW_HR_MSG(E_INVALIDARG, "Invalid profile string: %ls", profile_string);
+		};
+	wil::com_ptr<INetFwPolicy2> firewallPolicy2 = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
+
 	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
 	// analogous to the powershell command: Get-NetFirewallProfile -PolicyStore ActiveStore
 
@@ -1951,9 +1980,18 @@ try
 		std::vector<std::wstring> disabledInterfaces;
 		profile.get(L"DisabledInterfaceAliases", &disabledInterfaces);
 
+		VARIANT_BOOL isShieldsUpEnabled{};
+		HRESULT hr = firewallPolicy2->get_BlockAllInboundTraffic(convert_profile(profile_name.c_str()), &isShieldsUpEnabled);
+		if (FAILED(hr))
+		{
+			std::printf("Failed to get BlockAllInboundTraffic for profile %ls from INetFwPolicy2 (0x%lx)\n", profile_name.c_str(), hr);
+			continue;
+		}
+
 		std::printf(
 			"Firewall Policies for profile: %ls\n"
 			"    Enabled: %d\n"
+			"    Shield's Up (block all inbound traffic): %hs\n"
 			"    Default Inbound Action: %hs\n"
 			"    Default Outbound Action: %hs\n"
 			"    Allow Inbound Rules: %hs\n"
@@ -1963,6 +2001,7 @@ try
 			"    Allow Unicast Response To Multicast: %hs\n",
 			profile_name.c_str(),
 			is_enabled,
+			isShieldsUpEnabled ? "Enabled" : "Disabled",
 			PrintFirewallAction(default_inbound_action).c_str(),
 			PrintFirewallAction(default_outbound_action).c_str(),
 			PrintFirewallBoolean(inbound_rules_allowed).c_str(),
