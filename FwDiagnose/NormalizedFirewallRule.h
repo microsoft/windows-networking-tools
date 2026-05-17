@@ -38,6 +38,9 @@ struct NormalizedFirewallRule
 
 	bool is_rule_enabled = false;
 	bool is_rule_deleted = false;
+	bool missing_package_id = false;
+	bool missing_package_family_name = false;
+	bool unresolve_user_sid = false;
 
 	NormalizedFirewallRule(const NormalizedFirewallRule&) = delete;
 	NormalizedFirewallRule& operator=(const NormalizedFirewallRule&) = delete;

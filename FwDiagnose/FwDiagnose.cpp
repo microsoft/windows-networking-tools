@@ -41,6 +41,13 @@ bool CleanBrokenRulesEnabled() noexcept
 	return g_cleanBrokenRules;
 }
 
+static bool g_analyzePublicRules = false;
+bool AnalyzePublicRulesEnabled() noexcept
+{
+	return g_analyzePublicRules;
+}
+
+
 static bool g_verboseOutput = false;
 bool VerboseOutputEnabled() noexcept
 {
@@ -88,24 +95,27 @@ static void PrintUsage() noexcept
 		"  Note that only one option can be specified with the optional -verbose flag.\n"
 		"Options:\n"
 		"  -?               : Show this help message.\n"
+		"\n"
 		"  -analyze-rules   : Analyzes firewall rules for potential issues\n"
 		"  -clean-rules     : Prompts to delete duplicate rules\n"
 		"                   : Prompts to delete rules with application exes referencing non-existing files\n"
 		"                   : Prompts to delete rules referencing unknown SIDs\n"
 		"                   : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"                   : This requires Administrator privileges\n"
+		"  -analyze-public-rules : Analyzes rules that allow inbound connections on the Public profile\n"
+		"  -analyze-app-package-rules : Analyzes Firewall rules referencing app-packages\n"
+		"  -list-app-packages         : Output details of all app-container packages\n"
+		"\n"
 		"  -analyze-wfp     : Output details of WFP objects (callouts, sublayers, and filters)\n"
 		"                   : This requires Administrator privileges\n"
 		"  -wfp-events      : Listen for and print all NetEvents from WFP\n"
 		"  -remove-callouts : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
 		"                     Will restore any removed filters before this program exits\n"
-		"      -driver <driver_name> : Specify the driver name for the callout removal\n"
-		"                            : Optional - by default will prompt for all drivers to be temporarily removed\n"
-		"                            : Can only be specified after -remove-callouts\n"
-		"  -signal-restore-callouts : automatically unblocks another instance of FwDiagnose -remove-callouts\n"
-		"                             that is waiting to be signaled to restore the removed callout\n"
-		"  -list-app-packages : Output details of all app-container packages\n"
-		"  -analyze-app-package-rules: Analyzes Firewall rules referencing app-packages\n"
+		"      -driver <driver_name>  : Specify the driver name for the callout removal\n"
+		"                             : Optional - by default will prompt for all drivers to be temporarily removed\n"
+		"                             : Can only be specified after -remove-callouts\n"
+		"  -signal-restore-callouts   : automatically unblocks another instance of FwDiagnose -remove-callouts\n"
+		"                               that is waiting to be signaled to restore the removed callout\n"
 		"\n"
 		"  -verbose         : Output details of rules and/or WFP objects\n");
 }
@@ -182,6 +192,13 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-wfp-events") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_wfpEventEnumeration = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-public-rules") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-public-rules") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_analyzePublicRules = true;
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-remove-callouts") == 0; }) != args.end())
@@ -271,13 +288,18 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	// (WFP often taking a while)
 	app_package_thread.join();
 	firewall_thread.join();
-	wfp_thread.join();
 	network_properties_thread.join();
+	wfp_thread.join();
 
 	if (AnalyzeRulesEnabled() || CleanBrokenRulesEnabled())
 	{
 		ProcessFirewallPolicy();
 		ProcessFirewallRules();
+	}
+
+	if (AnalyzePublicRulesEnabled())
+	{
+		ProcessInboundPublicRules();
 	}
 
 	if (WfpOutputEnabled())

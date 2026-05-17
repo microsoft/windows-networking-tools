@@ -73,6 +73,7 @@ void PrintAllAppPackages()
 {
 	for (auto& package : g_app_packages)
 	{
+		std::wprintf(L"\n");
 		std::wprintf(L"Package: %ws\n", package.name.value.c_str());
 		std::wprintf(L"  Version: %u.%u.%u.%u\n",
 			package.version.major,
