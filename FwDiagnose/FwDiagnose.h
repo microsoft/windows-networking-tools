@@ -5,15 +5,21 @@
 #include <string>
 #include <chrono>
 #include <iostream>
+#include <vector>
 
 #include <Windows.h>
 #include <Objbase.h>
+#include <icftypes.h>
 #include <wil/result_macros.h>
 
 bool DebugOutputEnabled() noexcept;
 bool VerboseOutputEnabled() noexcept;
 bool AnalyzeRulesEnabled() noexcept;
 bool CleanBrokenRulesEnabled() noexcept;
+
+std::vector<NET_FW_PROFILE_TYPE2> GetShieldsUpProfiles() noexcept;
+bool TurnOffShieldsUpSet() noexcept;
+bool TurnOnShieldsUpSet() noexcept;
 
 bool WfpOutputEnabled() noexcept;
 bool WfpEventEnumerationEnabled() noexcept;

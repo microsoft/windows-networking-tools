@@ -75,7 +75,7 @@ class ctEtwReader
      * @param msFlushTimer Value, in milliseconds, of the ETW flush timer. Optional, default is 0 (system default).
      * @return HRESULT status code.
      */
-    HRESULT
+    [[nodiscard]] HRESULT
     StartTraceSession(
         _In_ PCWSTR szSessionName,
         _In_opt_ PCWSTR szFileName,
@@ -87,7 +87,7 @@ class ctEtwReader
      * @param szFileName Null-terminated string for the ETL trace file to be read.
      * @return HRESULT status code.
      */
-    HRESULT
+    [[nodiscard]] HRESULT
     OpenSavedTraceSession(_In_ PCWSTR szFileName) noexcept;
 
     /**
@@ -100,8 +100,11 @@ class ctEtwReader
      * @brief Returns the session's thread handle.
      * @return HANDLE to the session thread.
      */
-    HANDLE
-    GetTraceSessionHandle() const noexcept { return m_threadHandle; }
+    [[nodiscard]] HANDLE
+        GetTraceSessionHandle() const noexcept
+    {
+        return m_threadHandle;
+    }
 
     /**
      * @brief Stops the event trace session that was started with StartSession() and disables all providers.
@@ -127,7 +130,7 @@ class ctEtwReader
      * @param uMatchAllKeyword The "MatchAllKeyword" parameter passed to EnableTraceEx. Default is 0 (none).
      * @return HRESULT status code.
      */
-    HRESULT
+    [[nodiscard]] HRESULT
     EnableTraceProviders(
         _In_ const std::vector<GUID>& providerGUIDs,
         UCHAR uLevel = TRACE_LEVEL_VERBOSE,
@@ -141,7 +144,7 @@ class ctEtwReader
      * @param providerGUIDs Vector of ETW Provider GUIDs to disable. An empty vector disables no providers.
      * @return HRESULT status code.
      */
-    HRESULT
+    [[nodiscard]] HRESULT
     DisableTraceProviders(const std::vector<GUID>& providerGUIDs) noexcept;
 
     /**
@@ -149,7 +152,7 @@ class ctEtwReader
      * Called internally when trying to Find or Remove, and exposed publicly for callers who need it in other scenarios.
      * @return HRESULT status code.
      */
-    HRESULT
+    [[nodiscard]] HRESULT
     FlushTraceSession() const noexcept;
 
   private:

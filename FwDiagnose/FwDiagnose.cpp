@@ -29,6 +29,12 @@ bool DebugOutputEnabled() noexcept
 	return g_debugOutputEnabled;
 }
 
+static bool g_verboseOutput = false;
+bool VerboseOutputEnabled() noexcept
+{
+	return g_verboseOutput;
+}
+
 static bool g_analyzeRules = false;
 bool AnalyzeRulesEnabled() noexcept
 {
@@ -42,16 +48,43 @@ bool CleanBrokenRulesEnabled() noexcept
 }
 
 static bool g_analyzePublicRules = false;
-bool AnalyzePublicRulesEnabled() noexcept
+static bool AnalyzePublicRulesEnabled() noexcept
 {
 	return g_analyzePublicRules;
 }
 
+DEFINE_ENUM_FLAG_OPERATORS(NET_FW_PROFILE_TYPE2)
 
-static bool g_verboseOutput = false;
-bool VerboseOutputEnabled() noexcept
+static bool g_shieldsUpPublicProfile = false;
+static bool g_shieldsUpPrivateProfile = false;
+static bool g_shieldsUpDomainProfile = false;
+std::vector<NET_FW_PROFILE_TYPE2> GetShieldsUpProfiles() noexcept
 {
-	return g_verboseOutput;
+	std::vector<NET_FW_PROFILE_TYPE2> enabledProfiles{};
+	if (g_shieldsUpPublicProfile)
+	{
+			enabledProfiles.push_back(NET_FW_PROFILE2_PUBLIC);
+	}
+	if (g_shieldsUpPrivateProfile)
+	{
+		enabledProfiles.push_back(NET_FW_PROFILE2_PRIVATE);
+	}
+	if (g_shieldsUpDomainProfile)
+	{
+		enabledProfiles.push_back(NET_FW_PROFILE2_DOMAIN);
+	}
+	return enabledProfiles;
+}
+
+static bool g_disableShieldsEnabled = false;
+bool TurnOffShieldsUpSet() noexcept
+{
+	return g_disableShieldsEnabled;
+}
+static bool g_enableShieldsUpEnabled = false;
+bool TurnOnShieldsUpSet() noexcept
+{
+	return g_enableShieldsUpEnabled;
 }
 
 static bool g_wfpOutput = false;
@@ -93,16 +126,24 @@ static void PrintUsage() noexcept
 		"  as well as enumerating and writing out all App-Packages for troubleshooting.\n"
 		"\n"
 		"  Note that only one option can be specified with the optional -verbose flag.\n"
-		"Options:\n"
+		"\n"
+		"\n"
 		"  -?               : Show this help message.\n"
 		"\n"
-		"  -analyze-rules   : Analyzes firewall rules for potential issues\n"
-		"  -clean-rules     : Prompts to delete duplicate rules\n"
-		"                   : Prompts to delete rules with application exes referencing non-existing files\n"
-		"                   : Prompts to delete rules referencing unknown SIDs\n"
-		"                   : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
-		"                   : This requires Administrator privileges\n"
+		"  -analyze-rules        : Analyzes firewall rules for potential issues\n"
+		"  -clean-rules          : Prompts to delete duplicate rules\n"
+		"                        : Prompts to delete rules with application exes referencing non-existing files\n"
+		"                        : Prompts to delete rules referencing unknown SIDs\n"
+		"                        : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"  -analyze-public-rules : Analyzes rules that allow inbound connections on the Public profile\n"
+		"\n"
+		"  -disable-shields-up : Disables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
+		"                        By default, disables Shields Up for all profiles\n"
+		"                        Optionally, specify the profile name - e.g. -disable-shields-up:Public\n"
+		"  -enable-shields-up  : Enables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
+		"                        By default, enables Shields Up for all profiles\n"
+		"                        Optionally, specify the profile name - e.g. -enable-shields-up:Public\n"
+		"\n"
 		"  -analyze-app-package-rules : Analyzes Firewall rules referencing app-packages\n"
 		"  -list-app-packages         : Output details of all app-container packages\n"
 		"\n"
@@ -199,6 +240,104 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-public-rules") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_analyzePublicRules = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_disableShieldsEnabled = true;
+		g_shieldsUpPublicProfile = true;
+		g_shieldsUpPrivateProfile = true;
+		g_shieldsUpDomainProfile = true;
+	}
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up:private") == 0; }) != args.end())
+	{
+		if (g_disableShieldsEnabled)
+		{
+			std::printf("-disable-shields-up was already specified - cannot specify this more than once\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up:private") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_shieldsUpPrivateProfile = true;
+		g_disableShieldsEnabled = true;
+	}
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up:public") == 0; }) != args.end())
+	{
+		if (g_disableShieldsEnabled)
+		{
+			std::printf("-disable-shields-up was already specified - cannot specify this more than once\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up:public") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_shieldsUpPublicProfile = true;
+		g_disableShieldsEnabled = true;
+	}
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up:domain") == 0; }) != args.end())
+	{
+		if (g_disableShieldsEnabled)
+		{
+			std::printf("-disable-shields-up was already specified - cannot specify this more than once\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up:domain") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_shieldsUpDomainProfile = true;
+		g_disableShieldsEnabled = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_enableShieldsUpEnabled = true;
+		g_shieldsUpPublicProfile = true;
+		g_shieldsUpPrivateProfile = true;
+		g_shieldsUpDomainProfile = true;
+	}
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up:private") == 0; }) != args.end())
+	{
+		if (g_enableShieldsUpEnabled)
+		{
+			std::printf("-enable-shields-up was already specified - cannot specify this more than once\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up:private") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_shieldsUpPrivateProfile = true;
+		g_enableShieldsUpEnabled = true;
+	}
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up:public") == 0; }) != args.end())
+	{
+		if (g_enableShieldsUpEnabled)
+		{
+			std::printf("-enable-shields-up was already specified - cannot specify this more than once\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up:public") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_shieldsUpPublicProfile = true;
+		g_enableShieldsUpEnabled = true;
+	}
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up:domain") == 0; }) != args.end())
+	{
+		if (g_enableShieldsUpEnabled)
+		{
+			std::printf("-enable-shields-up was already specified - cannot specify this more than once\n");
+			PrintUsage();
+			return E_INVALIDARG;
+		}
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-enable-shields-up:domain") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_shieldsUpDomainProfile = true;
+		g_enableShieldsUpEnabled = true;
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-remove-callouts") == 0; }) != args.end())
@@ -300,6 +439,11 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	if (AnalyzePublicRulesEnabled())
 	{
 		ProcessInboundPublicRules();
+	}
+
+	if (TurnOnShieldsUpSet() || TurnOffShieldsUpSet())
+	{
+		ProcessShieldsUp();
 	}
 
 	if (WfpOutputEnabled())

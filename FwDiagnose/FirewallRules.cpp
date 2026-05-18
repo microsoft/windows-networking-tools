@@ -743,7 +743,7 @@ namespace details
 				return count + (IsActiveInboundRule(rule_details) ? 1 : 0);
 			});
 
-		std::printf("\n  * Firewall rules allowing Inbound connections on the Public profile : %ld\n", total_public_inbound_rules);
+		std::printf("\n  * Firewall rules allowing Inbound connections on the Public profile : %d\n", total_public_inbound_rules);
 		if (total_public_inbound_rules == 0)
 		{
 			return;
@@ -763,7 +763,7 @@ namespace details
 			{
 				continue;
 			}
-			
+
 			if (!rule_details.fw_rule->wszLocalApplication && !rule_details.fw_rule->wszPackageFamilyName && !rule_details.fw_rule->wszPackageId)
 			{
 				continue;
@@ -831,7 +831,7 @@ namespace details
 					continue;
 				}
 			}
-			
+
 			++counter;
 			PrintRuleContents(rule_details, counter);
 		}
@@ -1372,7 +1372,7 @@ namespace details
 
 				DWORD localUserOwnerNameSize = 0;
 				DWORD cchReferencedDomainName = 0;
-				SID_NAME_USE sid_name_use{};
+				SID_NAME_USE sid_name_use = SidTypeUser;
 				if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
 				{
 					if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
@@ -2044,30 +2044,85 @@ static std::string PrintFirewallBoolean(uint32_t value)
 	}
 }
 
+static NET_FW_PROFILE_TYPE2 StringToEnum(PCWSTR profile_string)
+{
+	if (_wcsicmp(profile_string, L"Domain") == 0)
+	{
+		return NET_FW_PROFILE2_DOMAIN;
+	}
+	if (_wcsicmp(profile_string, L"Private") == 0)
+	{
+		return NET_FW_PROFILE2_PRIVATE;
+	}
+	if (_wcsicmp(profile_string, L"Public") == 0)
+	{
+		return NET_FW_PROFILE2_PUBLIC;
+	}
+	THROW_HR_MSG(E_INVALIDARG, "Invalid profile string: %ls", profile_string);
+}
+
+static std::string PrintFirewallProfileBitmask(uint32_t profile_bitmask)
+{
+	std::string result;
+	if (profile_bitmask & NET_FW_PROFILE2_DOMAIN)
+	{
+		result += "Domain ";
+	}
+	if (profile_bitmask & NET_FW_PROFILE2_PRIVATE)
+	{
+		result += "Private ";
+	}
+	if (profile_bitmask & NET_FW_PROFILE2_PUBLIC)
+	{
+		result += "Public ";
+	}
+
+	if (result.empty())
+	{
+		return "<No Profiles>";
+	}
+
+	// trim trailing space
+	result.pop_back();
+	return result;
+}
+
+static bool ReadShieldsUp(PCWSTR profile_name)
+{
+	wil::com_ptr<INetFwPolicy2> firewallPolicy2 = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
+	VARIANT_BOOL isShieldsUpEnabled{ FALSE };
+	HRESULT hr = firewallPolicy2->get_BlockAllInboundTraffic(StringToEnum(profile_name), &isShieldsUpEnabled);
+	if (FAILED(hr))
+	{
+		std::printf(" ** Failed to get BlockAllInboundTraffic for profile %ls from INetFwPolicy2 (0x%lx) **\n", profile_name, hr);
+	}
+	return isShieldsUpEnabled == VARIANT_TRUE;
+}
+
+static void SetShieldsUp(const std::vector<NET_FW_PROFILE_TYPE2>& profiles, bool enabled)
+{
+	const VARIANT_BOOL isShieldsUpEnabled{ enabled ? VARIANT_TRUE : VARIANT_FALSE };
+
+	wil::com_ptr<INetFwPolicy2> firewallPolicy2 = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
+	for (const auto& profile : profiles)
+	{
+		HRESULT hr = firewallPolicy2->put_BlockAllInboundTraffic(profile, isShieldsUpEnabled);
+		if (SUCCEEDED(hr))
+		{
+			std::printf(" ** Successfully set BlockAllInboundTraffic to %s for profile %hs\n", enabled ? "true" : "false", PrintFirewallProfileBitmask(profile).c_str());
+		}
+		else
+		{
+			std::printf(" ** Failed to set BlockAllInboundTraffic for profile %hs from INetFwPolicy2 (0x%lx) **\n", PrintFirewallProfileBitmask(profile).c_str(), hr);
+		}
+	}
+}
+
 void ProcessFirewallPolicy() noexcept
 try
 {
-	const auto convert_profile = [](PCWSTR profile_string)-> NET_FW_PROFILE_TYPE2
-		{
-			if (_wcsicmp(profile_string, L"Domain") == 0)
-			{
-				return NET_FW_PROFILE2_DOMAIN;
-			}
-			if (_wcsicmp(profile_string, L"Private") == 0)
-			{
-				return NET_FW_PROFILE2_PRIVATE;
-			}
-			if (_wcsicmp(profile_string, L"Public") == 0)
-			{
-				return NET_FW_PROFILE2_PUBLIC;
-			}
-			THROW_HR_MSG(E_INVALIDARG, "Invalid profile string: %ls", profile_string);
-		};
-	wil::com_ptr<INetFwPolicy2> firewallPolicy2 = wil::CoCreateInstance<NetFwPolicy2, INetFwPolicy2>();
-
 	// PolicyStore is a context object to be passed to MSFT_NetFirewallProfile
 	// analogous to the powershell command: Get-NetFirewallProfile -PolicyStore ActiveStore
-
 	constexpr auto* policyStoreValue = L"ActiveStore";
 	const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
 	THROW_IF_FAILED(policyStoreContext->SetValue(
@@ -2130,13 +2185,7 @@ try
 		std::vector<std::wstring> disabledInterfaces;
 		profile.get(L"DisabledInterfaceAliases", &disabledInterfaces);
 
-		VARIANT_BOOL isShieldsUpEnabled{};
-		HRESULT hr = firewallPolicy2->get_BlockAllInboundTraffic(convert_profile(profile_name.c_str()), &isShieldsUpEnabled);
-		if (FAILED(hr))
-		{
-			std::printf("Failed to get BlockAllInboundTraffic for profile %ls from INetFwPolicy2 (0x%lx)\n", profile_name.c_str(), hr);
-			continue;
-		}
+		const auto isShieldsUpEnabled = ReadShieldsUp(profile_name.c_str());
 
 		std::printf(
 			"Firewall Policies for profile: %ls\n"
@@ -2296,10 +2345,6 @@ void ProcessFirewallRules()
 			details::PrintRulesSortedOnFilterCounts(policy.normalizedRules);
 			timer.end();
 
-			timer.start("PrintPublicInboundRules");
-			details::PrintPublicInboundRules(policy.normalizedRules);
-			timer.end();
-
 			timer.start("Counting duplicate rules");
 			const auto duplicateRules = details::CheckForDuplicateRules(policy.normalizedRules);
 			timer.end();
@@ -2391,4 +2436,23 @@ void ProcessInboundPublicRules()
 			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
 		}
 	}
+}
+
+void ProcessShieldsUp() noexcept
+{
+	const auto profile = GetShieldsUpProfiles();
+	if (TurnOffShieldsUpSet())
+	{
+		SetShieldsUp(profile, false);
+	}
+	else if (TurnOnShieldsUpSet())
+	{
+		SetShieldsUp(profile, true);
+	}
+	else
+	{
+		FAIL_FAST();
+	}
+
+	ProcessFirewallPolicy();
 }
