@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -21,20 +20,22 @@ using namespace std;
 
 static std::atomic g_validation_failure_count = 0;
 static std::atomic g_validation_logged_count = 0;
+static std::atomic g_validation_manual_update_count = 0;
 
-bool g_only_fix_form_feed_chars = false;
-bool g_only_process_damaged_crlf = false;
-bool g_only_process_disallowed_chars = false;
+static bool g_fix_form_feed_chars = false;
+static bool g_fix_substitute_chars = false;
+static bool g_process_damaged_crlf = false;
+static bool g_process_disallowed_chars = false;
 
-bool g_fix_file_damaged_crlf = false;
-bool g_fix_disallowed_chars = false;
+static bool g_fix_file_damaged_crlf = false;
+static bool g_fix_disallowed_chars = false;
 
-std::vector<std::wstring> g_allowed_file_extensions_for_fixing_disallowed_chars;
-std::vector<std::wstring> g_blocked_file_extensions_for_fixing_disallowed_chars;
+static std::vector<std::wstring> g_allowed_file_extensions_for_fixing_disallowed_chars;
+static std::vector<std::wstring> g_blocked_file_extensions_for_fixing_disallowed_chars;
 
 constexpr auto* g_log_filename = L"validation_failures.log";
 constexpr auto* g_log_filename_formatted = L".\\validation_failures.log";
-static ofstream g_log_file(g_log_filename);
+static ofstream g_log_file;
 
 template <class... Args>
 static void print_validation_failure(
@@ -65,7 +66,7 @@ static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
 		filepath.extension());
 	if (is_blocked)
 	{
-		std::printf(" - skipping the file (%ws) from fixing disallowed characters.\n", filepath.c_str());
+		println(" - skipping the file ({}) from fixing disallowed characters.", filepath.string());
 		return false;
 	}
 
@@ -79,8 +80,8 @@ static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
 	}
 
 	// else prompt the user to allow that file extension
-	std::printf(" * Should files with the extension (%ws) be allowed to automatically be fixed? (y/n) ",
-		filepath.extension().c_str());
+	print(" * Should files with the extension ({}) be allowed to automatically be fixed? (y/n) ",
+		filepath.extension().string());
 
 	std::string response;
 	std::getline(std::cin, response);
@@ -92,37 +93,33 @@ static bool ShouldAutomaticallyFixFile(const filesystem::path& filepath)
 	else
 	{
 		g_blocked_file_extensions_for_fixing_disallowed_chars.push_back(filepath.extension().wstring());
-		std::printf(" - skipping the file for fixing disallowed characters.\n");
+		println(" - skipping the file for fixing disallowed characters.");
 		return false;
 	}
 }
 
-void ShellExecutePath(_In_ PCWSTR path) noexcept
+static void ShellExecutePath(_In_ PCWSTR path) noexcept
 {
-	SHELLEXECUTEINFOW shellexec{};
-	shellexec.cbSize = sizeof(SHELLEXECUTEINFOW);
-	shellexec.lpVerb = L"open";
-	shellexec.lpFile = path;
-	shellexec.nShow = SW_SHOWNORMAL;
-	if (!ShellExecuteExW(&shellexec))
+	SHELLEXECUTEINFOW shell_exec{};
+	shell_exec.cbSize = sizeof(SHELLEXECUTEINFOW);
+	shell_exec.lpVerb = L"open";
+	shell_exec.lpFile = path;
+	shell_exec.nShow = SW_SHOWNORMAL;
+	if (!ShellExecuteExW(&shell_exec))
 	{
 		const auto gle = GetLastError();
-		std::printf("ShellExecuteEx failed - gle 0x%x ShellError 0x%p\n", gle, shellexec.hInstApp);
+		println("ShellExecuteEx failed - gle {} ShellError {}", gle, reinterpret_cast<uintptr_t>(shell_exec.hInstApp));
 	}
 	else
 	{
-		std::printf("Hit Enter key after fixing the files .. ");
+		print("Hit Enter key after fixing the files .. ");
 		std::string str;
 		std::getline(std::cin, str);
-		std::printf(" .. resuming\n");
+		println(" .. resuming");
 	}
 }
 
-constexpr uint8_t FORM_FEED = 0x0C;
-constexpr uint8_t CR = 0x0D; // '\r'
-constexpr uint8_t LF = 0x0A; // '\n'
-
-void FixUtf16BomInFile(const filesystem::path& filepath)
+static void FixUtf16BomInFile(const filesystem::path& filepath)
 {
 	WCHAR temp_filename[MAX_PATH]{};
 	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
@@ -177,15 +174,15 @@ void FixUtf16BomInFile(const filesystem::path& filepath)
 	// close the handle to our temp file, and move it over to the original file
 	temp_file_handle.reset();
 
-	std::printf("Replacing %ws\n", filepath.c_str());
+	println("Replacing {}", filepath.string());
 	if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
 	{
 		const auto gle = GetLastError();
-		std::printf("Failed MoveFileEx(%ws, %ws) : %d\n", temp_filename, filepath.c_str(), gle);
-		return;
+		println("Failed MoveFileEx({}, {}) : {}", filesystem::path{ temp_filename }.string(), filepath.string(), gle);
 	}
 }
-void FixCrlfInFile(const filesystem::path& filepath)
+
+static void FixCrlfInFile(const filesystem::path& filepath)
 {
 	WCHAR temp_filename[MAX_PATH]{};
 	const auto temp_filename_error = GetTempFileName(L".", L"", 0, temp_filename);
@@ -221,10 +218,8 @@ void FixCrlfInFile(const filesystem::path& filepath)
 		// require a CRLF
 		// - if a CR and the next character is not an LF, fix it
 		// - if a LF and the previous character is not a CR, fix it
-		for (auto iter = buffer.cbegin(); iter != buffer.cend(); ++iter)
+		for (unsigned char current_character : buffer)
 		{
-			const auto current_character = *iter;
-
 			if (previous_character == CR && current_character != LF)
 			{
 				// add an LF after the CR - before the current_character
@@ -268,15 +263,15 @@ void FixCrlfInFile(const filesystem::path& filepath)
 	// close the handle to our temp file, and move it over to the original file
 	temp_file_handle.reset();
 
-	std::printf("Replacing %ws\n", filepath.c_str());
+	println("Replacing {}", filepath.string());
 	if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
 	{
 		const auto gle = GetLastError();
-		std::printf("Failed MoveFileEx(%ws, %ws) : %d\n", temp_filename, filepath.c_str(), gle);
-		return;
+		println("Failed MoveFileEx({}, {}) : {}", filesystem::path{ temp_filename }.string(), filepath.string(), gle);
 	}
 }
-void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
+
+static void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
 {
 	vector<uint8_t> buffer;
 	buffer.resize(BinaryFileReader::BlockSize);
@@ -333,12 +328,11 @@ void RemoveCharInFile(const filesystem::path& filepath, uint8_t char_to_remove)
 
 	if (file_fixed)
 	{
-		std::printf("Replacing %ws\n", filepath.c_str());
+		println("Replacing {}", filepath.string());
 		if (!MoveFileEx(temp_filename, filepath.c_str(), MOVEFILE_REPLACE_EXISTING))
 		{
 			const auto gle = GetLastError();
-			std::printf("Failed MoveFileEx(%ws, %ws) : %d\n", temp_filename, filepath.c_str(), gle);
-			return;
+			println("Failed MoveFileEx({}, {}) : {}", filesystem::path{ temp_filename }.string(), filepath.string(), gle);
 		}
 	}
 }
@@ -349,13 +343,19 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 	bool file_has_single_lf = false;
 	bool file_has_crlf = false;
 
-	bool file_has_chars_to_be_manually_removed = false;
+	bool file_has_form_feed_chars_to_be_manually_removed = false;
+	bool file_has_substitute_chars_to_be_manually_removed = false;
 	const auto log_manual_remove_chars_at_exit = wil::scope_exit([&]() {
-		if (!g_only_process_damaged_crlf && !g_only_process_disallowed_chars)
-		{
-			if (file_has_chars_to_be_manually_removed) {
-				log_validation_failure(filepath, "file contains the 0x0C character that need to be removed.");
+		if (file_has_form_feed_chars_to_be_manually_removed) {
+			++g_validation_manual_update_count;
+			log_validation_failure(filepath, "file contains the 0x0C (form feed) character that need to be removed separately (-fix-form-feed)");
+		}
+		if (file_has_substitute_chars_to_be_manually_removed) {
+			if (!file_has_form_feed_chars_to_be_manually_removed)
+			{
+				++g_validation_manual_update_count;
 			}
+			log_validation_failure(filepath, "file contains the 0x1A (substitute) character that need to be removed separately (-fix-substitute)");
 		}
 		});
 
@@ -393,7 +393,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 	{
 		if (g_fix_file_damaged_crlf)
 		{
-			std::printf("%ws looks to have a UTF16-LE text pattern\n", filepath.c_str());
+			println("{} looks to have a UTF16-LE text pattern", filepath.string());
 			if (ShouldAutomaticallyFixFile(filepath))
 			{
 				FixUtf16BomInFile(filepath);
@@ -401,7 +401,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 		}
 		else
 		{
-			std::printf("%ws looks to have a UTF16-LE text pattern - skipping (specify -fix-damaged-crlf to automatically fix it)\n", filepath.c_str());
+			println("{} looks to have a UTF16-LE text pattern - skipping (specify -fix-damaged-crlf to automatically fix it)", filepath.string());
 		}
 		return;
 	}
@@ -443,12 +443,16 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 				!utf8_checker.IsContinuationOrSequenceByte(ch) &&
 				!Utf16Checker::NullByteAsPartOfUtf16Encoding(filepath, ch))
 			{
-				if (Utf8Checker::IsCharToManuallyRemove(ch)) {
-					file_has_chars_to_be_manually_removed = true;
+				const auto utf8_manual_check = Utf8Checker::IsCharToManuallyRemove(ch);
+				if (utf8_manual_check == Utf8Checker::ManuallyRemoveCharacterCheckerResult::FormFeed) {
+					file_has_form_feed_chars_to_be_manually_removed = true;
+				}
+				else if (utf8_manual_check == Utf8Checker::ManuallyRemoveCharacterCheckerResult::Substitute) {
+					file_has_substitute_chars_to_be_manually_removed = true;
 				}
 				else
 				{
-					if (!g_only_process_damaged_crlf)
+					if (!g_process_damaged_crlf)
 					{
 						print_validation_failure(filepath,
 							"file contains disallowed character 0x{:02X}: line {}",
@@ -476,7 +480,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 		file_has_single_cr = true;
 	}
 
-	if (!g_only_process_disallowed_chars)
+	if (!g_process_disallowed_chars)
 	{
 		if (file_has_single_cr) {
 			print_validation_failure(filepath, "file contains CR line endings (possibly damaged CRLF).");
@@ -518,7 +522,7 @@ static void scan_file(const filesystem::path& filepath, vector<uint8_t>& buffer)
 }
 
 // allow users to override parsing files with no extension
-void PrintHelp() noexcept
+static void PrintHelp() noexcept
 {
 	println("Usage: ValidateLineEndings.exe");
 	println(" - Scans all files in the current directory and its subdirectories for invalid characters");
@@ -528,7 +532,8 @@ void PrintHelp() noexcept
 	println("optional parameters [specify only a single parameter]:");
 	println("  -h | --help : prints this help message");
 	println("  -print-skipped-files : print the list of skipped files and extensions to the console");
-	println("  -fix-form-feed: removes the form-feed character from all source files");
+	println("  -fix-form-feed : removes the form-feed character from all source files");
+	println("  -fix-substitute : removes the substitute character from all source files");
 	println("  -fix-damaged-crlf : will automatically fix each file with a damaged CRLF");
 	println("                      will prompt to allow fixing each file extension");
 	println("  -fix-disallowed-chars : will ShellExecute each file with disallowed characters to be fixed");
@@ -536,6 +541,13 @@ void PrintHelp() noexcept
 	println("  -process-disallowed-chars : only report files that have disallowed characters");
 }
 int __cdecl main(int argc, char** argv) {
+	g_log_file.open(g_log_filename_formatted, std::ios::out | std::ios::app);
+	if (!g_log_file.is_open())
+	{
+		println("Failed to open log file {}", filesystem::path{ g_log_filename_formatted }.string());
+		return 1;
+	}
+
 	if (argc == 2)
 	{
 		string_view arg = argv[1];
@@ -552,52 +564,56 @@ int __cdecl main(int argc, char** argv) {
 			println("\nSkipped directories:");
 			for (const auto& dir : skipped_directories)
 			{
-				std::printf("%ls ", dir.data());
+				print("{} ", filesystem::path{ dir }.string());
 			}
 			println("\n\nSkipped extensions:");
 			for (const auto& ext : skipped_extensions)
 			{
-				std::printf("%ls ", ext.data());
+				print("{} ", filesystem::path{ ext }.string());
 			}
 			println("\n\nSkipped filenames:");
-			for (const auto& fname : skipped_filenames)
+			for (const auto& name : skipped_filenames)
 			{
-				std::printf("%ls ", fname.data());
+				print("{} ", filesystem::path{ name }.string());
 			}
 			println("\n\nSkipped paths:");
-			for (const auto& p : skipped_paths)
+			for (const auto& path : skipped_paths)
 			{
-				std::printf("%ls ", p.data());
+				print("{} ", filesystem::path{ path }.string());
 			}
 			println("\n\nSkipped path prefixes:");
-			for (const auto& p : skipped_path_prefixes)
+			for (const auto& prefix : skipped_path_prefixes)
 			{
-				std::printf("%ls ", p.data());
+				print("{} ", filesystem::path{ prefix }.string());
 			}
-			std::printf("\n");
+			println("");
 			return 0;
 		}
 
 		if (arg == "-fix-form-feed")
 		{
-			g_only_fix_form_feed_chars = true;
+			g_fix_form_feed_chars = true;
+		}
+		else if (arg == "-fix-substitute")
+		{
+			g_fix_substitute_chars = true;
 		}
 		else if (arg == "-process-damaged-crlf")
 		{
-			g_only_process_damaged_crlf = true;
+			g_process_damaged_crlf = true;
 		}
 		else if (arg == "-process-disallowed-chars")
 		{
-			g_only_process_disallowed_chars = true;
+			g_process_disallowed_chars = true;
 		}
 		else if (arg == "-fix-damaged-crlf")
 		{
-			g_only_process_damaged_crlf = true;
+			g_process_damaged_crlf = true;
 			g_fix_file_damaged_crlf = true;
 		}
 		else if (arg == "-fix-disallowed-chars")
 		{
-			g_only_process_disallowed_chars = true;
+			g_process_disallowed_chars = true;
 			g_fix_disallowed_chars = true;
 		}
 		else
@@ -612,11 +628,6 @@ int __cdecl main(int argc, char** argv) {
 		string_view arg = argv[2];
 		println(stderr, "Unknown argument: {}", arg);
 		PrintHelp();
-		return 1;
-	}
-
-	if (!g_log_file.is_open()) {
-		println(stderr, "Failed to open log file for writing.");
 		return 1;
 	}
 
@@ -689,11 +700,19 @@ int __cdecl main(int argc, char** argv) {
 			continue; // skip .log files
 		}
 
-		if (g_only_fix_form_feed_chars)
+		if (g_fix_form_feed_chars)
 		{
-			if (ranges::binary_search(extensions_to_fix_form_feed, extension))
+			if (ranges::binary_search(extensions_to_fix_separately, extension))
 			{
-				RemoveCharInFile(filepath, FORM_FEED);
+				RemoveCharInFile(filepath, FORM_FEED_CHARACTER);
+				++files_scanned;
+			}
+		}
+		else if (g_fix_substitute_chars)
+		{
+			if (ranges::binary_search(extensions_to_fix_separately, extension))
+			{
+				RemoveCharInFile(filepath, SUBSTITUTION_CHARACTER);
 				++files_scanned;
 			}
 		}
@@ -706,10 +725,14 @@ int __cdecl main(int argc, char** argv) {
 
 	println(stdout, "Successfully scanned {} files.", files_scanned);
 
-	if (!g_only_fix_form_feed_chars)
+	if (!g_fix_form_feed_chars)
 	{
 		println(stdout, " - Found {} files that have invalid characters that must be resolved.", g_validation_failure_count.load());
 		println(stdout, " - Logged to file {} files that are UTF16 that may need to be reviewed.", g_validation_logged_count.load());
+		println(stdout,
+			" - Found {} files that require separate fixes - see the log file for details.\n"
+			"   Use the -fix-form-feed and -fix-substitute command line arguments to automatically fix these\n",
+			g_validation_manual_update_count.load());
 		return g_validation_failure_count;
 	}
 

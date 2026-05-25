@@ -55,4 +55,10 @@
 /ValidateLineEndings/Debug
 /ValidateLineEndings/Release
 /ValidateLineEndings/x64
-/MigrateIpProperties/ARM64/Release
+
+/MigrateIpProperties/.vs
+/MigrateIpProperties/packages
+/MigrateIpProperties/ARM64
+/MigrateIpProperties/Debug
+/MigrateIpProperties/Release
+/MigrateIpProperties/x64

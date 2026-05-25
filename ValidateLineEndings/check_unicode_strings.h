@@ -4,6 +4,12 @@
 #include <string_view>
 #include <vector>
 
+constexpr uint8_t FORM_FEED_CHARACTER = 0x0C;
+constexpr uint8_t SUBSTITUTION_CHARACTER = 0x1A;
+
+constexpr uint8_t CR = 0x0D; // '\r'
+constexpr uint8_t LF = 0x0A; // '\n'
+
 enum class BomType {
 	None,
 	UTF8,
@@ -39,7 +45,7 @@ public:
 				filepath.extension().wstring()));
 	}
 
-	static BomType Utf16Bom(std::vector<uint8_t>& buffer) noexcept
+	static BomType Utf16Bom(const std::vector<uint8_t>& buffer) noexcept
 	{
 		if (buffer.size() > 1) {
 			const auto first_character = buffer[0];
@@ -86,13 +92,20 @@ public:
 		return false;
 	}
 
-	static bool IsCharToManuallyRemove(uint8_t ch) noexcept
+	enum class ManuallyRemoveCharacterCheckerResult {
+		None,
+		FormFeed,
+		Substitute
+	};
+	static ManuallyRemoveCharacterCheckerResult IsCharToManuallyRemove(uint8_t ch) noexcept
 	{
-		constexpr std::array<uint8_t, 2> ManuallyRemoveCharacters{
-			0x0C, // form feed character often found before function defintions
-			0x1A, // substitute character often found at end of files
-		};
-		return std::ranges::find(ManuallyRemoveCharacters, ch) != ManuallyRemoveCharacters.end();
+		if (ch == FORM_FEED_CHARACTER) {
+			return ManuallyRemoveCharacterCheckerResult::FormFeed;
+		}
+		if (ch == SUBSTITUTION_CHARACTER) {
+			return ManuallyRemoveCharacterCheckerResult::Substitute;
+		}
+		return ManuallyRemoveCharacterCheckerResult::None;
 	}
 
 	static bool IsPrintableCharacter(uint8_t ch) noexcept
@@ -182,7 +195,7 @@ private:
 	}
 };
 
-BomType GetBomType(std::vector<uint8_t>& buffer) noexcept
+inline BomType GetBomType(const std::vector<uint8_t>& buffer) noexcept
 {
 	if (Utf8Checker::HasUtf8Bom(buffer))
 	{
