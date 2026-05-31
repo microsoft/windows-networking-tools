@@ -629,82 +629,81 @@ namespace details
 		return true;
 	}
 
-	static void PrintRuleContents(const NormalizedFirewallRule& rule_details, uint32_t counter)
+	static void PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter, bool include_empty_fields = false)
 	{
 		std::printf("\n");
-		std::printf("       %d : Rule Name: %ls\n", counter, rule_details.rule_name.value.empty() ? L"<empty>" : rule_details.rule_name.value.c_str());
+		std::printf("       %zu : Rule Name: %ls\n", counter, rule_details.rule_name.value.empty() ? L"<empty>" : rule_details.rule_name.value.c_str());
 		if (!rule_details.rule_description.empty())
 		{
-			std::printf("          Description: %ls\n", rule_details.rule_description.c_str());
+			std::printf("           Description: %ls\n", rule_details.rule_description.c_str());
 		}
 
 		if (rule_details.missing_package_family_name || rule_details.missing_package_id)
 		{
-			std::printf("          Inbound rule targeting an application that is not installed\n");
+			std::printf("           Inbound rule targeting an application that is not installed\n");
 			if (rule_details.fw_rule->wszPackageFamilyName)
 			{
-				std::printf("	Package Family Name: %ls\n", rule_details.fw_rule->wszPackageFamilyName);
+				std::printf("           Package Family Name: %ls\n", rule_details.fw_rule->wszPackageFamilyName);
 			}
 			if (rule_details.fw_rule->wszPackageId)
 			{
-				std::printf("	Package ID: %ls\n", rule_details.fw_rule->wszPackageId);
+				std::printf("           Package ID: %ls\n", rule_details.fw_rule->wszPackageId);
 			}
-			return;
 		}
 
 		if (rule_details.fw_rule->wszLocalService)
 		{
-			std::printf("          Local Service: %ls\n", rule_details.fw_rule->wszLocalService);
+			std::printf("           Local Service: %ls\n", rule_details.fw_rule->wszLocalService);
 		}
 		if (rule_details.fw_rule->wszLocalApplication)
 		{
-			std::printf("          Application: %ls\n", rule_details.fw_rule->wszLocalApplication);
+			std::printf("           Application: %ls\n", rule_details.fw_rule->wszLocalApplication);
 		}
 
 		if (rule_details.fw_rule->wszPackageFamilyName)
 		{
-			std::printf("          PackageFamilyName: %ls\n", rule_details.fw_rule->wszPackageFamilyName);
+			std::printf("           PackageFamilyName: %ls\n", rule_details.fw_rule->wszPackageFamilyName);
 		}
 		else if (rule_details.fw_rule->wszPackageId)
 		{
-			std::printf("          Package ID: %ls\n", rule_details.fw_rule->wszPackageId);
+			std::printf("           Package ID: %ls\n", rule_details.fw_rule->wszPackageId);
 		}
 
 		if (rule_details.successfully_resolved_user_name.value_or(false))
 		{
-			std::printf("          User: %ls\\%ls\n", rule_details.local_user_domain_name.empty() ? L"<empty>" : rule_details.local_user_domain_name.c_str(), rule_details.local_user_owner_name.empty() ? L"<empty>" : rule_details.local_user_owner_name.c_str());
+			std::printf("           User: %ls\\%ls\n", rule_details.local_user_domain_name.empty() ? L"<empty>" : rule_details.local_user_domain_name.c_str(), rule_details.local_user_owner_name.empty() ? L"<empty>" : rule_details.local_user_owner_name.c_str());
 		}
-		else
+		else if (include_empty_fields)
 		{
-			std::printf("          User: (all users)\n");
+			std::printf("           User: (all users)\n");
 		}
 
 		if (rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords != 0 || rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords != 0)
 		{
-			std::printf("          Local Addresses Constraints: IPv4 (%hs) IPv6 (%hs)\n",
+			std::printf("           Local Addresses Constraints: IPv4 (%hs) IPv6 (%hs)\n",
 				AddressKeywordToString(rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords).c_str(),
 				AddressKeywordToString(rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords).c_str());
 		}
 		if (rule_details.fw_rule->RemoteAddresses.dwV4AddressKeywords != 0 || rule_details.fw_rule->RemoteAddresses.dwV6AddressKeywords != 0)
 		{
-			std::printf("          Remote Addresses Constraints: IPv4 (%hs) IPv6 (%hs)\n",
+			std::printf("           Remote Addresses Constraints: IPv4 (%hs) IPv6 (%hs)\n",
 				AddressKeywordToString(rule_details.fw_rule->RemoteAddresses.dwV4AddressKeywords).c_str(),
 				AddressKeywordToString(rule_details.fw_rule->RemoteAddresses.dwV6AddressKeywords).c_str());
 		}
 
 		if (IsAnyAddressSpecified(rule_details.fw_rule))
 		{
-			std::printf("          Target Address Constraints: exist\n");
+			std::printf("           Target Address Constraints: exist\n");
 		}
 
 		if (IsLocalPortKeywordsSpecified(rule_details.fw_rule))
 		{
-			std::printf("          Local Port Constraints: %hs\n",
+			std::printf("           Local Port Constraints: %hs\n",
 				PortKeywordToString(rule_details.fw_rule->LocalPorts.wPortKeywords).c_str());
 		}
 		if (IsRemotePortKeywordsSpecified(rule_details.fw_rule))
 		{
-			std::printf("          Remote Port Constraints: %hs\n",
+			std::printf("           Remote Port Constraints: %hs\n",
 				PortKeywordToString(rule_details.fw_rule->RemotePorts.wPortKeywords).c_str());
 		}
 
@@ -714,22 +713,24 @@ namespace details
 			protocol_string = rule_details.fw_rule->wIpProtocol == IPPROTO_TCP ? "TCP" : "UDP";
 		}
 		auto local_port_string = IsAnyLocalPortSpecified(rule_details.fw_rule);
-		std::printf(
-			"          Local Ports (%hs): %hs\n",
-			protocol_string,
-			local_port_string.empty() ? "(all ports)" : local_port_string.c_str());
+		if (!local_port_string.empty() || include_empty_fields)
+		{
+			std::printf(
+				"           Local Ports (%hs): %hs\n",
+				protocol_string,
+				local_port_string.empty() ? "(all ports)" : local_port_string.c_str());
+		}
 
 		auto remote_port_string = IsAnyRemotePortSpecified(rule_details.fw_rule);
 		if (!remote_port_string.empty())
 		{
-			std::printf("          Remote Ports (%hs): %hs\n", protocol_string, remote_port_string.c_str());
+			std::printf("           Remote Ports (%hs): %hs\n", protocol_string, remote_port_string.c_str());
 		}
 		auto icmp_type_code_string = IsAnyIcmpTypeCodeSpecified(rule_details.fw_rule);
 		if (!icmp_type_code_string.empty())
 		{
-			std::printf("          ICMP Type/Code Constraints: %hs\n", icmp_type_code_string.c_str());
+			std::printf("           ICMP Type/Code Constraints: %hs\n", icmp_type_code_string.c_str());
 		}
-
 	}
 
 	static void PrintPublicInboundRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
@@ -834,6 +835,156 @@ namespace details
 
 			++counter;
 			PrintRuleContents(rule_details, counter);
+		}
+		if (counter == 0)
+		{
+			std::printf("\n    * No remaining rules not targeting an application or service were found\n");
+		}
+
+		std::printf("\n");
+	}
+
+	// Returns true if the rule is enabled, inbound, and targets the Private profile (but NOT the Public profile)
+	static bool IsPrivateOnlyInboundRule(const NormalizedFirewallRule& rule_details)
+	{
+		// must target Private profile
+		if (!(rule_details.fw_rule->dwProfiles & FW_PROFILE_TYPE_PRIVATE))
+		{
+			return false;
+		}
+		// must NOT target Public profile
+		// this also excludes FW_PROFILE_TYPE_ALL since it includes the Public bit
+		if (rule_details.fw_rule->dwProfiles & FW_PROFILE_TYPE_PUBLIC)
+		{
+			return false;
+		}
+		if (rule_details.fw_rule->Direction != FW_DIR_IN)
+		{
+			return false;
+		}
+		return true;
+	}
+
+	static void PrintPrivateOnlyInboundRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		size_t counter = 0;
+		size_t disabled_rules = 0;
+		for (const auto& rule_details : normalized_rules)
+		{
+			if (IsPrivateOnlyInboundRule(rule_details))
+			{
+				++counter;
+				if (!rule_details.is_rule_enabled)
+				{
+					++disabled_rules;
+				}
+			}
+		}
+
+		std::printf("\n  * Firewall rules for Inbound connections on Private profile only (not Public) : %zu\n", counter);
+		if (counter == 0)
+		{
+			return;
+		}
+		std::printf("   - %zu rules are disabled\n", disabled_rules);
+
+		counter = 0;
+		std::printf("\n  * Inbound Private-only rules targeting specific applications");
+		for (const auto& rule_details : normalized_rules)
+		{
+			if (!IsPrivateOnlyInboundRule(rule_details))
+			{
+				continue;
+			}
+
+			if (rule_details.fw_rule->wszLocalService)
+			{
+				continue;
+			}
+
+			if (!rule_details.fw_rule->wszLocalApplication && !rule_details.fw_rule->wszPackageFamilyName && !rule_details.fw_rule->wszPackageId)
+			{
+				continue;
+			}
+			if (rule_details.fw_rule->wszLocalApplication)
+			{
+				if (CompareStringOrdinal(L"system", -1, rule_details.fw_rule->wszLocalApplication, -1, TRUE) == CSTR_EQUAL)
+				{
+					continue;
+				}
+			}
+
+			++counter;
+			PrintRuleContents(rule_details, counter);
+			if (!rule_details.is_rule_enabled)
+			{
+				std::printf("           * Disabled\n");
+			}
+		}
+		if (counter == 0)
+		{
+			std::printf("\n    * No rules targeting specific applications were found\n");
+		}
+
+		counter = 0;
+		std::printf("\n  * Inbound Private-only rules targeting an NT Service");
+		for (const auto& rule_details : normalized_rules)
+		{
+			if (!IsPrivateOnlyInboundRule(rule_details))
+			{
+				continue;
+			}
+
+			if (!rule_details.fw_rule->wszLocalService)
+			{
+				continue;
+			}
+
+			++counter;
+			PrintRuleContents(rule_details, counter);
+			if (!rule_details.is_rule_enabled)
+			{
+				std::printf("           * Disabled\n");
+			}
+		}
+		if (counter == 0)
+		{
+			std::printf("\n    * No rules targeting an NT Service were found\n");
+		}
+
+		counter = 0;
+		std::printf("\n  * Inbound Private-only rules not targeting an application or service");
+		for (const auto& rule_details : normalized_rules)
+		{
+			if (!IsPrivateOnlyInboundRule(rule_details))
+			{
+				continue;
+			}
+
+			if (rule_details.fw_rule->wszLocalService)
+			{
+				continue;
+			}
+
+			if (rule_details.fw_rule->wszPackageFamilyName || rule_details.fw_rule->wszPackageId)
+			{
+				continue;
+			}
+
+			if (rule_details.fw_rule->wszLocalApplication)
+			{
+				if (CompareStringOrdinal(L"system", -1, rule_details.fw_rule->wszLocalApplication, -1, TRUE) != CSTR_EQUAL)
+				{
+					continue;
+				}
+			}
+
+			++counter;
+			PrintRuleContents(rule_details, counter);
+			if (!rule_details.is_rule_enabled)
+			{
+				std::printf("           * Disabled\n");
+			}
 		}
 		if (counter == 0)
 		{
@@ -1788,7 +1939,7 @@ namespace details
 		if (!normalized_rules.empty())
 		{
 			std::printf("  * Summary of status analysis of firewall rules:\n");
-			std::printf("   - count of rules with no errors: %zu\n", rules_with_no_errors);
+			std::printf("   - count of rules with no errors: %zu (out of a total of %zu rules)\n", rules_with_no_errors, normalized_rules.size());
 
 			if (VerboseOutputEnabled() || !verbose_rules_partially_ignored_error_strings.empty())
 			{
@@ -2425,6 +2576,87 @@ void ProcessInboundPublicRules()
 
 			timer.start("PrintPublicInboundRules");
 			details::PrintPublicInboundRules(policy.normalizedRules);
+			timer.end();
+		}
+		catch (const wil::ResultException& ex)
+		{
+			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
+		}
+		catch (const std::exception& ex)
+		{
+			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
+		}
+	}
+}
+
+void ProcessPrivateOnlyInboundRules()
+{
+	for (auto& policy : g_policy_objects)
+	{
+		try
+		{
+			std::wstring banner_header;
+			banner_header.insert(banner_header.begin(), g_minimumBannerSize, L'*');
+
+			auto banner_output = wil::str_printf<std::wstring>(L"Analyzing Inbound Private-only rules (not Public) in the %hs Firewall Policy Store", policy.store_type_string);
+			const size_t prefix_spaces = banner_header.size() > banner_output.size() ? (banner_header.size() - banner_output.size()) / 2 : 0;
+			banner_output.insert(0, prefix_spaces, L' ');
+
+			if (banner_output.size() > banner_header.size())
+			{
+				banner_header.insert(banner_header.end(), banner_output.size() - banner_header.size(), L'*');
+			}
+			std::printf(
+				"\n"
+				"%ls\n"
+				"%ls\n"
+				"%ls\n",
+				banner_header.c_str(),
+				banner_output.c_str(),
+				banner_header.c_str());
+
+			if (policy.normalizedRules.empty())
+			{
+				std::printf("  * No Rules in this store\n");
+				continue;
+			}
+
+			ChronoTimer timer;
+			timer.start("FillRulesWithFilterDetails");
+			details::FillRulesWithFilterDetails(policy.normalizedRules);
+			timer.end();
+
+			timer.start("CheckForRulesWithErrorStatus");
+			details::CheckForRulesWithErrorStatus(policy.normalizedRules);
+			timer.end();
+
+
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+			}
+			timer.start("CheckForMissingAppRules");
+			details::CheckForMissingAppRules(policy.normalizedRules);
+			timer.end();
+
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+			}
+			timer.start("CheckForMissingAppPackage");
+			details::CheckForMissingAppPackage(policy.normalizedRules, details::PrintSummary::DoNotPrint);
+			timer.end();
+
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+			}
+			timer.start("CheckUnresolvedUserAccountRules");
+			details::CheckUnresolvedUserAccountRules(policy.normalizedRules, policy.store_type);
+			timer.end();
+
+			timer.start("PrintPrivateOnlyInboundRules");
+			details::PrintPrivateOnlyInboundRules(policy.normalizedRules);
 			timer.end();
 		}
 		catch (const wil::ResultException& ex)

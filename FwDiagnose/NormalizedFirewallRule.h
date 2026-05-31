@@ -10,8 +10,6 @@
 #include "NormalizedString.h"
 #include "WfpCounters.h"
 
-#include <wil/resource.h>
-
 struct NormalizedFirewallRule
 {
 	NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion);

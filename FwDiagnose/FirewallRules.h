@@ -32,4 +32,5 @@ bool HasFirewallAdminAccess();
 void ProcessFirewallPolicy() noexcept;
 void ProcessFirewallRules();
 void ProcessInboundPublicRules();
+void ProcessPrivateOnlyInboundRules();
 void ProcessShieldsUp() noexcept;
