@@ -106,6 +106,21 @@ struct NormalizedString
 			return 1; // should never reach here
 		}
 	}
+	static int StringCompare(_In_ PCWSTR lhs, _In_ PCWSTR rhs) noexcept
+	{
+		if (!lhs && !rhs)
+		{
+			return 0;
+		}
+
+		if (lhs && rhs)
+		{
+			return StringCompare(Create(lhs), Create(rhs));
+		}
+
+		// one is null and the other is not, so the null one is "less than" the non-null one
+		return lhs ? 1 : -1;
+	}
 
     static bool StrStrComparison(const NormalizedString& haystack, const NormalizedString& needle) noexcept
     {

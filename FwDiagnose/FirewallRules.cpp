@@ -867,31 +867,84 @@ namespace details
 
 	static void PrintPrivateOnlyInboundRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 	{
-		size_t counter = 0;
+		// copy the relevant rules to a separate vector first since we want to print the total count before printing details
+		// because NormalizedFirewallRule cannot be copied (it's copy constructor is deleted), we need to store iterators to the relevant rules instead of the rules themselves
 		size_t disabled_rules = 0;
-		for (const auto& rule_details : normalized_rules)
+		size_t private_rules_with_public_rule_copies = 0;
+
+		std::vector<std::vector<NormalizedFirewallRule>::const_iterator> private_only_inbound_rules;
+		for (auto it = normalized_rules.cbegin(); it != normalized_rules.cend(); ++it)
 		{
-			if (IsPrivateOnlyInboundRule(rule_details))
+			if (!IsPrivateOnlyInboundRule(*it))
 			{
-				++counter;
-				if (!rule_details.is_rule_enabled)
+				continue;
+			}
+
+			if (it->rule_name.value == L"remote assistance (tcp-in)")
+			{
+				printf("\n");
+			}
+			// check if a private-only rule is an exact copy of a public rule (except for the profile it targets).
+			// if it is, then we won't track it, as it's not really a private-only rule
+			bool found_public_rule_copy_of_private_rule = false;
+			for (auto public_it = normalized_rules.cbegin(); public_it != normalized_rules.cend(); ++public_it)
+			{
+				if (IsPrivateOnlyInboundRule(*public_it))
 				{
-					++disabled_rules;
+					continue;
 				}
+				if (public_it->fw_rule->Direction != FW_DIR_IN)
+				{
+					continue;
+				}
+				if (public_it->rule_name.value == L"remote assistance (tcp-in)")
+				{
+					printf("\n");
+				}
+				constexpr auto compare_profiles = false;
+				constexpr auto match_if_enabled = false;
+				if (FwRuleDetailsComparison(*it->fw_rule, *public_it->fw_rule, compare_profiles, match_if_enabled) == 0)
+				{
+					found_public_rule_copy_of_private_rule = true;
+					break;
+				}
+			}
+			if (found_public_rule_copy_of_private_rule)
+			{
+				++private_rules_with_public_rule_copies;
+				continue;
+			}
+
+			private_only_inbound_rules.push_back(it);
+			if (!it->is_rule_enabled)
+			{
+				++disabled_rules;
 			}
 		}
 
-		std::printf("\n  * Firewall rules for Inbound connections on Private profile only (not Public) : %zu\n", counter);
+		size_t counter = private_only_inbound_rules.size();
+		std::printf("\n  * Firewall rules allowing Inbound connections exclusively on Private profiles : %zu\n", counter);
 		if (counter == 0)
 		{
 			return;
 		}
-		std::printf("   - %zu rules are disabled\n", disabled_rules);
+		std::printf(
+			"   - %zu private rule%ws that %ws disabled\n",
+			disabled_rules,
+			disabled_rules == 1 ? L"" : L"s",
+			disabled_rules == 1 ? L"is" : L"are");
+		std::printf(
+			"   - %zu private rule%ws that %ws an identical copy public rule\n",
+			private_rules_with_public_rule_copies,
+			private_rules_with_public_rule_copies == 1 ? L"" : L"s",
+			private_rules_with_public_rule_copies == 1 ? L"has" : L"have");
+		std::printf("     (and thus are not counted as private-only rules)\n");
 
 		counter = 0;
 		std::printf("\n  * Inbound Private-only rules targeting specific applications");
-		for (const auto& rule_details : normalized_rules)
+		for (const auto& rule_iterator : private_only_inbound_rules)
 		{
+			const auto& rule_details = *rule_iterator;
 			if (!IsPrivateOnlyInboundRule(rule_details))
 			{
 				continue;
@@ -928,8 +981,9 @@ namespace details
 
 		counter = 0;
 		std::printf("\n  * Inbound Private-only rules targeting an NT Service");
-		for (const auto& rule_details : normalized_rules)
+		for (const auto& rule_iterator : private_only_inbound_rules)
 		{
+			const auto& rule_details = *rule_iterator;
 			if (!IsPrivateOnlyInboundRule(rule_details))
 			{
 				continue;
@@ -954,8 +1008,9 @@ namespace details
 
 		counter = 0;
 		std::printf("\n  * Inbound Private-only rules not targeting an application or service");
-		for (const auto& rule_details : normalized_rules)
+		for (const auto& rule_iterator : private_only_inbound_rules)
 		{
+			const auto& rule_details = *rule_iterator;
 			if (!IsPrivateOnlyInboundRule(rule_details))
 			{
 				continue;
