@@ -104,24 +104,30 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 	return NormalizedString::StringCompare(lhs.normalized_rule_details, rhs.normalized_rule_details);
 }
 
+enum ComparisonPolicy
+{
+	comparison_policy_all = 0x0,
+	comparison_policy_skip_comparing_profiles = 0x1,
+	comparison_policy_skip_comparing_if_enabled = 0x2,
+	comparison_policy_skip_comparing_local_subnet = 0x4,
+};
+DEFINE_ENUM_FLAG_OPERATORS(ComparisonPolicy)
+
 // returns the same integer value as memcmp()
 // -1 if lhs < rhs, 0 if equal, +1 if lhs > rhs
-inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, bool compare_profiles, bool compare_if_enabled) noexcept
+inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, ComparisonPolicy policy = ComparisonPolicy::comparison_policy_all) noexcept
 {
 	// check the optional fields based off the bool input parameters
-	if (compare_profiles && lhs.dwProfiles != rhs.dwProfiles)
+	if (policy & ComparisonPolicy::comparison_policy_skip_comparing_profiles)
+	{
+		// don't compare dwProfiles
+	}
+	else if (lhs.dwProfiles != rhs.dwProfiles)
 	{
 		return lhs.dwProfiles < rhs.dwProfiles ? -1 : 1;
 	}
 
-	if (compare_if_enabled)
-	{
-		if (lhs.wFlags != rhs.wFlags)
-		{
-			return lhs.wFlags < rhs.wFlags ? -1 : 1;
-		}
-	}
-	else
+	if (policy & ComparisonPolicy::comparison_policy_skip_comparing_if_enabled)
 	{
 		// don't match if the rules are enabled
 		// remove the FW_RULE_FLAGS_ACTIVE flag from both before comparing
@@ -130,6 +136,66 @@ inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, bool 
 		if (lhs_flags != rhs_flags)
 		{
 			return lhs_flags < rhs_flags ? -1 : 1;
+		}
+	}
+	else
+	{
+		if (lhs.wFlags != rhs.wFlags)
+		{
+			return lhs.wFlags < rhs.wFlags ? -1 : 1;
+		}
+	}
+
+	if (policy & ComparisonPolicy::comparison_policy_skip_comparing_local_subnet)
+	{
+		// not comparing local subnets
+		// remove the FW_ADDRESS_KEYWORD_LOCAL_SUBNET flag from both before comparing
+
+		const auto lhs_local_v4_keywords = lhs.LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		const auto rhs_local_v4_keywords = rhs.LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if (lhs_local_v4_keywords != rhs_local_v4_keywords)
+		{
+			return lhs_local_v4_keywords < rhs_local_v4_keywords ? -1 : 1;
+		}
+
+		const auto lhs_local_v6_keywords = lhs.LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		const auto rhs_local_v6_keywords = rhs.LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if (lhs_local_v6_keywords != rhs_local_v6_keywords)
+		{
+			return lhs_local_v6_keywords < rhs_local_v6_keywords ? -1 : 1;
+		}
+
+		const auto lhs_remote_v4_keywords = lhs.RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		const auto rhs_remote_v4_keywords = rhs.RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if (lhs_remote_v4_keywords != rhs_remote_v4_keywords)
+		{
+			return lhs_remote_v4_keywords < rhs_remote_v4_keywords ? -1 : 1;
+		}
+
+		const auto lhs_remote_v6_keywords = lhs.RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		const auto rhs_remote_v6_keywords = rhs.RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if (lhs_remote_v6_keywords != rhs_remote_v6_keywords)
+		{
+			return lhs_remote_v6_keywords < rhs_remote_v6_keywords ? -1 : 1;
+		}
+	}
+	else
+	{
+		if (lhs.LocalAddresses.dwV4AddressKeywords != rhs.LocalAddresses.dwV4AddressKeywords)
+		{
+			return lhs.LocalAddresses.dwV4AddressKeywords < rhs.LocalAddresses.dwV4AddressKeywords ? -1 : 1;
+		}
+		if (lhs.LocalAddresses.dwV6AddressKeywords != rhs.LocalAddresses.dwV6AddressKeywords)
+		{
+			return lhs.LocalAddresses.dwV6AddressKeywords < rhs.LocalAddresses.dwV6AddressKeywords ? -1 : 1;
+		}
+		if (lhs.RemoteAddresses.dwV4AddressKeywords != rhs.RemoteAddresses.dwV4AddressKeywords)
+		{
+			return lhs.RemoteAddresses.dwV4AddressKeywords < rhs.RemoteAddresses.dwV4AddressKeywords ? -1 : 1;
+		}
+		if (lhs.RemoteAddresses.dwV6AddressKeywords != rhs.RemoteAddresses.dwV6AddressKeywords)
+		{
+			return lhs.RemoteAddresses.dwV6AddressKeywords < rhs.RemoteAddresses.dwV6AddressKeywords ? -1 : 1;
 		}
 	}
 
@@ -248,14 +314,6 @@ inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, bool 
 		}
 	}
 
-	if (lhs.LocalAddresses.dwV4AddressKeywords != rhs.LocalAddresses.dwV4AddressKeywords)
-	{
-		return lhs.LocalAddresses.dwV4AddressKeywords < rhs.LocalAddresses.dwV4AddressKeywords ? -1 : 1;
-	}
-	if (lhs.LocalAddresses.dwV6AddressKeywords != rhs.LocalAddresses.dwV6AddressKeywords)
-	{
-		return lhs.LocalAddresses.dwV6AddressKeywords < rhs.LocalAddresses.dwV6AddressKeywords ? -1 : 1;
-	}
 	if (lhs.LocalAddresses.V4Ranges.dwNumEntries != rhs.LocalAddresses.V4Ranges.dwNumEntries)
 	{
 		return lhs.LocalAddresses.V4Ranges.dwNumEntries < rhs.LocalAddresses.V4Ranges.dwNumEntries ? -1 : 1;
@@ -372,14 +430,6 @@ inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, bool 
 		return lhs.LocalAddresses.V6SubNets.pSubNets ? 1 : -1; // one is null, the other is not
 	}
 
-	if (lhs.RemoteAddresses.dwV4AddressKeywords != rhs.RemoteAddresses.dwV4AddressKeywords)
-	{
-		return lhs.RemoteAddresses.dwV4AddressKeywords < rhs.RemoteAddresses.dwV4AddressKeywords ? -1 : 1;
-	}
-	if (lhs.RemoteAddresses.dwV6AddressKeywords != rhs.RemoteAddresses.dwV6AddressKeywords)
-	{
-		return lhs.RemoteAddresses.dwV6AddressKeywords < rhs.RemoteAddresses.dwV6AddressKeywords ? -1 : 1;
-	}
 	if (lhs.RemoteAddresses.V4Ranges.dwNumEntries != rhs.RemoteAddresses.V4Ranges.dwNumEntries)
 	{
 		return lhs.RemoteAddresses.V4Ranges.dwNumEntries < rhs.RemoteAddresses.V4Ranges.dwNumEntries ? -1 : 1;

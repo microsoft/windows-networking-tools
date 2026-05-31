@@ -880,10 +880,6 @@ namespace details
 				continue;
 			}
 
-			if (it->rule_name.value == L"remote assistance (tcp-in)")
-			{
-				printf("\n");
-			}
 			// check if a private-only rule is an exact copy of a public rule (except for the profile it targets).
 			// if it is, then we won't track it, as it's not really a private-only rule
 			bool found_public_rule_copy_of_private_rule = false;
@@ -893,17 +889,17 @@ namespace details
 				{
 					continue;
 				}
+
 				if (public_it->fw_rule->Direction != FW_DIR_IN)
 				{
 					continue;
 				}
-				if (public_it->rule_name.value == L"remote assistance (tcp-in)")
-				{
-					printf("\n");
-				}
-				constexpr auto compare_profiles = false;
-				constexpr auto match_if_enabled = false;
-				if (FwRuleDetailsComparison(*it->fw_rule, *public_it->fw_rule, compare_profiles, match_if_enabled) == 0)
+
+				constexpr auto comparison_policy =
+					ComparisonPolicy::comparison_policy_skip_comparing_if_enabled |
+					ComparisonPolicy::comparison_policy_skip_comparing_profiles |
+					ComparisonPolicy::comparison_policy_skip_comparing_local_subnet;
+				if (FwRuleDetailsComparison(*it->fw_rule, *public_it->fw_rule, comparison_policy) == 0)
 				{
 					found_public_rule_copy_of_private_rule = true;
 					break;
