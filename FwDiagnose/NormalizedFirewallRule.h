@@ -104,7 +104,7 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 	return NormalizedString::StringCompare(lhs.normalized_rule_details, rhs.normalized_rule_details);
 }
 
-enum ComparisonPolicy
+enum ComparisonPolicy : uint8_t
 {
 	comparison_policy_all = 0x0,
 	comparison_policy_skip_comparing_profiles = 0x1,
@@ -115,10 +115,10 @@ DEFINE_ENUM_FLAG_OPERATORS(ComparisonPolicy)
 
 // returns the same integer value as memcmp()
 // -1 if lhs < rhs, 0 if equal, +1 if lhs > rhs
-inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, ComparisonPolicy policy = ComparisonPolicy::comparison_policy_all) noexcept
+inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, ComparisonPolicy policy = comparison_policy_all) noexcept
 {
 	// check the optional fields based off the bool input parameters
-	if (policy & ComparisonPolicy::comparison_policy_skip_comparing_profiles)
+	if (policy & comparison_policy_skip_comparing_profiles)
 	{
 		// don't compare dwProfiles
 	}
@@ -127,7 +127,7 @@ inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, Compa
 		return lhs.dwProfiles < rhs.dwProfiles ? -1 : 1;
 	}
 
-	if (policy & ComparisonPolicy::comparison_policy_skip_comparing_if_enabled)
+	if (policy & comparison_policy_skip_comparing_if_enabled)
 	{
 		// don't match if the rules are enabled
 		// remove the FW_RULE_FLAGS_ACTIVE flag from both before comparing
@@ -146,7 +146,7 @@ inline int FwRuleDetailsComparison(const FW_RULE& lhs, const FW_RULE& rhs, Compa
 		}
 	}
 
-	if (policy & ComparisonPolicy::comparison_policy_skip_comparing_local_subnet)
+	if (policy & comparison_policy_skip_comparing_local_subnet)
 	{
 		// not comparing local subnets
 		// remove the FW_ADDRESS_KEYWORD_LOCAL_SUBNET flag from both before comparing

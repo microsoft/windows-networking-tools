@@ -33,7 +33,7 @@ namespace ctl
 			m_wbemServices(std::move(service))
 		{
 			// get the object from the WMI service
-			::wil::com_ptr<IWbemClassObject> classObject;
+			wil::com_ptr<IWbemClassObject> classObject;
 			THROW_IF_FAILED(m_wbemServices->GetObject(
 				::wil::make_bstr(className).get(),
 				0,
@@ -46,7 +46,7 @@ namespace ctl
 				m_instanceObject.put()));
 		}
 
-		ctWmiInstance(ctWmiService service, ::wil::com_ptr<IWbemClassObject> classObject) noexcept :
+		ctWmiInstance(ctWmiService service, wil::com_ptr<IWbemClassObject> classObject) noexcept :
 			m_wbemServices(std::move(service)),
 			m_instanceObject(std::move(classObject))
 		{
@@ -63,14 +63,14 @@ namespace ctl
 			return !(*this == obj);
 		}
 
-		[[nodiscard]] ::wil::com_ptr<IWbemClassObject> get_instance() const noexcept
+		[[nodiscard]] wil::com_ptr<IWbemClassObject> get_instance() const noexcept
 		{
 			return m_instanceObject;
 		}
 
-		[[nodiscard]] ::wil::unique_bstr get_path() const
+		[[nodiscard]] wil::unique_bstr get_path() const
 		{
-			::wil::unique_variant objectPathVariant;
+			wil::unique_variant objectPathVariant;
 			get(L"__RELPATH", objectPathVariant.addressof());
 
 			if (IsVariantEmptyOrNull(objectPathVariant.addressof()))
@@ -83,7 +83,7 @@ namespace ctl
 				THROW_HR(E_INVALIDARG);
 			}
 
-			return ::wil::make_bstr(V_BSTR(&objectPathVariant));
+			return wil::make_bstr(V_BSTR(&objectPathVariant));
 		}
 
 		[[nodiscard]] ctWmiService get_service() const noexcept
@@ -92,9 +92,9 @@ namespace ctl
 		}
 
 		// Retrieves the class name this ctWmiInstance is representing if any
-		[[nodiscard]] ::wil::unique_bstr get_class_name() const
+		[[nodiscard]] wil::unique_bstr get_class_name() const
 		{
-			::wil::unique_variant classVariant;
+			wil::unique_variant classVariant;
 			get(L"__CLASS", classVariant.addressof());
 
 			if (IsVariantEmptyOrNull(classVariant.addressof()))
@@ -106,7 +106,7 @@ namespace ctl
 				THROW_HR(E_INVALIDARG);
 			}
 
-			return ::wil::make_bstr(V_BSTR(&classVariant));
+			return wil::make_bstr(V_BSTR(&classVariant));
 		}
 
 		// Returns a class object for the class represented by this instance
@@ -126,7 +126,7 @@ namespace ctl
 		}
 		HRESULT write_instance_no_throw(_In_opt_ const IWbemContext* context, const LONG wbemFlags = WBEM_FLAG_CREATE_OR_UPDATE) noexcept
 		{
-			::wil::com_ptr<IWbemCallResult> result;
+			wil::com_ptr<IWbemCallResult> result;
 			RETURN_IF_FAILED(m_wbemServices->PutInstance(
 				m_instanceObject.get(),
 				wbemFlags | WBEM_FLAG_RETURN_IMMEDIATELY,
@@ -151,7 +151,7 @@ namespace ctl
 		HRESULT delete_instance_no_throw() noexcept
 		{
 			// delete the instance based off the __REPATH property
-			::wil::com_ptr<IWbemCallResult> result;
+			wil::com_ptr<IWbemCallResult> result;
 			RETURN_IF_FAILED(m_wbemServices->DeleteInstance(
 				get_path().get(),
 				WBEM_FLAG_RETURN_IMMEDIATELY,
@@ -177,7 +177,7 @@ namespace ctl
 		ctWmiInstance execute_method(_In_ PCWSTR method, Arg1 arg1)
 		{
 			// establish the class object for the [in] params to the method
-			::wil::com_ptr<IWbemClassObject> inParamsDefinition;
+			wil::com_ptr<IWbemClassObject> inParamsDefinition;
 			THROW_IF_FAILED(m_instanceObject->GetMethod(
 				method,
 				0,
@@ -185,7 +185,7 @@ namespace ctl
 				nullptr));
 
 			// spawn an instance to store the params
-			::wil::com_ptr<IWbemClassObject> inParamsInstance;
+			wil::com_ptr<IWbemClassObject> inParamsInstance;
 			THROW_IF_FAILED(inParamsDefinition->SpawnInstance(0, inParamsInstance.addressof()));
 
 			// Instantiate a class object to iterate through each property
@@ -204,7 +204,7 @@ namespace ctl
 		ctWmiInstance execute_method(_In_ PCWSTR method, Arg1 arg1, Arg2 arg2)
 		{
 			// establish the class object for the [in] params to the method
-			::wil::com_ptr<IWbemClassObject> inParamsDefinition;
+			wil::com_ptr<IWbemClassObject> inParamsDefinition;
 			THROW_IF_FAILED(m_instanceObject->GetMethod(
 				method,
 				0,
@@ -212,7 +212,7 @@ namespace ctl
 				nullptr));
 
 			// spawn an instance to store the params
-			::wil::com_ptr<IWbemClassObject> inParamsInstance;
+			wil::com_ptr<IWbemClassObject> inParamsInstance;
 			THROW_IF_FAILED(inParamsDefinition->SpawnInstance(0, inParamsInstance.addressof()));
 
 			// Instantiate a class object to iterate through each property
@@ -233,7 +233,7 @@ namespace ctl
 		ctWmiInstance execute_method(_In_ PCWSTR method, Arg1 arg1, Arg2 arg2, Arg3 arg3)
 		{
 			// establish the class object for the [in] params to the method
-			::wil::com_ptr<IWbemClassObject> inParamsDefinition;
+			wil::com_ptr<IWbemClassObject> inParamsDefinition;
 			THROW_IF_FAILED(m_instanceObject->GetMethod(
 				method,
 				0,
@@ -241,7 +241,7 @@ namespace ctl
 				nullptr));
 
 			// spawn an instance to store the params
-			::wil::com_ptr<IWbemClassObject> inParamsInstance;
+			wil::com_ptr<IWbemClassObject> inParamsInstance;
 			THROW_IF_FAILED(inParamsDefinition->SpawnInstance(0, inParamsInstance.addressof()));
 
 			// Instantiate a class object to iterate through each property
@@ -264,7 +264,7 @@ namespace ctl
 		ctWmiInstance execute_method(_In_ PCWSTR method, Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
 		{
 			// establish the class object for the [in] params to the method
-			::wil::com_ptr<IWbemClassObject> inParamsDefinition;
+			wil::com_ptr<IWbemClassObject> inParamsDefinition;
 			THROW_IF_FAILED(m_instanceObject->GetMethod(
 				method,
 				0,
@@ -272,7 +272,7 @@ namespace ctl
 				nullptr));
 
 			// spawn an instance to store the params
-			::wil::com_ptr<IWbemClassObject> inParamsInstance;
+			wil::com_ptr<IWbemClassObject> inParamsInstance;
 			THROW_IF_FAILED(inParamsDefinition->SpawnInstance(0, inParamsInstance.addressof()));
 
 			// Instantiate a class object to iterate through each property
@@ -297,7 +297,7 @@ namespace ctl
 		ctWmiInstance execute_method(_In_ PCWSTR method, Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)
 		{
 			// establish the class object for the [in] params to the method
-			::wil::com_ptr<IWbemClassObject> inParamsDefinition;
+			wil::com_ptr<IWbemClassObject> inParamsDefinition;
 			THROW_IF_FAILED(m_instanceObject->GetMethod(
 				method,
 				0,
@@ -305,7 +305,7 @@ namespace ctl
 				nullptr));
 
 			// spawn an instance to store the params
-			::wil::com_ptr<IWbemClassObject> inParamsInstance;
+			wil::com_ptr<IWbemClassObject> inParamsInstance;
 			THROW_IF_FAILED(inParamsDefinition->SpawnInstance(0, inParamsInstance.addressof()));
 
 			// Instantiate a class object to iterate through each property
@@ -331,7 +331,7 @@ namespace ctl
 
 		bool is_null(_In_ PCWSTR property_name) const
 		{
-			::wil::unique_variant variant;
+			wil::unique_variant variant;
 			THROW_IF_FAILED(get_property_no_throw(property_name, variant.addressof()));
 			return V_VT(&variant) == VT_NULL;
 		}
@@ -377,7 +377,7 @@ namespace ctl
 		bool get(_In_ PCWSTR property_name, _Out_ T* value) const
 		{
 			*value = {};
-			::wil::unique_variant variant;
+			wil::unique_variant variant;
 			THROW_IF_FAILED(get_property_no_throw(property_name, variant.addressof()));
 			return ctWmiReadFromVariant(variant.addressof(), value);
 		}
@@ -454,7 +454,7 @@ namespace ctl
 		ctWmiInstance execute_method_impl(_In_ PCWSTR method, _In_opt_ IWbemClassObject* pParams)
 		{
 			// exec the method semi-synchronously from this instance based off the __REPATH property
-			::wil::com_ptr<IWbemCallResult> result;
+			wil::com_ptr<IWbemCallResult> result;
 			THROW_IF_FAILED(m_wbemServices->ExecMethod(
 				get_path().get(),
 				::wil::make_bstr(method).get(),
@@ -465,7 +465,7 @@ namespace ctl
 				result.addressof()));
 
 			// wait for the call to complete - and get the [out] param object
-			::wil::com_ptr<IWbemClassObject> outParamsInstance;
+			wil::com_ptr<IWbemClassObject> outParamsInstance;
 			THROW_IF_FAILED(result->GetResultObject(WBEM_INFINITE, outParamsInstance.addressof()));
 
 			// the call went through - return a ctWmiInstance from this retrieved instance
@@ -473,7 +473,7 @@ namespace ctl
 		}
 
 		ctWmiService m_wbemServices;
-		::wil::com_ptr<IWbemClassObject> m_instanceObject;
+		wil::com_ptr<IWbemClassObject> m_instanceObject;
 	};
 
 	class ctWmiEnumerateInstance
@@ -489,7 +489,7 @@ namespace ctl
 			{
 			}
 
-			iterator(ctWmiService service, ::wil::com_ptr<IEnumWbemClassObject> wbemEnumerator) :
+			iterator(ctWmiService service, wil::com_ptr<IEnumWbemClassObject> wbemEnumerator) :
 				m_index(0),
 				m_wbemServices(std::move(service)),
 				m_wbemEnumerator(std::move(wbemEnumerator))
@@ -590,7 +590,7 @@ namespace ctl
 				}
 
 				ULONG uReturn{};
-				::wil::com_ptr<IWbemClassObject> wbemTarget;
+				wil::com_ptr<IWbemClassObject> wbemTarget;
 				THROW_IF_FAILED(m_wbemEnumerator->Next(
 					WBEM_INFINITE,
 					1,
@@ -612,7 +612,7 @@ namespace ctl
 			static constexpr uint32_t c_endIteratorIndex = ULONG_MAX;
 			uint32_t m_index = c_endIteratorIndex;
 			ctWmiService m_wbemServices;
-			::wil::com_ptr<IEnumWbemClassObject> m_wbemEnumerator;
+			wil::com_ptr<IEnumWbemClassObject> m_wbemEnumerator;
 			std::shared_ptr<ctWmiInstance> m_wmiInstance;
 		};
 
@@ -622,7 +622,7 @@ namespace ctl
 			return instance.query(query);
 		}
 
-		static ctWmiEnumerateInstance Query(_In_ PCWSTR query, const ::wil::com_ptr<IWbemContext>& context, ctWmiService wbemServices = ctWmiService{ L"ROOT\\StandardCimv2" })
+		static ctWmiEnumerateInstance Query(_In_ PCWSTR query, const wil::com_ptr<IWbemContext>& context, ctWmiService wbemServices = ctWmiService{ L"ROOT\\StandardCimv2" })
 		{
 			ctWmiEnumerateInstance instance(std::move(wbemServices));
 			return instance.query(query, context);
@@ -646,7 +646,7 @@ namespace ctl
 			return *this;
 		}
 
-		const ctWmiEnumerateInstance& query(_In_ PCWSTR query, const ::wil::com_ptr<IWbemContext>& context)
+		const ctWmiEnumerateInstance& query(_In_ PCWSTR query, const wil::com_ptr<IWbemContext>& context)
 		{
 			THROW_IF_FAILED(m_wbemServices->ExecQuery(
 				::wil::make_bstr(L"WQL").get(),
@@ -691,6 +691,6 @@ namespace ctl
 		ctWmiService m_wbemServices;
 		// Marking wbemEnumerator mutable to allow for const correctness of begin() and end()
 		// specifically, invoking Reset() is an implementation detail and should not affect external contracts
-		mutable ::wil::com_ptr<IEnumWbemClassObject> m_wbemEnumerator;
+		mutable wil::com_ptr<IEnumWbemClassObject> m_wbemEnumerator;
 	};
 } // namespace ctl

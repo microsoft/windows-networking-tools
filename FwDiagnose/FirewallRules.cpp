@@ -871,11 +871,21 @@ namespace details
 		// because NormalizedFirewallRule cannot be copied (it's copy constructor is deleted), we need to store iterators to the relevant rules instead of the rules themselves
 		size_t disabled_rules = 0;
 		size_t private_rules_with_public_rule_copies = 0;
+		size_t total_inbound_rules = 0;
+
+		// Count total inbound rules
+		for (const auto& rule : normalized_rules)
+		{
+			if (rule.fw_rule->Direction == FW_DIR_IN)
+			{
+				++total_inbound_rules;
+			}
+		}
 
 		std::vector<std::vector<NormalizedFirewallRule>::const_iterator> private_only_inbound_rules;
-		for (auto it = normalized_rules.cbegin(); it != normalized_rules.cend(); ++it)
+		for (auto private_it = normalized_rules.cbegin(); private_it != normalized_rules.cend(); ++private_it)
 		{
-			if (!IsPrivateOnlyInboundRule(*it))
+			if (!IsPrivateOnlyInboundRule(*private_it))
 			{
 				continue;
 			}
@@ -896,10 +906,10 @@ namespace details
 				}
 
 				constexpr auto comparison_policy =
-					ComparisonPolicy::comparison_policy_skip_comparing_if_enabled |
-					ComparisonPolicy::comparison_policy_skip_comparing_profiles |
-					ComparisonPolicy::comparison_policy_skip_comparing_local_subnet;
-				if (FwRuleDetailsComparison(*it->fw_rule, *public_it->fw_rule, comparison_policy) == 0)
+					comparison_policy_skip_comparing_if_enabled |
+					comparison_policy_skip_comparing_profiles |
+					comparison_policy_skip_comparing_local_subnet;
+				if (FwRuleDetailsComparison(*private_it->fw_rule, *public_it->fw_rule, comparison_policy) == 0)
 				{
 					found_public_rule_copy_of_private_rule = true;
 					break;
@@ -911,15 +921,16 @@ namespace details
 				continue;
 			}
 
-			private_only_inbound_rules.push_back(it);
-			if (!it->is_rule_enabled)
+			private_only_inbound_rules.push_back(private_it);
+			if (!private_it->is_rule_enabled)
 			{
 				++disabled_rules;
 			}
 		}
 
 		size_t counter = private_only_inbound_rules.size();
-		std::printf("\n  * Firewall rules allowing Inbound connections exclusively on Private profiles : %zu\n", counter);
+		std::printf("\n  * Firewall rules allowing Inbound connections exclusively on Private profiles\n"
+			"   - %zu / %zu total inbound rules\n", counter, total_inbound_rules);
 		if (counter == 0)
 		{
 			return;
@@ -964,10 +975,13 @@ namespace details
 			}
 
 			++counter;
-			PrintRuleContents(rule_details, counter);
-			if (!rule_details.is_rule_enabled)
+			if (VerboseOutputEnabled())
 			{
-				std::printf("           * Disabled\n");
+				PrintRuleContents(rule_details, counter);
+				if (!rule_details.is_rule_enabled)
+				{
+					std::printf("           * Disabled\n");
+				}
 			}
 		}
 		if (counter == 0)

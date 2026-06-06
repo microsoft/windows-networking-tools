@@ -160,7 +160,7 @@ namespace ctl
 
 		HRESULT execute_method_nothrow() noexcept
 		{
-			::wil::com_ptr<IWbemCallResult> result;
+			wil::com_ptr<IWbemCallResult> result;
 			RETURN_IF_FAILED(m_wbemService->ExecMethod(
 				m_className.get(),
 				m_methodName.get(),
