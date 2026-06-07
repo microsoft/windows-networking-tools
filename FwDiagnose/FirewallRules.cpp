@@ -629,9 +629,9 @@ namespace details
 		return true;
 	}
 
-	static void PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter, bool include_empty_fields = false)
+	static std::wstring PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter, bool include_empty_fields = false)
 	{
-		std::printf("\n");
+		std::wstring return_string;
 		std::printf("       %zu : Rule Name: %ls\n", counter, rule_details.rule_name.value.empty() ? L"<empty>" : rule_details.rule_name.value.c_str());
 		if (!rule_details.rule_description.empty())
 		{
@@ -751,6 +751,9 @@ namespace details
 		}
 
 		uint32_t counter = 0;
+		uint32_t local_app_counter = 0;
+		uint32_t packaged_app_counter = 0;
+		std::vector<std::wstring> application_details;
 		std::printf("\n  * Firewall rules allowing Inbound connections on the Public profile targeting specific applications");
 		for (const auto& rule_details : normalized_rules)
 		{
@@ -777,15 +780,57 @@ namespace details
 				}
 			}
 
+			if (rule_details.fw_rule->wszLocalApplication)
+			{
+				++local_app_counter;
+				application_details.emplace_back(rule_details.fw_rule->wszLocalApplication);
+			}
+			else
+			{
+				WI_ASSERT(rule_details.fw_rule->wszPackageFamilyName || rule_details.fw_rule->wszPackageId);
+				++packaged_app_counter;
+				if (rule_details.fw_rule->wszPackageFamilyName)
+				{
+					application_details.emplace_back(rule_details.fw_rule->wszPackageFamilyName);
+				}
+				else if (rule_details.fw_rule->wszPackageId)
+				{
+					application_details.emplace_back(rule_details.fw_rule->wszPackageId);
+				}
+				if (!rule_details.is_rule_enabled)
+				{
+					application_details.rbegin()->append(L" (disabled)");
+				}
+			}
 			++counter;
-			PrintRuleContents(rule_details, counter);
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+				PrintRuleContents(rule_details, counter);
+				if (!rule_details.is_rule_enabled)
+				{
+					std::printf("           * Disabled\n");
+				}
+			}
 		}
 		if (counter == 0)
 		{
-			std::printf("\n    * No rules targeting specific applications were found\n");
+			std::printf("\n    - No rules targeting specific applications were found\n");
+		}
+		else
+		{
+			std::printf("\n");
+			std::printf("    - %d rules targeting specific applications were found\n", counter);
+			std::printf("      - %d rules targeting local executable applications\n", local_app_counter);
+			std::printf("      - %d rules targeting packaged applications\n", packaged_app_counter);
+			for (const auto& app_detail : application_details)
+			{
+				std::printf("        - %ls\n", app_detail.c_str());
+			}
 		}
 
 		counter = 0;
+		application_details.clear();
 		std::printf("\n  * Firewall rules allowing Inbound connections on the Public profile targeting an NT Service");
 		for (const auto& rule_details : normalized_rules)
 		{
@@ -799,14 +844,36 @@ namespace details
 			}
 
 			++counter;
-			PrintRuleContents(rule_details, counter);
+			application_details.emplace_back(rule_details.fw_rule->wszLocalService);
+			if (!rule_details.is_rule_enabled)
+			{
+				application_details.rbegin()->append(L" (disabled)");
+			}
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+				PrintRuleContents(rule_details, counter);
+				if (!rule_details.is_rule_enabled)
+				{
+					std::printf("           * Disabled\n");
+				}
+			}
 		}
 		if (counter == 0)
 		{
-			std::printf("\n    * No rules targeting an NT Service were found\n");
+			std::printf("\n    - No rules targeting an NT Service were found\n");
+		}
+		else
+		{
+			std::printf("\n    - %d rules targeting an NT Service were found\n", counter);
+			for (const auto& app_detail : application_details)
+			{
+				std::printf("        - %ls\n", app_detail.c_str());
+			}
 		}
 
 		counter = 0;
+		application_details.clear();
 		std::printf("\n  * Firewall rules allowing Inbound connections on the Public profile not targeting an application or service");
 		for (const auto& rule_details : normalized_rules)
 		{
@@ -834,11 +901,31 @@ namespace details
 			}
 
 			++counter;
-			PrintRuleContents(rule_details, counter);
+			if (VerboseOutputEnabled())
+			{
+				std::printf("\n");
+				PrintRuleContents(rule_details, counter);
+				if (!rule_details.is_rule_enabled)
+				{
+					std::printf("           * Disabled\n");
+				}
+			}
+			else
+			{
+				application_details.emplace_back(PrintRuleContents(rule_details, counter));
+			}
 		}
 		if (counter == 0)
 		{
-			std::printf("\n    * No remaining rules not targeting an application or service were found\n");
+			std::printf("\n    - No remaining rules not targeting an application or service were found\n");
+		}
+		else
+		{
+			std::printf("\n    - %d rules not targeting an application or service were found\n", counter);
+			for (const auto& app_detail : application_details)
+			{
+				std::printf("        - %ls\n", app_detail.c_str());
+			}
 		}
 
 		std::printf("\n");
@@ -948,6 +1035,9 @@ namespace details
 		std::printf("     (and thus are not counted as private-only rules)\n");
 
 		counter = 0;
+		uint32_t local_app_counter = 0;
+		uint32_t packaged_app_counter = 0;
+		std::vector<std::wstring> application_details;
 		std::printf("\n  * Inbound Private-only rules targeting specific applications");
 		for (const auto& rule_iterator : private_only_inbound_rules)
 		{
@@ -974,9 +1064,32 @@ namespace details
 				}
 			}
 
+			if (rule_details.fw_rule->wszLocalApplication)
+			{
+				++local_app_counter;
+				application_details.emplace_back(rule_details.fw_rule->wszLocalApplication);
+			}
+			else if (rule_details.fw_rule->wszPackageFamilyName || rule_details.fw_rule->wszPackageId)
+			{
+				++packaged_app_counter;
+				if (rule_details.fw_rule->wszPackageFamilyName)
+				{
+					application_details.emplace_back(rule_details.fw_rule->wszPackageFamilyName);
+				}
+				else
+				{
+					application_details.emplace_back(rule_details.fw_rule->wszPackageId);
+				}
+				if (!rule_details.is_rule_enabled)
+				{
+					application_details.rbegin()->append(L" (disabled)");
+				}
+			}
+
 			++counter;
 			if (VerboseOutputEnabled())
 			{
+				std::printf("\n");
 				PrintRuleContents(rule_details, counter);
 				if (!rule_details.is_rule_enabled)
 				{
@@ -986,10 +1099,23 @@ namespace details
 		}
 		if (counter == 0)
 		{
-			std::printf("\n    * No rules targeting specific applications were found\n");
+			std::printf("\n    - No rules targeting specific applications were found\n");
+		}
+		else
+		{
+			std::printf(
+				"\n    - %zu private rule%ws that %ws targeting specific applications\n",
+				counter,
+				counter == 1 ? L"" : L"s",
+				counter == 1 ? L"is" : L"are");
+			for (const auto& app_detail : application_details)
+			{
+				std::printf("        - %ls\n", app_detail.c_str());
+			}
 		}
 
 		counter = 0;
+		application_details.clear();
 		std::printf("\n  * Inbound Private-only rules targeting an NT Service");
 		for (const auto& rule_iterator : private_only_inbound_rules)
 		{
@@ -1005,18 +1131,39 @@ namespace details
 			}
 
 			++counter;
-			PrintRuleContents(rule_details, counter);
+			application_details.emplace_back(rule_details.fw_rule->wszLocalService);
 			if (!rule_details.is_rule_enabled)
 			{
-				std::printf("           * Disabled\n");
+				application_details.rbegin()->append(L" (disabled)");
+			}
+			if (VerboseOutputEnabled())
+			{
+				PrintRuleContents(rule_details, counter);
+				if (!rule_details.is_rule_enabled)
+				{
+					std::printf("           * Disabled\n");
+				}
 			}
 		}
 		if (counter == 0)
 		{
-			std::printf("\n    * No rules targeting an NT Service were found\n");
+			std::printf("\n    - No rules targeting an NT Service were found\n");
+		}
+		else
+		{
+			std::printf(
+				"\n    - %zu private rule%ws that %ws targeting an NT Service\n",
+				counter,
+				counter == 1 ? L"" : L"s",
+				counter == 1 ? L"is" : L"are");
+			for (const auto& app_detail : application_details)
+			{
+				std::printf("        - %ls\n", app_detail.c_str());
+			}
 		}
 
 		counter = 0;
+		application_details.clear();
 		std::printf("\n  * Inbound Private-only rules not targeting an application or service");
 		for (const auto& rule_iterator : private_only_inbound_rules)
 		{
@@ -1045,15 +1192,30 @@ namespace details
 			}
 
 			++counter;
-			PrintRuleContents(rule_details, counter);
-			if (!rule_details.is_rule_enabled)
+			if (VerboseOutputEnabled())
 			{
-				std::printf("           * Disabled\n");
+				PrintRuleContents(rule_details, counter);
+				if (!rule_details.is_rule_enabled)
+				{
+					std::printf("           * Disabled\n");
+				}
+			}
+			else
+			{
+				application_details.emplace_back(PrintRuleContents(rule_details, counter));
 			}
 		}
 		if (counter == 0)
 		{
-			std::printf("\n    * No remaining rules not targeting an application or service were found\n");
+			std::printf("\n    - No remaining rules not targeting an application or service were found\n");
+		}
+		else
+		{
+			std::printf(
+				"\n    - %zu private rule%ws that %ws not targeting an application or service\n",
+				counter,
+				counter == 1 ? L"" : L"s",
+				counter == 1 ? L"is" : L"are");
 		}
 
 		std::printf("\n");
