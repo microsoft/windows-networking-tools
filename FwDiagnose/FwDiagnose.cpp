@@ -141,8 +141,8 @@ static void PrintUsage() noexcept
 		"                        : Prompts to delete rules with application exes referencing non-existing files\n"
 		"                        : Prompts to delete rules referencing unknown SIDs\n"
 		"                        : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
-		"  -analyze-public-rules       : Analyzes rules that allow inbound connections on the Public profile\n"
-		"  -analyze-private-only-rules : Analyzes inbound rules that exist only for the Private profile and not the Public profile\n"
+		"  -analyze-public-rules  : Analyzes rules that allow inbound connections on the Public profile\n"
+		"  -analyze-private-rules : Analyzes inbound rules that exist only for the Private profile and not the Public profile\n"
 		"\n"
 		"  -disable-shields-up : Disables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
 		"                        By default, disables Shields Up for all profiles\n"
@@ -249,9 +249,9 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		g_analyzePublicRules = true;
 	}
 
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-only-rules") == 0; }) != args.end())
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-rules") == 0; }) != args.end())
 	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-only-rules") == 0; });
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-rules") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_analyzePrivateOnlyRules = true;
 	}
