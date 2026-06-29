@@ -40,8 +40,9 @@
 /FirewallRuleAnalysis/Debug
 /FirewallRuleAnalysis/Release
 /FirewallRuleAnalysis/x64
-/FwDiagnose/x64/Debug/Generated Files
+
 /FwDiagnose/.vs
+/FwDiagnose/FwDiagnose
 /FwDiagnose/packages
 /FwDiagnose/ARM64
 /FwDiagnose/Debug
@@ -62,4 +63,3 @@
 /MigrateIpProperties/Debug
 /MigrateIpProperties/Release
 /MigrateIpProperties/x64
-/FwDiagnose/FwDiagnose/x64/Debug
