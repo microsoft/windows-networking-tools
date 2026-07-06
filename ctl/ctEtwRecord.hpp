@@ -131,7 +131,7 @@ class ctEtwRecord
      * @brief Printing the entire ETW record
      * @return String containing the formatted record
      */
-    std::wstring
+    [[nodiscard]] std::wstring
     writeRecord() const
     {
         std::wstring wsRecord;
@@ -153,7 +153,7 @@ class ctEtwRecord
      *                                   along with the formatted message.
      * @return String containing the formatted message
      */
-    std::wstring
+    [[nodiscard]] std::wstring
     writeFormattedMessage(bool include_message_properties = false) const
     {
         std::wstring wsRecord;
@@ -165,28 +165,28 @@ class ctEtwRecord
      * @brief Get message properties as a map
      * @return Map of property names to values
      */
-    std::map<const std::wstring, std::wstring>
+    [[nodiscard]] std::map<const std::wstring, std::wstring>
     writeMessageProperties() const;
 
     /**
      * @name EVENT_HEADER field accessors (8)
      * @{
      */
-    ULONG
+    [[nodiscard]] ULONG
     getThreadId() const noexcept;
-    ULONG
+    [[nodiscard]] ULONG
     getProcessId() const noexcept;
-    LARGE_INTEGER
+    [[nodiscard]] LARGE_INTEGER
     getTimeStamp() const noexcept;
-    GUID
+    [[nodiscard]] GUID
     getProviderId() const noexcept;
-    GUID
+    [[nodiscard]] GUID
     getActivityId() const noexcept;
-    bool
+    [[nodiscard]] bool
     queryKernelTime(_Out_ ULONG*) const noexcept;
-    bool
+    [[nodiscard]] bool
     queryUserTime(_Out_ ULONG*) const noexcept;
-    ULONG64
+    [[nodiscard]] ULONG64
     getProcessorTime() const noexcept;
     /** @} */
 
@@ -194,19 +194,19 @@ class ctEtwRecord
      * @name EVENT_DESCRIPTOR field accessors (7)
      * @{
      */
-    USHORT
+    [[nodiscard]] USHORT
     getEventId() const noexcept;
-    UCHAR
+    [[nodiscard]] UCHAR
     getVersion() const noexcept;
-    UCHAR
+    [[nodiscard]] UCHAR
     getChannel() const noexcept;
-    UCHAR
+    [[nodiscard]] UCHAR
     getLevel() const noexcept;
-    UCHAR
+    [[nodiscard]] UCHAR
     getOpcode() const noexcept;
-    USHORT
+    [[nodiscard]] USHORT
     getTask() const noexcept;
-    ULONGLONG
+    [[nodiscard]] ULONGLONG
     getKeyword() const noexcept;
     /** @} */
 
@@ -214,11 +214,11 @@ class ctEtwRecord
      * @name ETW_BUFFER_CONTEXT field accessors (3)
      * @{
      */
-    UCHAR
+    [[nodiscard]] UCHAR
     getProcessorNumber() const noexcept;
-    UCHAR
+    [[nodiscard]] UCHAR
     getAlignment() const noexcept;
-    USHORT
+    [[nodiscard]] USHORT
     getLoggerId() const noexcept;
     /** @} */
 
@@ -284,7 +284,7 @@ class ctEtwRecord
 
   private:
     /** @brief Private method to build a formatted string from the specified property offset */
-    std::wstring
+    [[nodiscard]] std::wstring
     BuildEventPropertyString(ULONG property_index) const;
 
     /** @brief eventHeader and etwBufferContext are shallow-copies
@@ -381,7 +381,7 @@ inline ctEtwRecord::ctEtwRecord(_In_ const EVENT_RECORD* event_record)
             for (ULONG property_count = 0; property_count < m_traceEventInfoPtr->TopLevelPropertyCount;
                  ++property_count) {
                 const auto& event_property_info = m_traceEventInfoPtr->EventPropertyInfoArray[property_count];
-                if (event_property_info.Flags & PropertyStruct) {
+                if (event_property_info.Flags & PROPERTY_FLAGS::PropertyStruct) {
                     // if Flags & PropertyStruct
                     // currently not supporting deep-copying event data of structs
                     details::FailFastOnFalseIfBeingDebugged(false);
@@ -1928,8 +1928,8 @@ ctEtwRecord::BuildEventPropertyString(ULONG property_index) const
 
         DWORD cchName = 0;
         DWORD cchDomain = 0;
-        SID_NAME_USE sidNameUse{};
-        WCHAR temp[1];
+        SID_NAME_USE sidNameUse{SidTypeUser};
+        WCHAR temp[1]{};
         DWORD gle = 0;
         if (!::LookupAccountSid(nullptr, pSid, temp, &cchName, temp, &cchDomain, &sidNameUse)) {
             gle = GetLastError();
@@ -2095,7 +2095,7 @@ details::PrintHexBinary(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffe
         }
     } else {
         // Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_BINARY value
-        FailFastOnFalseIfBeingDebugged(false);
+        details::FailFastOnFalseIfBeingDebugged(false);
     }
 
     return wsData;
@@ -2134,18 +2134,18 @@ details::PrintCharString(_TDH_OUT_TYPE, const BYTE* propertyBuffer, ULONG proper
 
     // convert to wide
     auto required_bytes = MultiByteToWideChar(CP_UTF8, 0, sData.c_str(), -1, nullptr, 0);
-    FailFastOnFalseIfBeingDebugged(required_bytes == 0);
+    details::FailFastOnFalseIfBeingDebugged(required_bytes == 0);
 
     std::vector conversion(required_bytes, L'\0');
     required_bytes = MultiByteToWideChar(CP_UTF8, 0, sData.c_str(), -1, conversion.data(), required_bytes);
-    FailFastOnFalseIfBeingDebugged(required_bytes == 0);
+    details::FailFastOnFalseIfBeingDebugged(required_bytes == 0);
     return conversion.data();
 }
 
 inline std::wstring
 details::Print64BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
-    FailFastOnFalseIfBeingDebugged(propertyByteSize != 8);
+    details::FailFastOnFalseIfBeingDebugged(propertyByteSize != 8);
     constexpr unsigned cch_StackBuffer = 100;
     wchar_t stackBuffer[cch_StackBuffer]{};
 
@@ -2180,7 +2180,7 @@ details::Print64BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBu
 inline std::wstring
 details::Print32BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
-    FailFastOnFalseIfBeingDebugged(propertyByteSize != 4);
+    details::FailFastOnFalseIfBeingDebugged(propertyByteSize != 4);
     constexpr unsigned cch_StackBuffer = 100;
     wchar_t stackBuffer[cch_StackBuffer]{};
 
@@ -2228,7 +2228,7 @@ details::Print32BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBu
 inline std::wstring
 details::Print16BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
-    FailFastOnFalseIfBeingDebugged(propertyByteSize != 2);
+    details::FailFastOnFalseIfBeingDebugged(propertyByteSize != 2);
     constexpr unsigned cch_StackBuffer = 100;
     wchar_t stackBuffer[cch_StackBuffer]{};
 
@@ -2268,13 +2268,13 @@ details::Print16BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBu
 inline std::wstring
 details::Print8BitInteger(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffer, ULONG propertyByteSize)
 {
-    FailFastOnFalseIfBeingDebugged(propertyByteSize != 1);
+    details::FailFastOnFalseIfBeingDebugged(propertyByteSize != 1);
     constexpr unsigned cch_StackBuffer = 100;
     wchar_t stackBuffer[cch_StackBuffer]{};
 
     switch (propertyOutType) {
     case TDH_OUTTYPE_BYTE: {
-        const CHAR prop = *propertyBuffer;
+        const CHAR prop = *reinterpret_cast<const CHAR*>(propertyBuffer);
         _itow_s(prop, stackBuffer, 10);
         return stackBuffer;
     }
