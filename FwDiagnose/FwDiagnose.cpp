@@ -69,7 +69,7 @@ std::vector<NET_FW_PROFILE_TYPE2> GetShieldsUpProfiles() noexcept
 	std::vector<NET_FW_PROFILE_TYPE2> enabledProfiles{};
 	if (g_shieldsUpPublicProfile)
 	{
-			enabledProfiles.push_back(NET_FW_PROFILE2_PUBLIC);
+		enabledProfiles.push_back(NET_FW_PROFILE2_PUBLIC);
 	}
 	if (g_shieldsUpPrivateProfile)
 	{
@@ -128,44 +128,47 @@ static void PrintUsage() noexcept
 		"FwDiagnose.exe [options] [-verbose]\n"
 		"\n"
 		"  This utility provides options to analyze Windows Firewall rules and Windows Filter Platform filters.\n"
-		"  It also has utility function to listen for and output NetEvents from WFP\n"
-		"  as well as enumerating and writing out all App-Packages for troubleshooting.\n"
+		"  It also has utility functions for:\n"
+		"     - analyzing Firewall rules allowing Inbound traffic across Firewall profiles\n"
+		"     - toggling the Shield's Up Windows Firewall setting (blocking all inbound connections)\n"
+		"     - enumerating and analyzing Firewall rules for App-Packages\n"
+		"     - listening for and writing NetEvents from WFP\n"
+		"     - temporarily removing filters for 3rd party WFP callout drivers\n"
 		"\n"
-		"  Note that only one option can be specified with the optional -verbose flag.\n"
+		"  -? : Show this help message.\n"
 		"\n"
+		"  -analyze-rules : Analyzes firewall rules for potential issues\n"
+		"  -clean-rules   : Prompts to delete duplicate rules\n"
+		"                 : Prompts to delete rules with application exes referencing non-existing files\n"
+		"                 : Prompts to delete rules referencing unknown SIDs\n"
+		"                 : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"\n"
-		"  -?               : Show this help message.\n"
-		"\n"
-		"  -analyze-rules        : Analyzes firewall rules for potential issues\n"
-		"  -clean-rules          : Prompts to delete duplicate rules\n"
-		"                        : Prompts to delete rules with application exes referencing non-existing files\n"
-		"                        : Prompts to delete rules referencing unknown SIDs\n"
-		"                        : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"  -analyze-public-rules  : Analyzes rules that allow inbound connections on the Public profile\n"
 		"  -analyze-private-rules : Analyzes inbound rules that exist only for the Private profile and not the Public profile\n"
 		"\n"
-		"  -disable-shields-up : Disables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
-		"                        By default, disables Shields Up for all profiles\n"
-		"                        Optionally, specify the profile name - e.g. -disable-shields-up:Public\n"
 		"  -enable-shields-up  : Enables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
 		"                        By default, enables Shields Up for all profiles\n"
 		"                        Optionally, specify the profile name - e.g. -enable-shields-up:Public\n"
+		"  -disable-shields-up : Disables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
+		"                        By default, disables Shields Up for all profiles\n"
+		"                        Optionally, specify the profile name - e.g. -disable-shields-up:Public\n"
 		"\n"
-		"  -analyze-app-package-rules : Analyzes Firewall rules referencing app-packages\n"
 		"  -list-app-packages         : Output details of all app-container packages\n"
+		"  -analyze-app-package-rules : Analyzes Firewall rules referencing app-packages\n"
 		"\n"
-		"  -analyze-wfp     : Output details of WFP objects (callouts, sublayers, and filters)\n"
-		"                   : This requires Administrator privileges\n"
-		"  -wfp-events      : Listen for and print all NetEvents from WFP\n"
-		"  -remove-callouts : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
-		"                     Will restore any removed filters before this program exits\n"
-		"      -driver <driver_name>  : Specify the driver name for the callout removal\n"
-		"                             : Optional - by default will prompt for all drivers to be temporarily removed\n"
-		"                             : Can only be specified after -remove-callouts\n"
-		"  -signal-restore-callouts   : automatically unblocks another instance of FwDiagnose -remove-callouts\n"
-		"                               that is waiting to be signaled to restore the removed callout\n"
+		"  -analyze-wfp : Output details of WFP objects (callouts, sublayers, and filters)\n"
+		"               : This requires Administrator privileges\n"
+		"  -wfp-events  : Listen for and print all NetEvents from WFP\n"
 		"\n"
-		"  -verbose         : Output details of rules and/or WFP objects\n");
+		"  -remove-callouts      : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
+		"                        : By default will prompt for all drivers to be temporarily removed (unless -driver is specified)\n"
+		"                        : Will restore any removed filters before this program exits\n"
+		"  -driver <driver_name> : Specify the driver name for the callout removal\n"
+		"                        : Can only be specified after -remove-callouts\n"
+		"  -signal-restore-callouts : automatically unblocks another instance of FwDiagnose -remove-callouts\n"
+		"                             that is waiting to be signaled to restore the removed callout\n"
+		"\n"
+		"  -verbose : Output additional verbose details of rules and WFP objects\n");
 }
 
 int __cdecl wmain(int argc, wchar_t* argv[]) try
@@ -487,83 +490,3 @@ catch (const std::exception& ex)
 	std::printf("\n*** An error occurred: %hs\n", ex.what());
 	return ERROR_INTERNAL_ERROR;
 }
-
-
-
-/*
- * Code for enumerating existing NetEvents in a time range
-
-
-FWPM_NET_EVENT_ENUM_TEMPLATE0 enum_template{};
-enum_template.numFilterConditions = 0;
-enum_template.filterCondition = nullptr;
-SYSTEMTIME system_time{};
-GetSystemTime(&system_time);
-SystemTimeToFileTime(&system_time, &enum_template.endTime);
-system_time.wMinute -= 10; // look back 10 minutes
-SystemTimeToFileTime(&system_time, &enum_template.startTime);
-
-HANDLE enumHandle{};
-auto create_enum_error = FwpmNetEventCreateEnumHandle0(
-	GetFwpmEngineHandle(),
-	&enum_template,
-	&enumHandle);
-THROW_IF_WIN32_ERROR_MSG(create_enum_error, "FwpmNetEventCreateEnumHandle0");
-const auto close_enum_handle_on_exit = wil::scope_exit(
-	[&] {
-		if (enumHandle)
-		{
-			FwpmNetEventDestroyEnumHandle0(GetFwpmEngineHandle(), enumHandle);
-		}
-	});
-
-for (;;)
-{
-	FWPM_NET_EVENT5** net_event_array{};
-	UINT32 entries_returned{};
-	create_enum_error = FwpmNetEventEnum5(
-		GetFwpmEngineHandle(),
-		enumHandle,
-		10,
-		&net_event_array,
-		&entries_returned);
-	if (create_enum_error != ERROR_SUCCESS)
-	{
-		std::printf("  * No more NetEvents to enumerate (%lu)\n", create_enum_error);
-		break;
-	}
-	const auto free_memory_on_exit = wil::scope_exit(
-		[&]
-		{
-			if (net_event_array)
-			{
-				FwpmFreeMemory0(reinterpret_cast<void**>(net_event_array));
-			}
-		});
-	for (UINT32 i = 0; i < entries_returned; ++i)
-	{
-		const auto* current_event = net_event_array[i];
-		std::printf(
-			"- NetEvent %u\n"
-			"%ls\n"
-			"%ls\n"
-			"%ls\n",
-			i + 1,
-			PrintNetEventType(current_event).c_str(),
-			PrintNetEventHeader(current_event).c_str(),
-			PrintNetEventDetailedStruct(current_event).c_str());
-		if (current_event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP)
-		{
-			std::printf("   * Classify Drop Event\n");
-			const auto& found_filter = FindFilterByFilterId(current_event->classifyDrop->filterId);
-			std::printf("     * Found matching filter: %llu\n", found_filter.filterId);
-			std::printf("     * Filter name: %ls\n", found_filter.name.value.c_str());
-			std::printf("     * Filter description: %ls\n", found_filter.description.c_str());
-
-			const auto& found_sublayer = FindSublayer(found_filter.subLayerKey);
-			std::printf("     * Filter layer: %hs\n", LayerToString(found_filter.layerKey).c_str());
-			std::printf("     * Filter sublayer: %ls\n", SublayerToString(found_sublayer).c_str());
-		}
-	}
-}
-*/
