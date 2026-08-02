@@ -7,6 +7,8 @@
 
 #include "NormalizedFirewallRule.h"
 
+#include <algorithm>
+
 namespace details
 {
 	static WORD MajorVersionFromSchemaVersion(WORD word) noexcept
@@ -451,6 +453,7 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 
 	// we don't have any other protocol-specific firewall rule properties
 	default:
+		AppendValue(0);
 		break;
 	}
 
@@ -471,7 +474,7 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 	AppendValue(fwRule->LocalInterfaceIds);
 	AppendValue(fwRule->dwLocalInterfaceTypes);
 	AppendValue(fwRule->wszLocalApplication);
-	CheckIfFileExists();
+	CheckIfLocalApplicationExists();
 	AppendValue(fwRule->wszLocalService);
 
 	AppendValue(fwRule->Action);
@@ -878,26 +881,43 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 	return result;
 }
 
-void NormalizedFirewallRule::CheckIfFileExists()
+bool NormalizedFirewallRule::IsLocalApplicationSystem() const
 {
-	if (!fw_rule->wszLocalApplication)
+	if (fw_rule->wszLocalApplication)
+	{
+		return NormalizedString::StringCompare(L"system", fw_rule->wszLocalApplication) == 0;
+	}
+	return false;
+}
+
+bool NormalizedFirewallRule::IsLocalApplicationAnAppxRule() const
+{
+	if (fw_rule->wszLocalApplication)
+	{
+		return details::IsRuleAnAppxRule(fw_rule->wszLocalApplication);
+	}
+	return false;
+}
+
+void NormalizedFirewallRule::CheckIfLocalApplicationExists()
+{
+	if (!fw_rule->wszLocalApplication || *fw_rule->wszLocalApplication == L'\0')
 	{
 		return;
 	}
 
-	const std::wstring original_filename{ fw_rule->wszLocalApplication };
-	if (details::IsRuleAnAppxRule(fw_rule->wszLocalApplication))
+	if (IsLocalApplicationSystem())
+	{
+		// this refers to a kernel component
+		return;
+	}
+	if (IsLocalApplicationAnAppxRule())
 	{
 		// appx rules must be checked using appx APIs to check for that package
 		return;
 	}
 
-	if (CompareStringOrdinal(fw_rule->wszLocalApplication, -1, L"SYSTEM", -1, TRUE) == CSTR_EQUAL)
-	{
-		// this refers to a kernel component
-		return;
-	}
-
+	const std::wstring original_filename{ fw_rule->wszLocalApplication };
 	const auto expanded_string = details::ExpandString(original_filename);
 	if (expanded_string.empty())
 	{
@@ -921,11 +941,11 @@ void NormalizedFirewallRule::CheckIfFileExists()
 		{
 			std::printf("Failed to FindFirstFileExW(%ls) (0x%lx)\n", expanded_string.c_str(), gle);
 		}
-		target_application_exists = false;
+		local_application_exists = false;
 	}
 	else
 	{
-		target_application_exists = true;
+		local_application_exists = true;
 		FindClose(found_file);
 	}
 }
@@ -949,7 +969,7 @@ void NormalizedFirewallRule::ProcessLocalUserSid()
 
 		DWORD localUserOwnerNameSize = 0;
 		DWORD cchReferencedDomainName = 0;
-		SID_NAME_USE sid_name_use{};
+		SID_NAME_USE sid_name_use{ SidTypeUnknown };
 		if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
 		{
 			if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
@@ -1012,6 +1032,7 @@ void NormalizedFirewallRule::AppendValue(const GUID& guid)
 	AppendValue(*data4_as_uint64);
 }
 
+// sort the port range so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 {
 	const auto* ports = list.pPorts;
@@ -1026,7 +1047,16 @@ void NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 	}
 	else
 	{
-		for (const auto& port : wil::make_range(ports, ports + ports_count))
+		AppendValue(ports_count);
+		std::vector sorted_ports(ports, ports + ports_count);
+		std::ranges::sort(sorted_ports, [](const FW_PORT_RANGE& a, const FW_PORT_RANGE& b) {
+			if (a.wBegin != b.wBegin)
+			{
+				return a.wBegin < b.wBegin;
+			}
+			return a.wEnd < b.wEnd;
+			});
+		for (const auto& port : sorted_ports)
 		{
 			AppendValue(port.wBegin);
 			AppendValue(port.wEnd);
@@ -1034,6 +1064,7 @@ void NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 	}
 }
 
+// sort the ICMP range list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 {
 	const auto* icmp_list = list.pEntries;
@@ -1048,7 +1079,16 @@ void NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 	}
 	else
 	{
-		for (const auto& icmp : wil::make_range(icmp_list, icmp_list + icmp_count))
+		AppendValue(icmp_count);
+		std::vector sorted_icmp(icmp_list, icmp_list + icmp_count);
+		std::ranges::sort(sorted_icmp, [](const FW_ICMP_TYPE_CODE& a, const FW_ICMP_TYPE_CODE& b) {
+			if (a.bType != b.bType)
+			{
+				return a.bType < b.bType;
+			}
+			return a.wCode < b.wCode;
+			});
+		for (const auto& icmp : sorted_icmp)
 		{
 			AppendValue(icmp.bType);
 			AppendValue(icmp.wCode);
@@ -1056,6 +1096,7 @@ void NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 	}
 }
 
+// sort the IP range list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 {
 	const auto* subnets = list.pSubNets;
@@ -1070,7 +1111,16 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 	}
 	else
 	{
-		for (const auto& subnet : wil::make_range(subnets, subnets + subnet_count))
+		AppendValue(subnet_count);
+		std::vector sorted_subnets(subnets, subnets + subnet_count);
+		std::ranges::sort(sorted_subnets, [](const FW_IPV4_SUBNET& a, const FW_IPV4_SUBNET& b) {
+			if (a.dwAddress != b.dwAddress)
+			{
+				return a.dwAddress < b.dwAddress;
+			}
+			return a.dwSubNetMask < b.dwSubNetMask;
+			});
+		for (const auto& subnet : sorted_subnets)
 		{
 			AppendValue(subnet.dwAddress);
 			AppendValue(subnet.dwSubNetMask);
@@ -1078,6 +1128,7 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 	}
 }
 
+// sort the IP range list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
 {
 	const auto* subnets = list.pSubNets;
@@ -1092,19 +1143,31 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
 	}
 	else
 	{
-		for (const auto& subnet : wil::make_range(subnets, subnets + subnet_count))
+		AppendValue(subnet_count);
+		std::vector sorted_subnets(subnets, subnets + subnet_count);
+		std::ranges::sort(sorted_subnets, [](const FW_IPV6_SUBNET& a, const FW_IPV6_SUBNET& b) {
+			const auto cmp = std::memcmp(a.Address, b.Address, sizeof(a.Address));
+			if (cmp != 0)
+			{
+				return cmp < 0;
+			}
+			return a.dwNumPrefixBits < b.dwNumPrefixBits;
+			});
+		for (const auto& subnet : sorted_subnets)
 		{
 			// append as 2 64-bit integers
 			static_assert(sizeof(subnet.Address) == 2 * sizeof(uint64_t));
 			const BYTE* address_buffer = subnet.Address;
 			const uint64_t* first_integer = reinterpret_cast<const uint64_t*>(address_buffer);
 			AppendValue(*first_integer);
-			const uint64_t* second_integer = reinterpret_cast<const uint64_t*>(address_buffer + sizeof(first_integer));
+			const uint64_t* second_integer = reinterpret_cast<const uint64_t*>(address_buffer + sizeof(uint64_t));
 			AppendValue(*second_integer);
+			AppendValue(subnet.dwNumPrefixBits);
 		}
 	}
 }
 
+// sort the IP range list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
 {
 	const auto* ranges = list.pRanges;
@@ -1119,7 +1182,16 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
 	}
 	else
 	{
-		for (const auto& range : wil::make_range(ranges, ranges + range_count))
+		AppendValue(range_count);
+		std::vector sorted_ranges(ranges, ranges + range_count);
+		std::ranges::sort(sorted_ranges, [](const FW_IPV4_ADDRESS_RANGE& a, const FW_IPV4_ADDRESS_RANGE& b) {
+			if (a.dwBegin != b.dwBegin)
+			{
+				return a.dwBegin < b.dwBegin;
+			}
+			return a.dwEnd < b.dwEnd;
+			});
+		for (const auto& range : sorted_ranges)
 		{
 			AppendValue(range.dwBegin);
 			AppendValue(range.dwEnd);
@@ -1141,7 +1213,17 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
 	}
 	else
 	{
-		for (const auto& range : wil::make_range(ranges, ranges + range_count))
+		AppendValue(range_count);
+		std::vector sorted_ranges(ranges, ranges + range_count);
+		std::ranges::sort(sorted_ranges, [](const FW_IPV6_ADDRESS_RANGE& a, const FW_IPV6_ADDRESS_RANGE& b) {
+			const auto cmp = std::memcmp(a.Begin, b.Begin, sizeof(a.Begin));
+			if (cmp != 0)
+			{
+				return cmp < 0;
+			}
+			return std::memcmp(a.End, b.End, sizeof(a.End)) < 0;
+			});
+		for (const auto& range : sorted_ranges)
 		{
 			// append as 2 64-bit integers
 			static_assert(sizeof(range.Begin) == 2 * sizeof(uint64_t));
@@ -1161,6 +1243,7 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
 	}
 }
 
+// sort the interface LUIDs so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_luids)
 {
 	const auto* luids = interface_luids.pLUIDs;
@@ -1175,13 +1258,19 @@ void NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_lui
 	}
 	else
 	{
-		for (const auto& luid : wil::make_range(luids, luids + luids_count))
+		AppendValue(luids_count);
+		std::vector sorted_luids(luids, luids + luids_count);
+		std::ranges::sort(sorted_luids, [](const GUID& a, const GUID& b) {
+			return memcmp(&a, &b, sizeof(GUID)) < 0;
+			});
+		for (const auto& luid : sorted_luids)
 		{
 			AppendValue(luid);
 		}
 	}
 }
 
+// sort the platform list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 {
 	const auto* platforms = list.pPlatforms;
@@ -1196,7 +1285,24 @@ void NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 	}
 	else
 	{
-		for (const auto& platform : wil::make_range(platforms, platforms + platform_count))
+		AppendValue(platform_count);
+		std::vector sorted_platforms(platforms, platforms + platform_count);
+		std::ranges::sort(sorted_platforms, [](const FW_OS_PLATFORM& a, const FW_OS_PLATFORM& b) {
+			if (a.bPlatform != b.bPlatform)
+			{
+				return a.bPlatform < b.bPlatform;
+			}
+			if (a.bMajorVersion != b.bMajorVersion)
+			{
+				return a.bMajorVersion < b.bMajorVersion;
+			}
+			if (a.bMinorVersion != b.bMinorVersion)
+			{
+				return a.bMinorVersion < b.bMinorVersion;
+			}
+			return a.Reserved < b.Reserved;
+			});
+		for (const auto& platform : sorted_platforms)
 		{
 			AppendValue(platform.bPlatform);
 			AppendValue(platform.bMajorVersion);
@@ -1208,6 +1314,7 @@ void NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 
 // ReSharper disable once CppParameterMayBeConstPtrOrRef
 // cannot be a const pointer, as the pointer value in the rule is not const
+// sort the object metadata list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_OBJECT_METADATA* pMetadata)
 {
 	if (!pMetadata)
@@ -1231,13 +1338,17 @@ void NormalizedFirewallRule::AppendValue(const FW_OBJECT_METADATA* pMetadata)
 	}
 	else
 	{
-		for (const auto& state : wil::make_range(enforcement_states, enforcement_states + enforcement_states_count))
+		AppendValue(enforcement_states_count);
+		std::vector sorted_states(enforcement_states, enforcement_states + enforcement_states_count);
+		std::ranges::sort(sorted_states);
+		for (const auto& state : sorted_states)
 		{
 			AppendValue(state);
 		}
 	}
 }
 
+// sort the network names list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
 {
 	const auto* names = network_names.wszNames;
@@ -1253,13 +1364,19 @@ void NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
 	}
 	else
 	{
-		for (const auto& name : wil::make_range(names, names + names_count))
+		AppendValue(names_count);
+		std::vector sorted_names(names, names + names_count);
+		std::ranges::sort(sorted_names, [](const LPWSTR& a, const LPWSTR& b) {
+			return NormalizedString::StringCompare(a, b) < 0;
+			});
+		for (const auto& name : sorted_names)
 		{
 			AppendValue(name);
 		}
 	}
 }
 
+// sort the dynamic keyword list so we can find duplicates even if they are in different order
 void NormalizedFirewallRule::AppendValue(const FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST& list)
 {
 	const auto* ids = list.ids;

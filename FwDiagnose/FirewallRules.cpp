@@ -57,7 +57,7 @@ static void PrintDeletionHeader(PCSTR str) noexcept
 static PCSTR DeletionPrompt = "       Delete all duplicates of this rule";
 
 
-static FirewallPolicyObjects g_policy_objects[] =
+static FirewallPolicyObjects g_policy_objects[] =  // NOLINT(bugprone-throwing-static-initialization)
 {
 	{.parent_rule = nullptr, .normalizedRules = {}, .store_type_string = "Local", .store_type = FW_STORE_TYPE_LOCAL, .rule_version = 0},
 	// { .type= FW_STORE_TYPE_DYNAMIC, .type_string= "Dynamic", .normalizedRules = {}},
@@ -206,6 +206,7 @@ namespace details
 		if (!normalized_rules.empty())
 		{
 			// sort vectors of rules/filters by name so can do a binary search for rules by name
+			// this is because the only tie from filters to rules is the rule name
 			std::ranges::sort(
 				normalized_rules,
 				[](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
@@ -679,6 +680,12 @@ namespace details
 		{
 			return_string.append(L"           User: (all users)\n");
 		}
+		if (rule_details.fw_rule->wszLocalUserAuthorizationList)
+		{
+			return_string.append(std::format(
+				L"           Local User Authorization List: {}\n",
+				rule_details.fw_rule->wszLocalUserAuthorizationList));
+		}
 
 		if (rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords != 0 || rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords != 0)
 		{
@@ -778,12 +785,10 @@ namespace details
 				{
 					continue;
 				}
-				if (rule_details.fw_rule->wszLocalApplication)
+
+				if (rule_details.IsLocalApplicationSystem())
 				{
-					if (CompareStringOrdinal(L"system", -1, rule_details.fw_rule->wszLocalApplication, -1, TRUE) == CSTR_EQUAL)
-					{
-						continue;
-					}
+					continue;
 				}
 
 				if (rule_details.fw_rule->wszLocalApplication)
@@ -915,12 +920,9 @@ namespace details
 					continue;
 				}
 
-				if (rule_details.fw_rule->wszLocalApplication)
+				if (rule_details.IsLocalApplicationSystem())
 				{
-					if (CompareStringOrdinal(L"system", -1, rule_details.fw_rule->wszLocalApplication, -1, TRUE) != CSTR_EQUAL)
-					{
-						continue;
-					}
+					continue;
 				}
 
 				++counter;
@@ -1132,12 +1134,10 @@ namespace details
 				{
 					continue;
 				}
-				if (rule_details.fw_rule->wszLocalApplication)
+
+				if (rule_details.IsLocalApplicationSystem())
 				{
-					if (CompareStringOrdinal(L"system", -1, rule_details.fw_rule->wszLocalApplication, -1, TRUE) == CSTR_EQUAL)
-					{
-						continue;
-					}
+					continue;
 				}
 
 				if (rule_details.fw_rule->wszLocalApplication)
@@ -1275,12 +1275,9 @@ namespace details
 					continue;
 				}
 
-				if (rule_details.fw_rule->wszLocalApplication)
+				if (rule_details.IsLocalApplicationSystem())
 				{
-					if (CompareStringOrdinal(L"system", -1, rule_details.fw_rule->wszLocalApplication, -1, TRUE) != CSTR_EQUAL)
-					{
-						continue;
-					}
+					continue;
 				}
 
 				++counter;
@@ -1316,6 +1313,299 @@ namespace details
 		}
 
 		std::printf("\n");
+	}
+
+	enum class InboundProfileCategory : uint8_t
+	{
+		PrivateOnly,
+		DomainOnly,
+		PrivateAndDomainOnly,
+		Public
+	};
+
+	struct InboundRuleGroup
+	{
+		std::vector<const NormalizedFirewallRule*> rules;
+		std::vector<const NormalizedFirewallRule*> application_rules;
+		std::vector<const NormalizedFirewallRule*> service_rules;
+		std::vector<const NormalizedFirewallRule*> no_application_or_service_rules;
+		std::vector<const NormalizedFirewallRule*> individual_user_rules;
+
+		size_t local_executable_application_count{};
+		size_t packaged_application_count{};
+		size_t allow_rule_count{};
+		size_t allow_bypass_rule_count{};
+		size_t enabled_rule_count{};
+		size_t disabled_rule_count{};
+
+		void add_rule(const NormalizedFirewallRule& rule_details)
+		{
+			rules.push_back(&rule_details);
+
+			if (rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS)
+			{
+				++allow_bypass_rule_count;
+			}
+			else
+			{
+				WI_ASSERT(rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW);
+				++allow_rule_count;
+			}
+
+			if (rule_details.is_rule_enabled)
+			{
+				++enabled_rule_count;
+			}
+			else
+			{
+				++disabled_rule_count;
+			}
+
+			if (HasValue(rule_details.fw_rule->wszLocalService))
+			{
+				service_rules.push_back(&rule_details);
+			}
+			else
+			{
+				const bool targets_local_application =
+					HasValue(rule_details.fw_rule->wszLocalApplication) &&
+					CompareStringOrdinal(
+						L"system",
+						-1,
+						rule_details.fw_rule->wszLocalApplication,
+						-1,
+						TRUE) != CSTR_EQUAL;
+				const bool targets_packaged_application =
+					HasValue(rule_details.fw_rule->wszPackageFamilyName) ||
+					HasValue(rule_details.fw_rule->wszPackageId);
+
+				if (targets_local_application || targets_packaged_application)
+				{
+					application_rules.push_back(&rule_details);
+					if (targets_local_application)
+					{
+						++local_executable_application_count;
+					}
+					else
+					{
+						++packaged_application_count;
+					}
+				}
+				else
+				{
+					no_application_or_service_rules.push_back(&rule_details);
+				}
+			}
+
+			if (HasValue(rule_details.fw_rule->wszLocalUserAuthorizationList))
+			{
+				individual_user_rules.push_back(&rule_details);
+			}
+		}
+
+	private:
+		static bool HasValue(PCWSTR value) noexcept
+		{
+			return value != nullptr && *value != L'\0';
+		}
+	};
+
+	struct InboundRuleAnalysis
+	{
+		InboundRuleGroup private_only;
+		InboundRuleGroup domain_only;
+		InboundRuleGroup private_and_domain_only;
+		InboundRuleGroup public_profiles;
+
+		size_t TotalRuleCount() const noexcept
+		{
+			return private_only.rules.size() +
+				domain_only.rules.size() +
+				private_and_domain_only.rules.size() +
+				public_profiles.rules.size();
+		}
+
+		size_t EnabledRuleCount() const noexcept
+		{
+			return private_only.enabled_rule_count +
+				domain_only.enabled_rule_count +
+				private_and_domain_only.enabled_rule_count +
+				public_profiles.enabled_rule_count;
+		}
+
+		size_t DisabledRuleCount() const noexcept
+		{
+			return private_only.disabled_rule_count +
+				domain_only.disabled_rule_count +
+				private_and_domain_only.disabled_rule_count +
+				public_profiles.disabled_rule_count;
+		}
+	};
+
+	static bool IsInboundAllowRule(const NormalizedFirewallRule& rule_details) noexcept
+	{
+		constexpr DWORD known_profiles =
+			FW_PROFILE_TYPE_PRIVATE |
+			FW_PROFILE_TYPE_DOMAIN |
+			FW_PROFILE_TYPE_PUBLIC;
+
+		return rule_details.fw_rule->Direction == FW_DIR_IN &&
+			(rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW ||
+				rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS) &&
+			(rule_details.fw_rule->dwProfiles & known_profiles) != 0;
+	}
+
+	static InboundProfileCategory GetInboundProfileCategory(const NormalizedFirewallRule& rule_details) noexcept
+	{
+		constexpr DWORD known_profiles =
+			FW_PROFILE_TYPE_PRIVATE |
+			FW_PROFILE_TYPE_DOMAIN |
+			FW_PROFILE_TYPE_PUBLIC;
+		const DWORD profiles = rule_details.fw_rule->dwProfiles & known_profiles;
+
+		if (profiles == FW_PROFILE_TYPE_PRIVATE)
+		{
+			return InboundProfileCategory::PrivateOnly;
+		}
+		if (profiles == FW_PROFILE_TYPE_DOMAIN)
+		{
+			return InboundProfileCategory::DomainOnly;
+		}
+		if (profiles == (FW_PROFILE_TYPE_PRIVATE | FW_PROFILE_TYPE_DOMAIN))
+		{
+			return InboundProfileCategory::PrivateAndDomainOnly;
+		}
+
+		WI_ASSERT(profiles & FW_PROFILE_TYPE_PUBLIC);
+		return InboundProfileCategory::Public;
+	}
+
+	static InboundRuleAnalysis AnalyzeInboundRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+	{
+		InboundRuleAnalysis analysis;
+
+		for (const auto& rule_details : normalized_rules)
+		{
+			if (!IsInboundAllowRule(rule_details))
+			{
+				continue;
+			}
+
+			switch (GetInboundProfileCategory(rule_details))
+			{
+			case InboundProfileCategory::PrivateOnly:
+				analysis.private_only.add_rule(rule_details);
+				break;
+			case InboundProfileCategory::DomainOnly:
+				analysis.domain_only.add_rule(rule_details);
+				break;
+			case InboundProfileCategory::PrivateAndDomainOnly:
+				analysis.private_and_domain_only.add_rule(rule_details);
+				break;
+			case InboundProfileCategory::Public:
+				analysis.public_profiles.add_rule(rule_details);
+				break;
+			default:
+				FAIL_FAST();
+			}
+		}
+
+		return analysis;
+	}
+
+	static void PrintVerboseInboundRules(
+		PCSTR heading,
+		const std::vector<const NormalizedFirewallRule*>& rules)
+	{
+		if (!VerboseOutputEnabled() || rules.empty())
+		{
+			return;
+		}
+
+		std::printf("    %s:\n", heading);
+		size_t counter = 0;
+		for (const auto* rule_details : rules)
+		{
+			++counter;
+			std::printf("%ws", PrintRuleContents(*rule_details, counter).c_str());
+			std::printf(
+				"           Action: %s%s\n",
+				rule_details->fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS ? "Allow bypass" : "Allow",
+				rule_details->fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS ?
+					" (takes precedence over matching block rules)" :
+					" (matching block rules take precedence)");
+			std::printf(
+				"           Status: %s\n",
+				rule_details->is_rule_enabled ? "Enabled" : "Disabled");
+		}
+	}
+
+	static void PrintInboundRuleGroup(PCSTR heading, const InboundRuleGroup& group)
+	{
+		std::printf("\n%s inbound allow rules: %zu\n", heading, group.rules.size());
+		std::printf("  Enabled rules: %zu\n", group.enabled_rule_count);
+		std::printf("  Disabled rules: %zu\n", group.disabled_rule_count);
+		std::printf("  Allow rules: %zu\n", group.allow_rule_count);
+		std::printf(
+			"  Allow-bypass rules: %zu"
+			" (take precedence over matching block rules)\n",
+			group.allow_bypass_rule_count);
+		std::printf("  Targeting specific applications: %zu\n", group.application_rules.size());
+		std::printf("    Local executable applications: %zu\n", group.local_executable_application_count);
+		std::printf("    Packaged applications: %zu\n", group.packaged_application_count);
+		std::printf("  Targeting an NT Service: %zu\n", group.service_rules.size());
+		std::printf(
+			"  Not targeting an application or service: %zu\n",
+			group.no_application_or_service_rules.size());
+		std::printf("  Targeting an individual user: %zu\n", group.individual_user_rules.size());
+
+		PrintVerboseInboundRules("Rules targeting specific applications", group.application_rules);
+		PrintVerboseInboundRules("Rules targeting an NT Service", group.service_rules);
+		PrintVerboseInboundRules(
+			"Rules not targeting an application or service",
+			group.no_application_or_service_rules);
+		PrintVerboseInboundRules("Rules targeting an individual user", group.individual_user_rules);
+	}
+
+	static void PrintInboundRuleAnalysis(const InboundRuleAnalysis& inbound_rule_analysis)
+	{
+		std::printf("\nFirewall rules allowing inbound connectivity: %zu\n", inbound_rule_analysis.TotalRuleCount());
+		if (inbound_rule_analysis.TotalRuleCount() == 0)
+		{
+			return;
+		}
+
+		std::printf("  Enabled rules: %zu\n", inbound_rule_analysis.EnabledRuleCount());
+		std::printf("  Disabled rules: %zu\n", inbound_rule_analysis.DisabledRuleCount());
+		std::printf("  Private profile only: %zu\n", inbound_rule_analysis.private_only.rules.size());
+		std::printf("    Enabled rules: %zu\n", inbound_rule_analysis.private_only.enabled_rule_count);
+		std::printf("    Disabled rules: %zu\n", inbound_rule_analysis.private_only.disabled_rule_count);
+		std::printf("  Domain profile only: %zu\n", inbound_rule_analysis.domain_only.rules.size());
+		std::printf("    Enabled rules: %zu\n", inbound_rule_analysis.domain_only.enabled_rule_count);
+		std::printf("    Disabled rules: %zu\n", inbound_rule_analysis.domain_only.disabled_rule_count);
+		std::printf(
+			"  Private + Domain profiles only: %zu\n",
+			inbound_rule_analysis.private_and_domain_only.rules.size());
+		std::printf(
+			"    Enabled rules: %zu\n",
+			inbound_rule_analysis.private_and_domain_only.enabled_rule_count);
+		std::printf(
+			"    Disabled rules: %zu\n",
+			inbound_rule_analysis.private_and_domain_only.disabled_rule_count);
+		std::printf(
+			"  All other profiles (all include Public profiles): %zu\n",
+			inbound_rule_analysis.public_profiles.rules.size());
+		std::printf("    Enabled rules: %zu\n", inbound_rule_analysis.public_profiles.enabled_rule_count);
+		std::printf("    Disabled rules: %zu\n", inbound_rule_analysis.public_profiles.disabled_rule_count);
+
+		PrintInboundRuleGroup("Private-profile-only", inbound_rule_analysis.private_only);
+		PrintInboundRuleGroup("Domain-profile-only", inbound_rule_analysis.domain_only);
+		PrintInboundRuleGroup(
+			"Private-profile+Domain-profile-only",
+			inbound_rule_analysis.private_and_domain_only);
+		PrintInboundRuleGroup(
+			"All other profiles (all include Public profiles)",
+			inbound_rule_analysis.public_profiles);
 	}
 
 	static std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules)
@@ -1630,7 +1920,7 @@ namespace details
 			{
 				++count_of_rules_with_local_application;
 
-				if (rule.target_application_exists.has_value() && !rule.target_application_exists.value())
+				if (rule.local_application_exists.has_value() && !rule.local_application_exists.value())
 				{
 					verbose_output_of_error_strings.emplace_back(
 						wil::str_printf<std::wstring>(
@@ -1747,13 +2037,13 @@ namespace details
 				continue;
 			}
 
-			if (!rule.target_application_exists.has_value())
+			if (!rule.local_application_exists.has_value())
 			{
 				// this rule was not checked for app file existence, skip it
 				continue;
 			}
 
-			if (rule.target_application_exists == true)
+			if (rule.local_application_exists == true)
 			{
 				continue; // verified this file exists
 			}
@@ -2186,6 +2476,14 @@ namespace details
 			}
 
 			previous_iter = iter;
+		}
+
+		if (previous_iter != normalized_rules.end())
+		{
+			const auto& previous_rule_name = previous_iter->rule_name;
+			previous_iter->filter_count = CountFiltersByName(previous_rule_name);
+			previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
+			previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
 		}
 	}
 
@@ -2981,6 +3279,60 @@ void ProcessPrivateOnlyInboundRules()
 
 			timer.start("PrintPrivateOnlyInboundRules");
 			details::PrintPrivateOnlyInboundRules(policy.normalizedRules);
+			timer.end();
+		}
+		catch (const wil::ResultException& ex)
+		{
+			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
+		}
+		catch (const std::exception& ex)
+		{
+			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
+		}
+	}
+}
+
+void ProcessInboundRules()
+{
+	for (auto& policy : g_policy_objects)
+	{
+		try
+		{
+			std::wstring banner_header;
+			banner_header.insert(banner_header.begin(), g_minimumBannerSize, L'*');
+
+			auto banner_output = wil::str_printf<std::wstring>(
+				L"Analyzing rules allowing Inbound connectivity in the %hs Firewall Policy Store",
+				policy.store_type_string);
+			const size_t prefix_spaces =
+				banner_header.size() > banner_output.size() ?
+				(banner_header.size() - banner_output.size()) / 2 :
+				0;
+			banner_output.insert(0, prefix_spaces, L' ');
+
+			if (banner_output.size() > banner_header.size())
+			{
+				banner_header.insert(
+					banner_header.end(),
+					banner_output.size() - banner_header.size(),
+					L'*');
+			}
+			std::printf(
+				"\n"
+				"%ls\n"
+				"%ls\n"
+				"%ls\n",
+				banner_header.c_str(),
+				banner_output.c_str(),
+				banner_header.c_str());
+
+			ChronoTimer timer;
+			timer.start("AnalyzeInboundRules");
+			const auto inbound_rule_analysis = details::AnalyzeInboundRules(policy.normalizedRules);
+			timer.end();
+
+			timer.start("PrintInboundRuleAnalysis");
+			details::PrintInboundRuleAnalysis(inbound_rule_analysis);
 			timer.end();
 		}
 		catch (const wil::ResultException& ex)

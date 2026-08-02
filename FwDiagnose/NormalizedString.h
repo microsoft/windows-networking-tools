@@ -106,6 +106,8 @@ struct NormalizedString
 			return 1; // should never reach here
 		}
 	}
+
+	// returns -1 if lhs < rhs, 0 if lhs == rhs, 1 if lhs > rhs
 	static int StringCompare(_In_ PCWSTR lhs, _In_ PCWSTR rhs) noexcept
 	{
 		if (!lhs && !rhs)

@@ -59,6 +59,12 @@ static bool AnalyzePrivateOnlyRulesEnabled() noexcept
 	return g_analyzePrivateOnlyRules;
 }
 
+static bool g_analyzeInboundRules = false;
+static bool AnalyzeInboundRulesEnabled() noexcept
+{
+	return g_analyzeInboundRules;
+}
+
 DEFINE_ENUM_FLAG_OPERATORS(NET_FW_PROFILE_TYPE2)
 
 static bool g_shieldsUpPublicProfile = false;
@@ -145,6 +151,7 @@ static void PrintUsage() noexcept
 		"\n"
 		"  -analyze-public-rules  : Analyzes rules that allow inbound connections on the Public profile\n"
 		"  -analyze-private-rules : Analyzes inbound rules that exist only for the Private profile and not the Public profile\n"
+		"  -analyze-inbound-rules : Summarizes active rules allowing inbound connectivity across all Firewall profiles\n"
 		"\n"
 		"  -enable-shields-up  : Enables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
 		"                        By default, enables Shields Up for all profiles\n"
@@ -257,6 +264,13 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-rules") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_analyzePrivateOnlyRules = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-inbound-rules") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-inbound-rules") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_analyzeInboundRules = true;
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-disable-shields-up") == 0; }) != args.end())
@@ -461,6 +475,11 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	if (AnalyzePrivateOnlyRulesEnabled())
 	{
 		ProcessPrivateOnlyInboundRules();
+	}
+
+	if (AnalyzeInboundRulesEnabled())
+	{
+		ProcessInboundRules();
 	}
 
 	if (TurnOnShieldsUpSet() || TurnOffShieldsUpSet())

@@ -28,7 +28,7 @@ struct NormalizedFirewallRule
 	std::optional<bool> successfully_resolved_user_name{ std::nullopt };
 	std::optional<bool> successfully_resolved_user_name_with_local_profile{ std::nullopt };
 
-	std::optional<bool> target_application_exists{ std::nullopt };
+	std::optional<bool> local_application_exists{ std::nullopt };
 
 	size_t filter_count{};
 	size_t filter_condition_count{};
@@ -49,9 +49,11 @@ struct NormalizedFirewallRule
 	~NormalizedFirewallRule() = default;
 
 	std::wstring PrintRule() const;
+	bool IsLocalApplicationSystem() const;
+	bool IsLocalApplicationAnAppxRule() const;
 
 private:
-	void CheckIfFileExists();
+	void CheckIfLocalApplicationExists();
 	void ProcessLocalUserSid();
 
 	void AppendValue(const GUID& guid);
