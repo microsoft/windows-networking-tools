@@ -8,6 +8,7 @@
 #include "NormalizedFirewallRule.h"
 
 #include <algorithm>
+#include <ws2def.h>
 
 namespace details
 {
@@ -424,15 +425,21 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 		rule_id.assign(fwRule->wszRuleId);
 	}
 
-	AppendValue(fwRule->wSchemaVersion);
-	AppendValue(fwRule->dwProfiles);
+	// not tracking schema version to compare rules
+	// if all other fields are equal, the schema version is not relevant to the rule being equal
+	// AppendValue(fwRule->wSchemaVersion);
+
+	// not tracking dwProfiles in the normalized rule
+	// to allow comparing rules between profiles
+	// AppendValue(fwRule->dwProfiles);
+
 	AppendValue(fwRule->Direction);
 	AppendValue(fwRule->wIpProtocol);
 	// unnamed union for ports and ICMP types based on the IP Protocol
 	switch (fwRule->wIpProtocol)
 	{
-	case 6:
-	case 17:
+	case IPPROTO_TCP:
+	case IPPROTO_UDP:
 	{
 		// read TCP and UDP ports
 		AppendValue(fwRule->LocalPorts.wPortKeywords);
@@ -442,8 +449,8 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 		break;
 	}
 
-	case 1:
-	case 58:
+	case IPPROTO_ICMP:
+	case IPPROTO_ICMPV6:
 	{
 		// read ICMP fields
 		AppendValue(fwRule->V4TypeCodeList);
@@ -457,15 +464,19 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 		break;
 	}
 
-	AppendValue(fwRule->LocalAddresses.dwV4AddressKeywords);
-	AppendValue(fwRule->LocalAddresses.dwV6AddressKeywords);
+	// not tracking the AddressKeywords or Addresses in the normalized rule
+	// to allow comparing rules that want to ignore the keyword for local-subnet
+	// AppendValue(fwRule->LocalAddresses.dwV4AddressKeywords);
+	// AppendValue(fwRule->LocalAddresses.dwV6AddressKeywords);
 	AppendValue(fwRule->LocalAddresses.V4SubNets);
 	AppendValue(fwRule->LocalAddresses.V4Ranges);
 	AppendValue(fwRule->LocalAddresses.V6SubNets);
 	AppendValue(fwRule->LocalAddresses.V6Ranges);
 
-	AppendValue(fwRule->RemoteAddresses.dwV4AddressKeywords);
-	AppendValue(fwRule->RemoteAddresses.dwV6AddressKeywords);
+	// not tracking the AddressKeywords or Addresses in the normalized rule
+	// to allow comparing rules that want to ignore the keyword for local-subnet
+	// AppendValue(fwRule->RemoteAddresses.dwV4AddressKeywords);
+	// AppendValue(fwRule->RemoteAddresses.dwV6AddressKeywords);
 	AppendValue(fwRule->RemoteAddresses.V4SubNets);
 	AppendValue(fwRule->RemoteAddresses.V4Ranges);
 	AppendValue(fwRule->RemoteAddresses.V6SubNets);
@@ -478,7 +489,10 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 	AppendValue(fwRule->wszLocalService);
 
 	AppendValue(fwRule->Action);
-	AppendValue(fwRule->wFlags);
+
+	// not tracking wFlags in the normalized rule
+	// to allow comparing rules regardless if they are enabled or disabled
+	// AppendValue(fwRule->wFlags);
 	is_rule_enabled = (fwRule->wFlags & FW_RULE_FLAGS_ACTIVE) == FW_RULE_FLAGS_ACTIVE;
 
 	AppendValue(fwRule->wszRemoteMachineAuthorizationList);
@@ -881,18 +895,39 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 	return result;
 }
 
-bool NormalizedFirewallRule::IsLocalApplicationSystem() const
+bool NormalizedFirewallRule::RuleTargetsLocalUser() const
+{
+	return fw_rule->wszLocalUserAuthorizationList && *fw_rule->wszLocalUserAuthorizationList != L'\0';
+}
+
+bool NormalizedFirewallRule::RuleTargetsNtService() const
+{
+	return fw_rule->wszLocalService != nullptr && fw_rule->wszLocalService[0] != L'\0';
+}
+
+bool NormalizedFirewallRule::RuleTargetsLocalNonSystemApplication() const
 {
 	if (fw_rule->wszLocalApplication)
+	{
+		return !RuleTargetsLocalSystemApplication();
+	}
+	return
+		(fw_rule->wszPackageFamilyName && *fw_rule->wszPackageFamilyName != L'\0') ||
+		(fw_rule->wszPackageId && *fw_rule->wszPackageId != L'\0');
+}
+
+bool NormalizedFirewallRule::RuleTargetsLocalSystemApplication() const
+{
+	if (fw_rule->wszLocalApplication && fw_rule->wszLocalApplication[0] != L'\0')
 	{
 		return NormalizedString::StringCompare(L"system", fw_rule->wszLocalApplication) == 0;
 	}
 	return false;
 }
 
-bool NormalizedFirewallRule::IsLocalApplicationAnAppxRule() const
+bool NormalizedFirewallRule::RuleTargetsLocalAppxRuleApplication() const
 {
-	if (fw_rule->wszLocalApplication)
+	if (fw_rule->wszLocalApplication && fw_rule->wszLocalApplication[0] != L'\0')
 	{
 		return details::IsRuleAnAppxRule(fw_rule->wszLocalApplication);
 	}
@@ -901,17 +936,11 @@ bool NormalizedFirewallRule::IsLocalApplicationAnAppxRule() const
 
 void NormalizedFirewallRule::CheckIfLocalApplicationExists()
 {
-	if (!fw_rule->wszLocalApplication || *fw_rule->wszLocalApplication == L'\0')
+	if (!RuleTargetsLocalSystemApplication())
 	{
 		return;
 	}
-
-	if (IsLocalApplicationSystem())
-	{
-		// this refers to a kernel component
-		return;
-	}
-	if (IsLocalApplicationAnAppxRule())
+	if (RuleTargetsLocalAppxRuleApplication())
 	{
 		// appx rules must be checked using appx APIs to check for that package
 		return;
@@ -952,57 +981,35 @@ void NormalizedFirewallRule::CheckIfLocalApplicationExists()
 
 void NormalizedFirewallRule::ProcessLocalUserSid()
 {
-	if (fw_rule->wszLocalUserOwner)
+	if (!RuleTargetsLocalUser())
 	{
-		// process the local user owner string for string resources
-		wil::unique_sid localUserOwnerSid;
-		if (!ConvertStringSidToSid(fw_rule->wszLocalUserOwner, localUserOwnerSid.addressof()))
+		return;
+	}
+
+	// process the local user owner string for string resources
+	wil::unique_sid localUserOwnerSid;
+	if (!ConvertStringSidToSid(fw_rule->wszLocalUserOwner, localUserOwnerSid.addressof()))
+	{
+		const auto gle = GetLastError();
+		if (VerboseOutputEnabled())
 		{
-			const auto gle = GetLastError();
-			if (VerboseOutputEnabled())
-			{
-				std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
-			}
-			successfully_resolved_user_name = false;
-			return;
+			std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
 		}
+		successfully_resolved_user_name = false;
+		return;
+	}
 
-		DWORD localUserOwnerNameSize = 0;
-		DWORD cchReferencedDomainName = 0;
-		SID_NAME_USE sid_name_use{ SidTypeUnknown };
-		if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
+	DWORD localUserOwnerNameSize = 0;
+	DWORD cchReferencedDomainName = 0;
+	SID_NAME_USE sid_name_use{ SidTypeUnknown };
+	if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
+	{
+		if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
 		{
-			if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-			{
-				local_user_owner_name.resize(localUserOwnerNameSize);
-				local_user_domain_name.resize(cchReferencedDomainName);
+			local_user_owner_name.resize(localUserOwnerNameSize);
+			local_user_domain_name.resize(cchReferencedDomainName);
 
-				if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
-				{
-					const auto gle = GetLastError();
-					if (DebugOutputEnabled())
-					{
-						std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
-					}
-					successfully_resolved_user_name = false;
-					return;
-				}
-
-				successfully_resolved_user_name = true;
-
-				if (DebugOutputEnabled())
-				{
-					if (local_user_domain_name.empty())
-					{
-						std::printf("Successfully converted LocalUserOwner SID %ls to %ls\n", fw_rule->wszLocalUserOwner, local_user_owner_name.c_str());
-					}
-					else
-					{
-						std::printf("Successfully converted LocalUserOwner SID %ls to %ls\\%ls\n", fw_rule->wszLocalUserOwner, local_user_domain_name.c_str(), local_user_owner_name.c_str());
-					}
-				}
-			}
-			else
+			if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
 			{
 				const auto gle = GetLastError();
 				if (DebugOutputEnabled())
@@ -1010,13 +1017,37 @@ void NormalizedFirewallRule::ProcessLocalUserSid()
 					std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
 				}
 				successfully_resolved_user_name = false;
+				return;
+			}
+
+			successfully_resolved_user_name = true;
+
+			if (DebugOutputEnabled())
+			{
+				if (local_user_domain_name.empty())
+				{
+					std::printf("Successfully converted LocalUserOwner SID %ls to %ls\n", fw_rule->wszLocalUserOwner, local_user_owner_name.c_str());
+				}
+				else
+				{
+					std::printf("Successfully converted LocalUserOwner SID %ls to %ls\\%ls\n", fw_rule->wszLocalUserOwner, local_user_domain_name.c_str(), local_user_owner_name.c_str());
+				}
 			}
 		}
 		else
 		{
-			// should never happen
-			FAIL_FAST();
+			const auto gle = GetLastError();
+			if (DebugOutputEnabled())
+			{
+				std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
+			}
+			successfully_resolved_user_name = false;
 		}
+	}
+	else
+	{
+		// should never happen
+		FAIL_FAST();
 	}
 }
 

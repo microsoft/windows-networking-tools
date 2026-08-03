@@ -786,7 +786,7 @@ namespace details
 					continue;
 				}
 
-				if (rule_details.IsLocalApplicationSystem())
+				if (rule_details.RuleTargetsLocalSystemApplication())
 				{
 					continue;
 				}
@@ -920,7 +920,7 @@ namespace details
 					continue;
 				}
 
-				if (rule_details.IsLocalApplicationSystem())
+				if (rule_details.RuleTargetsLocalSystemApplication())
 				{
 					continue;
 				}
@@ -1039,7 +1039,7 @@ namespace details
 					comparison_policy_skip_comparing_if_enabled |
 					comparison_policy_skip_comparing_profiles |
 					comparison_policy_skip_comparing_local_subnet;
-				if (FwRuleDetailsComparison(*rule.fw_rule, *public_it->fw_rule, comparison_policy) == 0)
+				if (RuleDetailsComparison(rule, *public_it, comparison_policy) == 0)
 				{
 					found_public_rule_copy_of_private_rule = true;
 					break;
@@ -1099,7 +1099,7 @@ namespace details
 		{
 			std::printf(
 				"   - %zu inbound Private-Profile rule%ws that %ws an identical copy of a Public Profile rule / %zu total inbound rules\n"
-			    "     << we don't track these rules as Private-Profile-exclusive since there are Public Profile rules allowing the same traffic >>\n",
+				"     << we don't track these rules as Private-Profile-exclusive since there are Public Profile rules allowing the same traffic >>\n",
 				total_inbound_private_rules_with_public_rule_copies,
 				total_inbound_private_rules_with_public_rule_copies == 1 ? L"" : L"s",
 				total_inbound_private_rules_with_public_rule_copies == 1 ? L"is" : L"are",
@@ -1135,7 +1135,7 @@ namespace details
 					continue;
 				}
 
-				if (rule_details.IsLocalApplicationSystem())
+				if (rule_details.RuleTargetsLocalSystemApplication())
 				{
 					continue;
 				}
@@ -1218,7 +1218,7 @@ namespace details
 				{
 					continue;
 				}
-				
+
 				++counter;
 				local_service_details.emplace_back(rule_details.fw_rule->wszLocalService);
 				if (!rule_details.is_rule_enabled)
@@ -1275,7 +1275,7 @@ namespace details
 					continue;
 				}
 
-				if (rule_details.IsLocalApplicationSystem())
+				if (rule_details.RuleTargetsLocalSystemApplication())
 				{
 					continue;
 				}
@@ -1317,31 +1317,37 @@ namespace details
 
 	enum class InboundProfileCategory : uint8_t
 	{
-		PrivateOnly,
-		DomainOnly,
-		PrivateAndDomainOnly,
-		Public
+		PrivateProfileOnly,
+		IncludesDomainProfile,
+		IncludesPublicProfile
 	};
 
 	struct InboundRuleGroup
 	{
-		std::vector<const NormalizedFirewallRule*> rules;
-		std::vector<const NormalizedFirewallRule*> application_rules;
 		std::vector<const NormalizedFirewallRule*> service_rules;
-		std::vector<const NormalizedFirewallRule*> no_application_or_service_rules;
-		std::vector<const NormalizedFirewallRule*> individual_user_rules;
+		std::vector<const NormalizedFirewallRule*> system_rules;
+		std::vector<const NormalizedFirewallRule*> application_rules;
+		std::vector<const NormalizedFirewallRule*> non_application_or_service_rules;
 
-		size_t local_executable_application_count{};
-		size_t packaged_application_count{};
 		size_t allow_rule_count{};
 		size_t allow_bypass_rule_count{};
 		size_t enabled_rule_count{};
 		size_t disabled_rule_count{};
+		size_t rules_targeting_users{};
+
+		// count of rules that were move from a private or domain InboundRuleGroup
+		// to the Public InboundRuleGroup because the rules matched a rule fro the Public profile
+		size_t count_moved_to_public{};
+
+		size_t rule_count() const
+		{
+			WI_ASSERT(enabled_rule_count + disabled_rule_count == service_rules.size() + system_rules.size() + application_rules.size() + non_application_or_service_rules.size());
+			WI_ASSERT(enabled_rule_count + disabled_rule_count == allow_rule_count + allow_bypass_rule_count);
+			return enabled_rule_count + disabled_rule_count;
+		}
 
 		void add_rule(const NormalizedFirewallRule& rule_details)
 		{
-			rules.push_back(&rule_details);
-
 			if (rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS)
 			{
 				++allow_bypass_rule_count;
@@ -1361,123 +1367,94 @@ namespace details
 				++disabled_rule_count;
 			}
 
-			if (HasValue(rule_details.fw_rule->wszLocalService))
+			if (rule_details.RuleTargetsLocalUser())
+			{
+				++rules_targeting_users;
+			}
+
+			if (rule_details.RuleTargetsNtService())
 			{
 				service_rules.push_back(&rule_details);
 			}
+			else if (rule_details.RuleTargetsLocalSystemApplication())
+			{
+				system_rules.push_back(&rule_details);
+			}
+			else if (rule_details.RuleTargetsLocalNonSystemApplication())
+			{
+				application_rules.push_back(&rule_details);
+			}
 			else
 			{
-				const bool targets_local_application =
-					HasValue(rule_details.fw_rule->wszLocalApplication) &&
-					CompareStringOrdinal(
-						L"system",
-						-1,
-						rule_details.fw_rule->wszLocalApplication,
-						-1,
-						TRUE) != CSTR_EQUAL;
-				const bool targets_packaged_application =
-					HasValue(rule_details.fw_rule->wszPackageFamilyName) ||
-					HasValue(rule_details.fw_rule->wszPackageId);
-
-				if (targets_local_application || targets_packaged_application)
-				{
-					application_rules.push_back(&rule_details);
-					if (targets_local_application)
-					{
-						++local_executable_application_count;
-					}
-					else
-					{
-						++packaged_application_count;
-					}
-				}
-				else
-				{
-					no_application_or_service_rules.push_back(&rule_details);
-				}
-			}
-
-			if (HasValue(rule_details.fw_rule->wszLocalUserAuthorizationList))
-			{
-				individual_user_rules.push_back(&rule_details);
+				non_application_or_service_rules.push_back(&rule_details);
 			}
 		}
 
-	private:
-		static bool HasValue(PCWSTR value) noexcept
+		// swap the counts of lhs into rhs
+		static void swap_rule_counts(const NormalizedFirewallRule& lhs_rule_details, InboundRuleGroup& lhs, InboundRuleGroup& rhs)
 		{
-			return value != nullptr && *value != L'\0';
+			if (lhs_rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS)
+			{
+				--lhs.allow_bypass_rule_count;
+				++rhs.allow_bypass_rule_count;
+			}
+			else
+			{
+				WI_ASSERT(lhs_rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW);
+				--lhs.allow_rule_count;
+				++rhs.allow_rule_count;
+			}
+
+			if (lhs_rule_details.is_rule_enabled)
+			{
+				--lhs.enabled_rule_count;
+				++rhs.enabled_rule_count;
+			}
+			else
+			{
+				--lhs.disabled_rule_count;
+				++rhs.disabled_rule_count;
+			}
+
+			if (lhs_rule_details.RuleTargetsLocalUser())
+			{
+				--lhs.rules_targeting_users;
+				++rhs.rules_targeting_users;
+			}
 		}
 	};
 
 	struct InboundRuleAnalysis
 	{
 		InboundRuleGroup private_only;
-		InboundRuleGroup domain_only;
-		InboundRuleGroup private_and_domain_only;
-		InboundRuleGroup public_profiles;
-
-		size_t TotalRuleCount() const noexcept
-		{
-			return private_only.rules.size() +
-				domain_only.rules.size() +
-				private_and_domain_only.rules.size() +
-				public_profiles.rules.size();
-		}
-
-		size_t EnabledRuleCount() const noexcept
-		{
-			return private_only.enabled_rule_count +
-				domain_only.enabled_rule_count +
-				private_and_domain_only.enabled_rule_count +
-				public_profiles.enabled_rule_count;
-		}
-
-		size_t DisabledRuleCount() const noexcept
-		{
-			return private_only.disabled_rule_count +
-				domain_only.disabled_rule_count +
-				private_and_domain_only.disabled_rule_count +
-				public_profiles.disabled_rule_count;
-		}
+		// includes_domain_profile does not include any rules that also include the public profile
+		InboundRuleGroup includes_domain_profile;
+		InboundRuleGroup includes_public_profile;
+		InboundRuleGroup duplicate_of_public_profile;
 	};
 
 	static bool IsInboundAllowRule(const NormalizedFirewallRule& rule_details) noexcept
 	{
-		constexpr DWORD known_profiles =
-			FW_PROFILE_TYPE_PRIVATE |
-			FW_PROFILE_TYPE_DOMAIN |
-			FW_PROFILE_TYPE_PUBLIC;
-
 		return rule_details.fw_rule->Direction == FW_DIR_IN &&
 			(rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW ||
-				rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS) &&
-			(rule_details.fw_rule->dwProfiles & known_profiles) != 0;
+				rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS);
 	}
 
 	static InboundProfileCategory GetInboundProfileCategory(const NormalizedFirewallRule& rule_details) noexcept
 	{
-		constexpr DWORD known_profiles =
-			FW_PROFILE_TYPE_PRIVATE |
-			FW_PROFILE_TYPE_DOMAIN |
-			FW_PROFILE_TYPE_PUBLIC;
-		const DWORD profiles = rule_details.fw_rule->dwProfiles & known_profiles;
-
-		if (profiles == FW_PROFILE_TYPE_PRIVATE)
+		// if it includes the public profile with any other combination, it is considered to be a public profile rule
+		if (rule_details.fw_rule->dwProfiles & FW_PROFILE_TYPE_PUBLIC)
 		{
-			return InboundProfileCategory::PrivateOnly;
-		}
-		if (profiles == FW_PROFILE_TYPE_DOMAIN)
-		{
-			return InboundProfileCategory::DomainOnly;
-		}
-		if (profiles == (FW_PROFILE_TYPE_PRIVATE | FW_PROFILE_TYPE_DOMAIN))
-		{
-			return InboundProfileCategory::PrivateAndDomainOnly;
+			return InboundProfileCategory::IncludesPublicProfile;
 		}
 
-		WI_ASSERT(profiles & FW_PROFILE_TYPE_PUBLIC);
-		return InboundProfileCategory::Public;
+		if (rule_details.fw_rule->dwProfiles == FW_PROFILE_TYPE_PRIVATE)
+		{
+			return InboundProfileCategory::PrivateProfileOnly;
+		}
+
+		WI_ASSERT(rule_details.fw_rule->dwProfiles & FW_PROFILE_TYPE_DOMAIN);
+		return InboundProfileCategory::IncludesDomainProfile;
 	}
 
 	static InboundRuleAnalysis AnalyzeInboundRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
@@ -1486,30 +1463,169 @@ namespace details
 
 		for (const auto& rule_details : normalized_rules)
 		{
-			if (!IsInboundAllowRule(rule_details))
+			if (IsInboundAllowRule(rule_details))
 			{
-				continue;
-			}
-
-			switch (GetInboundProfileCategory(rule_details))
-			{
-			case InboundProfileCategory::PrivateOnly:
-				analysis.private_only.add_rule(rule_details);
-				break;
-			case InboundProfileCategory::DomainOnly:
-				analysis.domain_only.add_rule(rule_details);
-				break;
-			case InboundProfileCategory::PrivateAndDomainOnly:
-				analysis.private_and_domain_only.add_rule(rule_details);
-				break;
-			case InboundProfileCategory::Public:
-				analysis.public_profiles.add_rule(rule_details);
-				break;
-			default:
-				FAIL_FAST();
+				switch (GetInboundProfileCategory(rule_details))
+				{
+				case InboundProfileCategory::PrivateProfileOnly:
+					analysis.private_only.add_rule(rule_details);
+					break;
+				case InboundProfileCategory::IncludesDomainProfile:
+					analysis.includes_domain_profile.add_rule(rule_details);
+					break;
+				case InboundProfileCategory::IncludesPublicProfile:
+					analysis.includes_public_profile.add_rule(rule_details);
+					break;
+				default:
+					FAIL_FAST();
+				}
 			}
 		}
 
+		// check if a private-only or a domain-rule is a copy of a public rule (using the public_policy_comparison_policy)
+		// if it is, then move it to the duplicate_of_public_profile group, as it's not really a private-only rule
+		const auto UpdateRuleGroupIfMatchesPublicRules = [&](InboundRuleGroup& lhs_rule_group, ComparisonPolicy comparison_policy)
+			{
+				size_t count_moved_to_public = 0;
+
+				// will erase from the private-only vector, which will invalidate the iterators, so we cannot update the iterator here in the for statement
+				// the iterator will be updated in the loop body either from calling erase() or from incrementing it if we don't erase
+				for (auto lhs_rule_iterator = lhs_rule_group.service_rules.begin(); lhs_rule_iterator != lhs_rule_group.service_rules.end(); )
+				{
+					const auto lhs_rule = *lhs_rule_iterator;
+
+					bool lhs_iterator_invalidated = false;
+					for (const auto& public_rule : analysis.includes_public_profile.service_rules)
+					{
+						if (RuleDetailsComparison(*lhs_rule, *public_rule, comparison_policy))
+						{
+							// move the private-only rule to public, as it's not really private-only
+							// decrement/increment the counts in each group
+							InboundRuleGroup::swap_rule_counts(*lhs_rule, lhs_rule_group, analysis.duplicate_of_public_profile);
+
+							// move the rule from the private to the duplicate_of_public_profile group
+							analysis.duplicate_of_public_profile.service_rules.emplace_back(lhs_rule);
+							++analysis.duplicate_of_public_profile.count_moved_to_public;
+
+							lhs_rule_iterator = lhs_rule_group.service_rules.erase(lhs_rule_iterator);
+							lhs_iterator_invalidated = true;
+
+							++count_moved_to_public;
+							break;
+						}
+					}
+
+					if (!lhs_iterator_invalidated)
+					{
+						++lhs_rule_iterator;
+					}
+				}
+
+				// will erase from the private-only vector, which will invalidate the iterators, so we cannot update the iterator here in the for statement
+				// the iterator will be updated in the loop body either from calling erase() or from incrementing it if we don't erase
+				for (auto lhs_rule_iterator = lhs_rule_group.system_rules.begin(); lhs_rule_iterator != lhs_rule_group.system_rules.end(); )
+				{
+					const auto lhs_rule = *lhs_rule_iterator;
+
+					bool lhs_iterator_invalidated = false;
+					for (const auto& public_rule : analysis.includes_public_profile.system_rules)
+					{
+						if (RuleDetailsComparison(*lhs_rule, *public_rule, comparison_policy))
+						{
+							// move the private-only rule to duplicate_of_public_profile, as it's not really private-only
+							// decrement/increment the counts in each group
+							InboundRuleGroup::swap_rule_counts(*lhs_rule, lhs_rule_group, analysis.duplicate_of_public_profile);
+
+							// move the rule from the private to the duplicate_of_public_profile group
+							analysis.duplicate_of_public_profile.system_rules.emplace_back(lhs_rule);
+							++analysis.duplicate_of_public_profile.count_moved_to_public;
+
+							lhs_rule_iterator = lhs_rule_group.system_rules.erase(lhs_rule_iterator);
+							lhs_iterator_invalidated = true;
+
+							++count_moved_to_public;
+							break;
+						}
+					}
+
+					if (!lhs_iterator_invalidated)
+					{
+						++lhs_rule_iterator;
+					}
+				}
+
+				for (auto lhs_rule_iterator = lhs_rule_group.application_rules.begin(); lhs_rule_iterator != lhs_rule_group.application_rules.end(); )
+				{
+					const auto lhs_rule = *lhs_rule_iterator;
+
+					bool lhs_iterator_invalidated = false;
+					for (const auto& public_rule : analysis.includes_public_profile.application_rules)
+					{
+						if (RuleDetailsComparison(*lhs_rule, *public_rule, comparison_policy))
+						{
+							// move the private-only rule to duplicate_of_public_profile, as it's not really private-only
+							// decrement/increment the counts in each group
+							InboundRuleGroup::swap_rule_counts(*lhs_rule, lhs_rule_group, analysis.duplicate_of_public_profile);
+
+							// move the rule from the private to the duplicate_of_public_profile group
+							analysis.duplicate_of_public_profile.application_rules.emplace_back(lhs_rule);
+							++analysis.duplicate_of_public_profile.count_moved_to_public;
+
+							lhs_rule_iterator = lhs_rule_group.application_rules.erase(lhs_rule_iterator);
+							lhs_iterator_invalidated = true;
+
+							++count_moved_to_public;
+							break;
+						}
+					}
+
+					if (!lhs_iterator_invalidated)
+					{
+						++lhs_rule_iterator;
+					}
+				}
+
+				for (auto lhs_rule_iterator = lhs_rule_group.non_application_or_service_rules.begin(); lhs_rule_iterator != lhs_rule_group.non_application_or_service_rules.end(); )
+				{
+					const auto lhs_rule = *lhs_rule_iterator;
+
+					bool lhs_iterator_invalidated = false;
+					for (const auto& public_rule : analysis.includes_public_profile.non_application_or_service_rules)
+					{
+						if (RuleDetailsComparison(*lhs_rule, *public_rule, comparison_policy))
+						{
+							// move the private-only rule to duplicate_of_public_profile, as it's not really private-only
+							// decrement/increment the counts in each group
+							InboundRuleGroup::swap_rule_counts(*lhs_rule, lhs_rule_group, analysis.duplicate_of_public_profile);
+
+							// move the rule from the private to the duplicate_of_public_profile group
+							analysis.duplicate_of_public_profile.non_application_or_service_rules.emplace_back(lhs_rule);
+							++analysis.duplicate_of_public_profile.count_moved_to_public;
+
+							lhs_rule_iterator = lhs_rule_group.non_application_or_service_rules.erase(lhs_rule_iterator);
+							lhs_iterator_invalidated = true;
+
+							++count_moved_to_public;
+							break;
+						}
+					}
+
+					if (!lhs_iterator_invalidated)
+					{
+						++lhs_rule_iterator;
+					}
+				}
+			};
+
+			static constexpr auto private_profile_comparison_policy =
+				comparison_policy_skip_comparing_if_enabled |
+				comparison_policy_skip_comparing_profiles |
+				comparison_policy_skip_comparing_local_subnet;
+			UpdateRuleGroupIfMatchesPublicRules(analysis.private_only, private_profile_comparison_policy);
+			static constexpr auto domain_profile_comparison_policy =
+				comparison_policy_skip_comparing_if_enabled |
+				comparison_policy_skip_comparing_profiles;
+			UpdateRuleGroupIfMatchesPublicRules(analysis.includes_domain_profile, domain_profile_comparison_policy);
 		return analysis;
 	}
 
@@ -1532,8 +1648,8 @@ namespace details
 				"           Action: %s%s\n",
 				rule_details->fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS ? "Allow bypass" : "Allow",
 				rule_details->fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS ?
-					" (takes precedence over matching block rules)" :
-					" (matching block rules take precedence)");
+				" (takes precedence over matching block rules)" :
+				" (matching block rules take precedence)");
 			std::printf(
 				"           Status: %s\n",
 				rule_details->is_rule_enabled ? "Enabled" : "Disabled");
@@ -1542,70 +1658,58 @@ namespace details
 
 	static void PrintInboundRuleGroup(PCSTR heading, const InboundRuleGroup& group)
 	{
-		std::printf("\n%s inbound allow rules: %zu\n", heading, group.rules.size());
+		if (group.rule_count() == 0)
+		{
+			return;
+		}
+		std::printf("\n%s inbound allow rules: %zu\n", heading, group.rule_count());
 		std::printf("  Enabled rules: %zu\n", group.enabled_rule_count);
 		std::printf("  Disabled rules: %zu\n", group.disabled_rule_count);
 		std::printf("  Allow rules: %zu\n", group.allow_rule_count);
-		std::printf(
-			"  Allow-bypass rules: %zu"
-			" (take precedence over matching block rules)\n",
-			group.allow_bypass_rule_count);
-		std::printf("  Targeting specific applications: %zu\n", group.application_rules.size());
-		std::printf("    Local executable applications: %zu\n", group.local_executable_application_count);
-		std::printf("    Packaged applications: %zu\n", group.packaged_application_count);
-		std::printf("  Targeting an NT Service: %zu\n", group.service_rules.size());
-		std::printf(
-			"  Not targeting an application or service: %zu\n",
-			group.no_application_or_service_rules.size());
-		std::printf("  Targeting an individual user: %zu\n", group.individual_user_rules.size());
+		std::printf("  Allow-bypass rules: %zu (takes precedence over matching block rules)\n", group.allow_bypass_rule_count);
+		std::printf("   - Targeting specific applications: %zu\n", group.application_rules.size());
+		std::printf("   - Targeting System (drivers): %zu\n", group.system_rules.size());
+		std::printf("   - Targeting an NT Service: %zu\n", group.service_rules.size());
+		std::printf("   - Not targeting an application or service: %zu\n", group.non_application_or_service_rules.size());
+		std::printf("   - Targeting an individual user: %zu\n", group.rules_targeting_users);
 
 		PrintVerboseInboundRules("Rules targeting specific applications", group.application_rules);
+		PrintVerboseInboundRules("Rules targeting System (drivers)", group.system_rules);
 		PrintVerboseInboundRules("Rules targeting an NT Service", group.service_rules);
-		PrintVerboseInboundRules(
-			"Rules not targeting an application or service",
-			group.no_application_or_service_rules);
-		PrintVerboseInboundRules("Rules targeting an individual user", group.individual_user_rules);
+		PrintVerboseInboundRules("Rules not targeting an application or service", group.non_application_or_service_rules);
 	}
 
 	static void PrintInboundRuleAnalysis(const InboundRuleAnalysis& inbound_rule_analysis)
 	{
-		std::printf("\nFirewall rules allowing inbound connectivity: %zu\n", inbound_rule_analysis.TotalRuleCount());
-		if (inbound_rule_analysis.TotalRuleCount() == 0)
+		std::printf("\nAnalysis if Firewall rules allowing inbound connectivity\n");
+		size_t total_rule_count = inbound_rule_analysis.private_only.rule_count() +
+			inbound_rule_analysis.includes_domain_profile.rule_count() +
+			inbound_rule_analysis.includes_public_profile.rule_count();
+
+		if (total_rule_count > 0)
+		{
+			std::printf("Note that if a Private or Domain rule matches a Public rules, it's counted as Public\n");
+			std::printf("- This is because if the rules are equivalent, they would be allowed on the Public profile\n");
+			std::printf("- When considering equivalency, Private profile comparisons do not consider the Matching-Subnet keyword\n");
+			std::printf("  (the security profile is not significantly different on-network or routed with > 1 hops in today's deployments)\n");
+			std::printf("\n");
+		}
+
+		std::printf("Total Firewall rules allowing inbound connectivity: %zu\n", total_rule_count);
+		if (total_rule_count == 0)
 		{
 			return;
 		}
 
-		std::printf("  Enabled rules: %zu\n", inbound_rule_analysis.EnabledRuleCount());
-		std::printf("  Disabled rules: %zu\n", inbound_rule_analysis.DisabledRuleCount());
-		std::printf("  Private profile only: %zu\n", inbound_rule_analysis.private_only.rules.size());
-		std::printf("    Enabled rules: %zu\n", inbound_rule_analysis.private_only.enabled_rule_count);
-		std::printf("    Disabled rules: %zu\n", inbound_rule_analysis.private_only.disabled_rule_count);
-		std::printf("  Domain profile only: %zu\n", inbound_rule_analysis.domain_only.rules.size());
-		std::printf("    Enabled rules: %zu\n", inbound_rule_analysis.domain_only.enabled_rule_count);
-		std::printf("    Disabled rules: %zu\n", inbound_rule_analysis.domain_only.disabled_rule_count);
-		std::printf(
-			"  Private + Domain profiles only: %zu\n",
-			inbound_rule_analysis.private_and_domain_only.rules.size());
-		std::printf(
-			"    Enabled rules: %zu\n",
-			inbound_rule_analysis.private_and_domain_only.enabled_rule_count);
-		std::printf(
-			"    Disabled rules: %zu\n",
-			inbound_rule_analysis.private_and_domain_only.disabled_rule_count);
-		std::printf(
-			"  All other profiles (all include Public profiles): %zu\n",
-			inbound_rule_analysis.public_profiles.rules.size());
-		std::printf("    Enabled rules: %zu\n", inbound_rule_analysis.public_profiles.enabled_rule_count);
-		std::printf("    Disabled rules: %zu\n", inbound_rule_analysis.public_profiles.disabled_rule_count);
+		std::printf("  Private profile only: %zu\n", inbound_rule_analysis.private_only.rule_count());
+		std::printf("  Includes Domain profile (exclusive of the Public profile): %zu\n", inbound_rule_analysis.includes_domain_profile.rule_count());
+		std::printf("  Including Public profiles (in combination with any other profile): %zu\n", inbound_rule_analysis.includes_public_profile.rule_count());
+		std::printf("  Private or Domain rules that matched a Public rule (thus not considered exclusively Private or Domain): %zu\n", inbound_rule_analysis.duplicate_of_public_profile.rule_count());
 
-		PrintInboundRuleGroup("Private-profile-only", inbound_rule_analysis.private_only);
-		PrintInboundRuleGroup("Domain-profile-only", inbound_rule_analysis.domain_only);
-		PrintInboundRuleGroup(
-			"Private-profile+Domain-profile-only",
-			inbound_rule_analysis.private_and_domain_only);
-		PrintInboundRuleGroup(
-			"All other profiles (all include Public profiles)",
-			inbound_rule_analysis.public_profiles);
+		PrintInboundRuleGroup("Private profile only", inbound_rule_analysis.private_only);
+		PrintInboundRuleGroup("Includes Domain profile (exclusive of the Public profile)", inbound_rule_analysis.includes_domain_profile);
+		PrintInboundRuleGroup("Including Public profiles (in combination with any other profile)", inbound_rule_analysis.includes_public_profile);
+		PrintInboundRuleGroup("Private or Domain rules that matched a Public rule (thus not considered exclusively Private or Domain)", inbound_rule_analysis.duplicate_of_public_profile);
 	}
 
 	static std::vector<DuplicateRuleDetails> CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules)
@@ -1667,7 +1771,7 @@ namespace details
 				});
 
 			std::wstring verbose_string;
-			if (duplicate_rule_begin->fw_rule->wszLocalApplication)
+			if (duplicate_rule_begin->fw_rule->wszLocalApplication && duplicate_rule_begin->fw_rule->wszLocalApplication[0] != L'\0')
 			{
 				verbose_string =
 					wil::str_printf<std::wstring>(
@@ -1691,16 +1795,16 @@ namespace details
 			}
 		}
 
-		size_t derived_total = 0;
+		size_t duplicate_rule_total = 0;
 		for (const auto& rule : duplicate_rules)
 		{
-			derived_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
+			duplicate_rule_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
 		}
 
 		if (VerboseOutputEnabled() || !duplicate_rules.empty())
 		{
 			std::printf("  * Summary of duplicate analysis of firewall rules:\n");
-			std::printf("   - count of all duplicate rules: %zu\n", derived_total);
+			std::printf("   - count of all duplicate rules: %zu\n", duplicate_rule_total);
 			std::printf("   - count of unique rules with duplicates: %zu\n", duplicate_rules.size());
 			if (VerboseOutputEnabled() && !verbose_output_of_duplicate_strings.empty())
 			{
@@ -1964,7 +2068,7 @@ namespace details
 
 		for (auto& rule : normalized_rules)
 		{
-			if (rule.fw_rule->wszPackageId) // wszPackageId == the Package ID SID
+			if (rule.fw_rule->wszPackageId && rule.fw_rule->wszPackageId[0] != L'\0') // wszPackageId == the Package ID SID
 			{
 				++count_of_rules_with_package_id;
 
@@ -1986,7 +2090,7 @@ namespace details
 			// check for PFN only if we requested a supported version and the returned rule version supports it
 			if (rule.requested_rule_version > FW_BINARY_VERSION_31 && rule.fw_rule->wSchemaVersion > FW_BINARY_VERSION_31)
 			{
-				if (rule.fw_rule->wszPackageFamilyName)
+				if (rule.fw_rule->wszPackageFamilyName && rule.fw_rule->wszPackageFamilyName[0] != L'\0')
 				{
 					++count_of_rules_with_package_family_name;
 
