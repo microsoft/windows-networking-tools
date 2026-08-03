@@ -152,6 +152,10 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 
 		const auto lhs_local_v4_keywords = lhs.fw_rule->LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
 		const auto rhs_local_v4_keywords = rhs.fw_rule->LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if ((lhs_local_v4_keywords == rhs_local_v4_keywords) && (lhs.fw_rule->LocalAddresses.dwV4AddressKeywords != rhs.fw_rule->LocalAddresses.dwV4AddressKeywords))
+		{
+			std::printf("** Local IPv4 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
+		}
 		if (lhs_local_v4_keywords != rhs_local_v4_keywords)
 		{
 			return lhs_local_v4_keywords < rhs_local_v4_keywords ? -1 : 1;
@@ -159,6 +163,10 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 
 		const auto lhs_local_v6_keywords = lhs.fw_rule->LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
 		const auto rhs_local_v6_keywords = rhs.fw_rule->LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if ((lhs_local_v6_keywords == rhs_local_v6_keywords) && (lhs.fw_rule->LocalAddresses.dwV6AddressKeywords != rhs.fw_rule->LocalAddresses.dwV6AddressKeywords))
+		{
+			std::printf("** Local IPv6 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
+		}
 		if (lhs_local_v6_keywords != rhs_local_v6_keywords)
 		{
 			return lhs_local_v6_keywords < rhs_local_v6_keywords ? -1 : 1;
@@ -166,6 +174,10 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 
 		const auto lhs_remote_v4_keywords = lhs.fw_rule->RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
 		const auto rhs_remote_v4_keywords = rhs.fw_rule->RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if ((lhs_remote_v4_keywords == rhs_remote_v4_keywords) && (lhs.fw_rule->RemoteAddresses.dwV4AddressKeywords != rhs.fw_rule->RemoteAddresses.dwV4AddressKeywords))
+		{
+			std::printf("** Remote IPv4 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
+		}
 		if (lhs_remote_v4_keywords != rhs_remote_v4_keywords)
 		{
 			return lhs_remote_v4_keywords < rhs_remote_v4_keywords ? -1 : 1;
@@ -173,6 +185,10 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 
 		const auto lhs_remote_v6_keywords = lhs.fw_rule->RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
 		const auto rhs_remote_v6_keywords = rhs.fw_rule->RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+		if ((lhs_remote_v6_keywords == rhs_remote_v6_keywords) && (lhs.fw_rule->RemoteAddresses.dwV6AddressKeywords != rhs.fw_rule->RemoteAddresses.dwV6AddressKeywords))
+		{
+			std::printf("** Remote IPv6 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
+		}
 		if (lhs_remote_v6_keywords != rhs_remote_v6_keywords)
 		{
 			return lhs_remote_v6_keywords < rhs_remote_v6_keywords ? -1 : 1;

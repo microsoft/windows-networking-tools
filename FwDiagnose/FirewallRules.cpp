@@ -1336,8 +1336,8 @@ namespace details
 		size_t rules_targeting_users{};
 
 		// count of rules that were move from a private or domain InboundRuleGroup
-		// to the Public InboundRuleGroup because the rules matched a rule fro the Public profile
-		size_t count_moved_to_public{};
+		// to the Public InboundRuleGroup because the rules matched a rule from the Public profile
+		size_t count_moved_matching_local_subnet{};
 
 		size_t rule_count() const
 		{
@@ -1486,8 +1486,6 @@ namespace details
 		// if it is, then move it to the duplicate_of_public_profile group, as it's not really a private-only rule
 		const auto UpdateRuleGroupIfMatchesPublicRules = [&](InboundRuleGroup& lhs_rule_group, ComparisonPolicy comparison_policy)
 			{
-				size_t count_moved_to_public = 0;
-
 				// will erase from the private-only vector, which will invalidate the iterators, so we cannot update the iterator here in the for statement
 				// the iterator will be updated in the loop body either from calling erase() or from incrementing it if we don't erase
 				for (auto lhs_rule_iterator = lhs_rule_group.service_rules.begin(); lhs_rule_iterator != lhs_rule_group.service_rules.end(); )
@@ -1505,12 +1503,10 @@ namespace details
 
 							// move the rule from the private to the duplicate_of_public_profile group
 							analysis.duplicate_of_public_profile.service_rules.emplace_back(lhs_rule);
-							++analysis.duplicate_of_public_profile.count_moved_to_public;
 
 							lhs_rule_iterator = lhs_rule_group.service_rules.erase(lhs_rule_iterator);
 							lhs_iterator_invalidated = true;
 
-							++count_moved_to_public;
 							break;
 						}
 					}
@@ -1538,12 +1534,10 @@ namespace details
 
 							// move the rule from the private to the duplicate_of_public_profile group
 							analysis.duplicate_of_public_profile.system_rules.emplace_back(lhs_rule);
-							++analysis.duplicate_of_public_profile.count_moved_to_public;
 
 							lhs_rule_iterator = lhs_rule_group.system_rules.erase(lhs_rule_iterator);
 							lhs_iterator_invalidated = true;
 
-							++count_moved_to_public;
 							break;
 						}
 					}
@@ -1569,12 +1563,10 @@ namespace details
 
 							// move the rule from the private to the duplicate_of_public_profile group
 							analysis.duplicate_of_public_profile.application_rules.emplace_back(lhs_rule);
-							++analysis.duplicate_of_public_profile.count_moved_to_public;
 
 							lhs_rule_iterator = lhs_rule_group.application_rules.erase(lhs_rule_iterator);
 							lhs_iterator_invalidated = true;
 
-							++count_moved_to_public;
 							break;
 						}
 					}
@@ -1600,12 +1592,10 @@ namespace details
 
 							// move the rule from the private to the duplicate_of_public_profile group
 							analysis.duplicate_of_public_profile.non_application_or_service_rules.emplace_back(lhs_rule);
-							++analysis.duplicate_of_public_profile.count_moved_to_public;
 
 							lhs_rule_iterator = lhs_rule_group.non_application_or_service_rules.erase(lhs_rule_iterator);
 							lhs_iterator_invalidated = true;
 
-							++count_moved_to_public;
 							break;
 						}
 					}
@@ -1617,15 +1607,31 @@ namespace details
 				}
 			};
 
-			static constexpr auto private_profile_comparison_policy =
-				comparison_policy_skip_comparing_if_enabled |
-				comparison_policy_skip_comparing_profiles |
-				comparison_policy_skip_comparing_local_subnet;
-			UpdateRuleGroupIfMatchesPublicRules(analysis.private_only, private_profile_comparison_policy);
-			static constexpr auto domain_profile_comparison_policy =
-				comparison_policy_skip_comparing_if_enabled |
-				comparison_policy_skip_comparing_profiles;
-			UpdateRuleGroupIfMatchesPublicRules(analysis.includes_domain_profile, domain_profile_comparison_policy);
+		// first check without comparison_policy_skip_comparing_local_subnet;
+		// then count how many moved due to skipping comparing local subnet
+		/*
+		static constexpr auto private_profile_comparison_policy =
+			comparison_policy_skip_comparing_if_enabled |
+			comparison_policy_skip_comparing_profiles;
+		UpdateRuleGroupIfMatchesPublicRules(analysis.private_only, private_profile_comparison_policy);
+		const auto count_after_private_filter = analysis.duplicate_of_public_profile.rule_count();
+		*/
+
+			const auto count_after_private_filter = 0;
+
+		static constexpr auto private_profile_comparison_policy_including_local_subnet =
+			comparison_policy_skip_comparing_if_enabled |
+			comparison_policy_skip_comparing_profiles |
+			comparison_policy_skip_comparing_local_subnet;
+		UpdateRuleGroupIfMatchesPublicRules(analysis.private_only, private_profile_comparison_policy_including_local_subnet);
+		const auto count_after_filtering_local_subnet = analysis.duplicate_of_public_profile.rule_count();
+
+		analysis.duplicate_of_public_profile.count_moved_matching_local_subnet = count_after_filtering_local_subnet - count_after_private_filter;
+
+		static constexpr auto domain_profile_comparison_policy =
+			comparison_policy_skip_comparing_if_enabled |
+			comparison_policy_skip_comparing_profiles;
+		UpdateRuleGroupIfMatchesPublicRules(analysis.includes_domain_profile, domain_profile_comparison_policy);
 		return analysis;
 	}
 
@@ -1705,6 +1711,7 @@ namespace details
 		std::printf("  Includes Domain profile (exclusive of the Public profile): %zu\n", inbound_rule_analysis.includes_domain_profile.rule_count());
 		std::printf("  Including Public profiles (in combination with any other profile): %zu\n", inbound_rule_analysis.includes_public_profile.rule_count());
 		std::printf("  Private or Domain rules that matched a Public rule (thus not considered exclusively Private or Domain): %zu\n", inbound_rule_analysis.duplicate_of_public_profile.rule_count());
+		std::printf("   - Private rules matching a Public rules - differing by specifying the remote address is Local Subnet or not: %zu\n", inbound_rule_analysis.duplicate_of_public_profile.count_moved_matching_local_subnet);
 
 		PrintInboundRuleGroup("Private profile only", inbound_rule_analysis.private_only);
 		PrintInboundRuleGroup("Includes Domain profile (exclusive of the Public profile)", inbound_rule_analysis.includes_domain_profile);
