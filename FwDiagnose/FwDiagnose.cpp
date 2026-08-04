@@ -47,18 +47,6 @@ bool CleanBrokenRulesEnabled() noexcept
 	return g_cleanBrokenRules;
 }
 
-static bool g_analyzePublicRules = false;
-static bool AnalyzePublicRulesEnabled() noexcept
-{
-	return g_analyzePublicRules;
-}
-
-static bool g_analyzePrivateOnlyRules = false;
-static bool AnalyzePrivateOnlyRulesEnabled() noexcept
-{
-	return g_analyzePrivateOnlyRules;
-}
-
 static bool g_analyzeInboundRules = false;
 static bool AnalyzeInboundRulesEnabled() noexcept
 {
@@ -149,8 +137,6 @@ static void PrintUsage() noexcept
 		"                 : Prompts to delete rules referencing unknown SIDs\n"
 		"                 : Prompts to delete isolation rules with a SIDs referencing non-existing profiles\n"
 		"\n"
-		"  -analyze-public-rules  : Analyzes rules that allow inbound connections on the Public profile\n"
-		"  -analyze-private-rules : Analyzes inbound rules that exist only for the Private profile and not the Public profile\n"
 		"  -analyze-inbound-rules : Summarizes active rules allowing inbound connectivity across all Firewall profiles\n"
 		"\n"
 		"  -enable-shields-up  : Enables the Windows Firewall 'Shields Up' feature which blocks all inbound connections\n"
@@ -250,20 +236,6 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-wfp-events") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_wfpEventEnumeration = true;
-	}
-
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-public-rules") == 0; }) != args.end())
-	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-public-rules") == 0; });
-		args.erase(removed_args.cbegin(), args.end());
-		g_analyzePublicRules = true;
-	}
-
-	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-rules") == 0; }) != args.end())
-	{
-		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-private-rules") == 0; });
-		args.erase(removed_args.cbegin(), args.end());
-		g_analyzePrivateOnlyRules = true;
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-inbound-rules") == 0; }) != args.end())
@@ -465,16 +437,6 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	{
 		ProcessFirewallPolicy();
 		ProcessFirewallRules();
-	}
-
-	if (AnalyzePublicRulesEnabled())
-	{
-		ProcessInboundPublicRules();
-	}
-
-	if (AnalyzePrivateOnlyRulesEnabled())
-	{
-		ProcessPrivateOnlyInboundRules();
 	}
 
 	if (AnalyzeInboundRulesEnabled())

@@ -103,9 +103,89 @@ private:
 	}
 };
 
+inline int CompareFlagsIgnoringActive(_In_ const FW_RULE* lhs, _In_ const FW_RULE* rhs) noexcept
+{
+	// remove the FW_RULE_FLAGS_ACTIVE flag from both before comparing
+	const auto lhs_flags = lhs->wFlags & ~FW_RULE_FLAGS_ACTIVE;
+	const auto rhs_flags = rhs->wFlags & ~FW_RULE_FLAGS_ACTIVE;
+	if (lhs_flags == rhs_flags)
+	{
+		return 0;
+	}
+	return lhs_flags < rhs_flags ? -1 : 1;
+}
+
+inline int CompareFlags(_In_ const FW_RULE* lhs, _In_ const FW_RULE* rhs) noexcept
+{
+	if (lhs->wFlags == rhs->wFlags)
+	{
+		return 0;
+	}
+	return lhs->wFlags < rhs->wFlags ? -1 : 1;
+}
+
+inline int CompareKeywordsIgnoringLocalSubnet(_In_ const FW_RULE* lhs, _In_ const FW_RULE* rhs) noexcept
+{
+	// remove the FW_ADDRESS_KEYWORD_LOCAL_SUBNET flag from both before comparing
+	const auto lhs_local_v4_keywords = lhs->LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	const auto rhs_local_v4_keywords = rhs->LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	if (lhs_local_v4_keywords != rhs_local_v4_keywords)
+	{
+		return lhs_local_v4_keywords < rhs_local_v4_keywords ? -1 : 1;
+	}
+
+	const auto lhs_local_v6_keywords = lhs->LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	const auto rhs_local_v6_keywords = rhs->LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	if (lhs_local_v6_keywords != rhs_local_v6_keywords)
+	{
+		return lhs_local_v6_keywords < rhs_local_v6_keywords ? -1 : 1;
+	}
+
+	const auto lhs_remote_v4_keywords = lhs->RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	const auto rhs_remote_v4_keywords = rhs->RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	if (lhs_remote_v4_keywords != rhs_remote_v4_keywords)
+	{
+		return lhs_remote_v4_keywords < rhs_remote_v4_keywords ? -1 : 1;
+	}
+
+	const auto lhs_remote_v6_keywords = lhs->RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	const auto rhs_remote_v6_keywords = rhs->RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
+	if (lhs_remote_v6_keywords != rhs_remote_v6_keywords)
+	{
+		return lhs_remote_v6_keywords < rhs_remote_v6_keywords ? -1 : 1;
+	}
+
+	return 0;
+}
+
+inline int CompareKeywords(_In_ const FW_RULE* lhs, _In_ const FW_RULE* rhs) noexcept
+{
+	if (lhs->LocalAddresses.dwV4AddressKeywords != rhs->LocalAddresses.dwV4AddressKeywords)
+	{
+		return lhs->LocalAddresses.dwV4AddressKeywords < rhs->LocalAddresses.dwV4AddressKeywords ? -1 : 1;
+	}
+
+	if (lhs->LocalAddresses.dwV6AddressKeywords != rhs->LocalAddresses.dwV6AddressKeywords)
+	{
+		return lhs->LocalAddresses.dwV6AddressKeywords < rhs->LocalAddresses.dwV6AddressKeywords ? -1 : 1;
+	}
+
+	if (lhs->RemoteAddresses.dwV4AddressKeywords != rhs->RemoteAddresses.dwV4AddressKeywords)
+	{
+		return lhs->RemoteAddresses.dwV4AddressKeywords < rhs->RemoteAddresses.dwV4AddressKeywords ? -1 : 1;
+	}
+
+	if (lhs->RemoteAddresses.dwV6AddressKeywords != rhs->RemoteAddresses.dwV6AddressKeywords)
+	{
+		return lhs->RemoteAddresses.dwV6AddressKeywords < rhs->RemoteAddresses.dwV6AddressKeywords ? -1 : 1;
+	}
+
+	return 0;
+}
+
 enum ComparisonPolicy : uint8_t
 {
-	comparison_policy_all = 0x0,
+	comparison_policy_compare_all = 0x0,
 	comparison_policy_skip_comparing_profiles = 0x1,
 	comparison_policy_skip_comparing_if_enabled = 0x2,
 	comparison_policy_skip_comparing_local_subnet = 0x4,
@@ -114,7 +194,7 @@ DEFINE_ENUM_FLAG_OPERATORS(ComparisonPolicy)
 
 // returns the same integer value as memcmp()
 // -1 if lhs < rhs, 0 if equal, +1 if lhs > rhs
-inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs, ComparisonPolicy policy = comparison_policy_all) noexcept
+inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs, ComparisonPolicy policy = comparison_policy_compare_all) noexcept
 {
 	// check the optional fields based off the bool input parameters
 	if (policy & comparison_policy_skip_comparing_profiles)
@@ -126,92 +206,33 @@ inline int RuleDetailsComparison(const NormalizedFirewallRule& lhs, const Normal
 		return lhs.fw_rule->dwProfiles < rhs.fw_rule->dwProfiles ? -1 : 1;
 	}
 
+	int flag_comparison = 0;
 	if (policy & comparison_policy_skip_comparing_if_enabled)
 	{
 		// don't match if the rules are enabled
-		// remove the FW_RULE_FLAGS_ACTIVE flag from both before comparing
-		const auto lhs_flags = lhs.fw_rule->wFlags & ~FW_RULE_FLAGS_ACTIVE;
-		const auto rhs_flags = rhs.fw_rule->wFlags & ~FW_RULE_FLAGS_ACTIVE;
-		if (lhs_flags != rhs_flags)
-		{
-			return lhs_flags < rhs_flags ? -1 : 1;
-		}
+		flag_comparison = CompareFlagsIgnoringActive(lhs.fw_rule, rhs.fw_rule);
 	}
 	else
 	{
-		if (lhs.fw_rule->wFlags != rhs.fw_rule->wFlags)
-		{
-			return lhs.fw_rule->wFlags < rhs.fw_rule->wFlags ? -1 : 1;
-		}
+		flag_comparison = CompareFlags(lhs.fw_rule, rhs.fw_rule);
+	}
+	if (flag_comparison != 0)
+	{
+		return flag_comparison;
 	}
 
+	int keyword_comparison = 0;
 	if (policy & comparison_policy_skip_comparing_local_subnet)
 	{
-		// not comparing local subnets
-		// remove the FW_ADDRESS_KEYWORD_LOCAL_SUBNET flag from both before comparing
-
-		const auto lhs_local_v4_keywords = lhs.fw_rule->LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		const auto rhs_local_v4_keywords = rhs.fw_rule->LocalAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		if ((lhs_local_v4_keywords == rhs_local_v4_keywords) && (lhs.fw_rule->LocalAddresses.dwV4AddressKeywords != rhs.fw_rule->LocalAddresses.dwV4AddressKeywords))
-		{
-			std::printf("** Local IPv4 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
-		}
-		if (lhs_local_v4_keywords != rhs_local_v4_keywords)
-		{
-			return lhs_local_v4_keywords < rhs_local_v4_keywords ? -1 : 1;
-		}
-
-		const auto lhs_local_v6_keywords = lhs.fw_rule->LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		const auto rhs_local_v6_keywords = rhs.fw_rule->LocalAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		if ((lhs_local_v6_keywords == rhs_local_v6_keywords) && (lhs.fw_rule->LocalAddresses.dwV6AddressKeywords != rhs.fw_rule->LocalAddresses.dwV6AddressKeywords))
-		{
-			std::printf("** Local IPv6 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
-		}
-		if (lhs_local_v6_keywords != rhs_local_v6_keywords)
-		{
-			return lhs_local_v6_keywords < rhs_local_v6_keywords ? -1 : 1;
-		}
-
-		const auto lhs_remote_v4_keywords = lhs.fw_rule->RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		const auto rhs_remote_v4_keywords = rhs.fw_rule->RemoteAddresses.dwV4AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		if ((lhs_remote_v4_keywords == rhs_remote_v4_keywords) && (lhs.fw_rule->RemoteAddresses.dwV4AddressKeywords != rhs.fw_rule->RemoteAddresses.dwV4AddressKeywords))
-		{
-			std::printf("** Remote IPv4 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
-		}
-		if (lhs_remote_v4_keywords != rhs_remote_v4_keywords)
-		{
-			return lhs_remote_v4_keywords < rhs_remote_v4_keywords ? -1 : 1;
-		}
-
-		const auto lhs_remote_v6_keywords = lhs.fw_rule->RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		const auto rhs_remote_v6_keywords = rhs.fw_rule->RemoteAddresses.dwV6AddressKeywords & ~FW_ADDRESS_KEYWORD_LOCAL_SUBNET;
-		if ((lhs_remote_v6_keywords == rhs_remote_v6_keywords) && (lhs.fw_rule->RemoteAddresses.dwV6AddressKeywords != rhs.fw_rule->RemoteAddresses.dwV6AddressKeywords))
-		{
-			std::printf("** Remote IPv6 subnet keyword mismatch only with FW_ADDRESS_KEYWORD_LOCAL_SUBNET, but ignoring due to comparison policy.\n");
-		}
-		if (lhs_remote_v6_keywords != rhs_remote_v6_keywords)
-		{
-			return lhs_remote_v6_keywords < rhs_remote_v6_keywords ? -1 : 1;
-		}
+		keyword_comparison = CompareKeywordsIgnoringLocalSubnet(lhs.fw_rule, rhs.fw_rule);
 	}
 	else
 	{
-		if (lhs.fw_rule->LocalAddresses.dwV4AddressKeywords != rhs.fw_rule->LocalAddresses.dwV4AddressKeywords)
-		{
-			return lhs.fw_rule->LocalAddresses.dwV4AddressKeywords < rhs.fw_rule->LocalAddresses.dwV4AddressKeywords ? -1 : 1;
-		}
-		if (lhs.fw_rule->LocalAddresses.dwV6AddressKeywords != rhs.fw_rule->LocalAddresses.dwV6AddressKeywords)
-		{
-			return lhs.fw_rule->LocalAddresses.dwV6AddressKeywords < rhs.fw_rule->LocalAddresses.dwV6AddressKeywords ? -1 : 1;
-		}
-		if (lhs.fw_rule->RemoteAddresses.dwV4AddressKeywords != rhs.fw_rule->RemoteAddresses.dwV4AddressKeywords)
-		{
-			return lhs.fw_rule->RemoteAddresses.dwV4AddressKeywords < rhs.fw_rule->RemoteAddresses.dwV4AddressKeywords ? -1 : 1;
-		}
-		if (lhs.fw_rule->RemoteAddresses.dwV6AddressKeywords != rhs.fw_rule->RemoteAddresses.dwV6AddressKeywords)
-		{
-			return lhs.fw_rule->RemoteAddresses.dwV6AddressKeywords < rhs.fw_rule->RemoteAddresses.dwV6AddressKeywords ? -1 : 1;
-		}
+		keyword_comparison = CompareKeywords(lhs.fw_rule, rhs.fw_rule);
+	}
+	if (keyword_comparison != 0)
+	{
+		return keyword_comparison;
 	}
 
 	return NormalizedString::StringCompare(lhs.normalized_rule_details, rhs.normalized_rule_details);
