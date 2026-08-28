@@ -1617,7 +1617,27 @@ enum InetDiscardReason {
 	InetDiscardReasonMaxEnumValue
 };
 
-PCSTR TransportDiscardReasonToString(InetDiscardReason reason) noexcept
+enum FlDiscardReason {
+	FlDiscardLoopbackPacket = 1,
+	FlDiscardInvalidSnapHeader = 2,
+	FlDiscardInvalidEthernetType = 3,
+	FlDiscardInvalidPacketLength = 4,
+	FlDiscardHeaderNotContiguous = 5,
+	FlDiscardInvalidDestinationType = 6,
+	FlDiscardAllocationFailure = 7,
+	FlDiscardInterfaceRefFailure = 8,
+	FlDiscardProviderRefFailure = 9,
+	FlDiscardInvalidLsoInfo = 10,
+	FlDiscardInvalidUsoInfo = 11,
+	FlDiscardInvalidMedium = 12,
+	FlDiscardInvalidArpHeader = 13,
+	FlDiscardNoClientInterface = 14,
+	FlDiscardTooManyNetBuffers = 15,
+	FlDiscardFlsnpiClientDrop = 16,
+	FlDiscardMax
+};
+
+static PCSTR TransportDiscardReasonToString(InetDiscardReason reason) noexcept
 {
 	switch (reason)
 	{
@@ -1659,7 +1679,7 @@ PCSTR TransportDiscardReasonToString(InetDiscardReason reason) noexcept
 	default: return "Unknown InetDiscardReason";
 	}
 }
-PCSTR NetworkDiscardReasonToString(IpDiscardReason reason) noexcept
+static PCSTR NetworkDiscardReasonToString(IpDiscardReason reason) noexcept
 {
 	switch (reason)
 	{
@@ -1726,6 +1746,31 @@ PCSTR NetworkDiscardReasonToString(IpDiscardReason reason) noexcept
 	default: return "<unknown IpDiscardReason>";
 	}
 }
+static PCSTR FramingDiscardReasonToString(FlDiscardReason reason) noexcept
+{
+	switch (reason)
+	{
+		case FlDiscardLoopbackPacket: return "FlDiscardLoopbackPacket";
+		case FlDiscardInvalidSnapHeader: return "FlDiscardInvalidSnapHeader";
+		case FlDiscardInvalidEthernetType: return "FlDiscardInvalidEthernetType";
+		case FlDiscardInvalidPacketLength: return "FlDiscardInvalidPacketLength";
+		case FlDiscardHeaderNotContiguous: return "FlDiscardHeaderNotContiguous";
+		case FlDiscardInvalidDestinationType: return "FlDiscardInvalidDestinationType";
+		case FlDiscardAllocationFailure: return "FlDiscardAllocationFailure";
+		case FlDiscardInterfaceRefFailure: return "FlDiscardInterfaceRefFailure";
+		case FlDiscardProviderRefFailure: return "FlDiscardProviderRefFailure";
+		case FlDiscardInvalidLsoInfo: return "FlDiscardInvalidLsoInfo";
+		case FlDiscardInvalidUsoInfo: return "FlDiscardInvalidUsoInfo";
+		case FlDiscardInvalidMedium: return "FlDiscardInvalidMedium";
+		case FlDiscardInvalidArpHeader: return "FlDiscardInvalidArpHeader";
+		case FlDiscardNoClientInterface: return "FlDiscardNoClientInterface";
+		case FlDiscardTooManyNetBuffers: return "FlDiscardTooManyNetBuffers";
+		case FlDiscardFlsnpiClientDrop: return "FlDiscardFlsnpiClientDrop";
+		case FlDiscardMax: return "FlDiscardMax";
+		default: return "<unknown FlDiscardReason>";
+	}
+}
+
 void ListenForWfpNetEvents()
 {
 	// verify has admin access
@@ -1743,7 +1788,7 @@ void ListenForWfpNetEvents()
 
 	constexpr auto TcpipTransportPacketDrops = 1214;
 	constexpr auto TcpipNetworkPacketDropEventId = 1215;
-	constexpr auto TcpipFramingPacketDrops = 1465;
+	constexpr auto TcpipFramingPacketDrops = 1478;
 	const auto callback_fn = [](const EVENT_RECORD* pRecord) {
 		try
 		{
@@ -1804,18 +1849,10 @@ void ListenForWfpNetEvents()
 
 				std::printf(
 					"\n** TcpipTransportPacketDrops **\n"
-					"       Keyword %llu\n"
-					"       Level %u\n"
-					"       Channel %u\n"
-					"       Opcode %u\n"
 					"       Protocol %ls\n"
 					"       Local Address %ls\n"
 					"       Remote Address %ls\n"
 					"       Reason %hs\n",
-					event_message.getKeyword(),
-					event_message.getLevel(),
-					event_message.getChannel(),
-					event_message.getOpcode(),
 					IpProtocolToString(std::stoi(protocol_string.value())).c_str(),
 					local_address.c_str(),
 					event_message.readEventProperty(L"RemoteSockAddr").value_or(std::wstring(L"<etw-field-not-set>")).c_str(),
@@ -1901,10 +1938,6 @@ void ListenForWfpNetEvents()
 
 				std::printf(
 					"\n** TcpipNetworkPacketDrops **\n"
-					"       Keyword %llu\n"
-					"       Level %u\n"
-					"       Channel %u\n"
-					"       Opcode %u\n"
 					"       Protocol %ls\n"
 					"       AddressFamily %ls\n"
 					"       Direction %ls\n"
@@ -1912,10 +1945,6 @@ void ListenForWfpNetEvents()
 					"       Destination Address %ls\n"
 					"       Reason %hs\n"
 					"       IfIndex %ls\n",
-					event_message.getKeyword(),
-					event_message.getLevel(),
-					event_message.getChannel(),
-					event_message.getOpcode(),
 					IpProtocolToString(std::stoi(protocol_string.value())).c_str(),
 					address_family.c_str(),
 					direction.c_str(),
@@ -1927,16 +1956,75 @@ void ListenForWfpNetEvents()
 			}
 			else if (event_message.getEventId() == TcpipFramingPacketDrops)
 			{
+				const auto path_direction = event_message.readEventProperty(L"PathDirection");
+				if (!path_direction.has_value())
+				{
+					std::printf(
+						"\n** TcpipFramingPacketDrops **\n"
+						"       <Failed to read 'PathDirection' from event record>\n");
+					return;
+				}
+
+				const auto address_family_string = event_message.readEventProperty(L"AddressFamily");
+				if (!address_family_string.has_value())
+				{
+					std::printf(
+						"\n** TcpipFramingPacketDrops **\n"
+						"       <Failed to read 'AddressFamily' from event record>\n");
+					return;
+				}
+				auto address_family = address_family_string.value();
+				if (address_family_string == std::wstring(L"2"))
+				{
+					address_family = L"IPv4";
+				}
+				else if (address_family_string == std::wstring(L"23"))
+				{
+					address_family = L"IPv6";
+				}
+
+				const auto direction_string = event_message.readEventProperty(L"PathDirection");
+				if (!direction_string.has_value())
+				{
+					std::printf(
+						"\n** TcpipFramingPacketDrops **\n"
+						"       <Failed to read 'PathDirection' from event record>\n");
+					return;
+				}
+				std::wstring direction = direction_string.value();
+				if (direction_string.value() == L"0")
+				{
+					direction = L"Outbound";
+				}
+				else if (direction_string.value() == L"1")
+				{
+					direction = L"Inbound";
+				}
+
+				const auto reason_string = event_message.readEventProperty(L"Reason");
+				if (!reason_string.has_value())
+				{
+					std::printf(
+						"\n** TcpipFramingPacketDrops **\n"
+						"       <Failed to read 'Reason' from event record>\n");
+					return;
+				}
+				if (reason_string.value() == L"3")
+				{
+					// ignore drops due to invalid ethernet type - this is just noise on the wire
+					return;
+				}
+
 				std::printf(
 					"\n** TcpipFramingPacketDrops **\n"
-					"       Keyword %llu\n"
-					"       Level %u\n"
-					"       Channel %u\n"
-					"       Opcode %u\n",
-					event_message.getKeyword(),
-					event_message.getLevel(),
-					event_message.getChannel(),
-					event_message.getOpcode()
+					"       AddressFamily %ls\n"
+					"       Direction %ls\n"
+					"       Interface %ls\n"
+					"       Reason %hs\n",
+					address_family.c_str(),
+					direction.c_str(),
+					event_message.readEventProperty(L"Interface").value_or(std::wstring(L"<etw-field-not-set>")).c_str(),
+					FramingDiscardReasonToString(static_cast<FlDiscardReason>(std::stoi(reason_string.value())))
 				);
 			}
 		}
@@ -1946,7 +2034,6 @@ void ListenForWfpNetEvents()
 		}
 		};
 
-	std::printf("\n ... constructing ETW trace session for TCPIP events ...\n");
 	ctl::ctEtwReader etw_reader{ callback_fn };
 
 	constexpr GUID tcpipTraceLoggingProvider = { .Data1 = 0x2F07E2EE, .Data2 = 0x15DB, .Data3 = 0x40F1, .Data4 = {0x90, 0xEF, 0x9D, 0x7B, 0xA2, 0x82, 0x18, 0x8A} };
@@ -1956,7 +2043,6 @@ void ListenForWfpNetEvents()
 		tcpipTraceLoggingProvider,
 		{ TcpipTransportPacketDrops, TcpipNetworkPacketDropEventId, TcpipFramingPacketDrops }));
 
-	std::printf("\n ... Subscribing to NetEvents ...\n");
 	HANDLE eventsHandle{};
 	const auto fwpm_subscription_error = FwpmNetEventSubscribe4(
 		GetFwpmEngineHandle(),

@@ -6,6 +6,7 @@
 // clang-format off
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cwchar>
 #include <functional>
 #include <memory>
@@ -471,13 +472,14 @@ try {
 	if (eventIds.empty()) {
         return E_INVALIDARG;
     }
-	if (eventIds.size() > MAXSHORT) {
+	if (eventIds.size() > MAX_EVENT_FILTER_EVENT_ID_COUNT) {
 		return E_INVALIDARG;
 	}
     // Block calling if an open session is not running
     VerifyTraceSessionIsRunning();
     
-	const auto required_size = sizeof(EVENT_FILTER_EVENT_ID) + (sizeof(USHORT) * eventIds.size());
+	const auto required_size =
+		offsetof(EVENT_FILTER_EVENT_ID, Events) + (sizeof(eventIds[0]) * eventIds.size());
     std::unique_ptr<BYTE[]> eventFilterStructure = std::make_unique<BYTE[]>(required_size);
 	ZeroMemory(eventFilterStructure.get(), required_size);
 
@@ -497,7 +499,7 @@ try {
 	traceParameters.Version = ENABLE_TRACE_PARAMETERS_VERSION_2;
 	traceParameters.EnableProperty = 0;
 	traceParameters.ControlFlags = 0;
-    CoCreateGuid(&traceParameters.SourceId);
+    RETURN_IF_FAILED(CoCreateGuid(&traceParameters.SourceId));
     traceParameters.FilterDescCount = 1;
 	traceParameters.EnableFilterDesc = &descriptor;
 
