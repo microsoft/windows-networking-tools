@@ -40,7 +40,7 @@ inline std::wstring GuidToString(const GUID& guid)
 	return return_string;
 }
 
-enum class PromptResponse
+enum class PromptResponse : uint8_t
 {
 	Yes,
 	No,

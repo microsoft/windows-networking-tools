@@ -23,7 +23,7 @@ static wil::critical_section g_wfp_engineHandleLock;
 HANDLE GetFwpmEngineHandle()
 {
 	// [[maybe_unused]] to suppress unused variable warnings for RAII objects
-    [[maybe_unused]] const auto lock = g_wfp_engineHandleLock.lock();
+	[[maybe_unused]] const auto lock = g_wfp_engineHandleLock.lock();
 	if (!g_wfp_engineHandle)
 	{
 		const auto fwpm_error = FwpmEngineOpen0(nullptr, RPC_C_AUTHN_WINNT, nullptr, nullptr, &g_wfp_engineHandle);
@@ -214,13 +214,14 @@ uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept
 	{
 		return layer_priority;
 	}
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 = { 0x29243AF8, 0xECAF, 0x4436, {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 =
+	{ .Data1 = 0x29243AF8, .Data2 = 0xECAF, .Data3 = 0x4436, .Data4 = {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04} };
 	++layer_priority;
 	if (layer == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4)
 	{
 		return layer_priority;
 	}
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 = { 0xC9809347, 0x218F, 0x4B7F, {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 = { .Data1 = 0xC9809347, .Data2 = 0x218F, .Data3 = 0x4B7F, .Data4 = {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4} };
 	++layer_priority;
 	if (layer == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6)
 	{
@@ -991,12 +992,14 @@ std::string FwpmLayerToString(const GUID& layerGuid)
 		return "FWPM_LAYER_OUTBOUND_NETWORK_CONNECTION_POLICY_V6";
 	}
 
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 = { 0x29243AF8, 0xECAF, 0x4436, {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 = 
+	{ .Data1 = 0x29243AF8, .Data2 = 0xECAF, .Data3 = 0x4436, .Data4 = {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04} };
 	if (layerGuid == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4)
 	{
 		return "FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4";
 	}
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 = { 0xC9809347, 0x218F, 0x4B7F, {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 =
+	{ .Data1 = 0xC9809347, .Data2 = 0x218F, .Data3 = 0x4B7F, .Data4 = {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4} };
 	if (layerGuid == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6)
 	{
 		return "FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6";

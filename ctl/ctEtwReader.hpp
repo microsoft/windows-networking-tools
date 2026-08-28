@@ -138,6 +138,19 @@ class ctEtwReader
         ULONGLONG uMatchAllKeyword = 0) noexcept;
 
     /**
+     * @brief Enables the specified ETW providers in the existing trace session.
+     * Fails if StartSession() has not been called successfully, or if the worker thread pumping events has stopped
+     * unexpectedly.
+     * @param providerGUID  ETW Provider GUID to enable.
+	 * @param eventIds Vector of event IDs to enable. If empty, returns E_INVALIDARG.
+     * @return HRESULT status code.
+     */
+    [[nodiscard]] HRESULT
+        EnableTraceProvidersPerEventId(
+            _In_ const GUID& providerGUID,
+            std::vector<uint16_t> eventIds) noexcept;
+
+	/**
      * @brief Disables the specified ETW providers in the existing trace session.
      * Fails if StartSession() has not been called successfully, or if the worker thread pumping events has stopped
      * unexpectedly.
@@ -420,7 +433,8 @@ ctEtwReader::StopTraceSession(_In_ PCWSTR szSessionName) noexcept
         error_code);
 }
 
-inline HRESULT
+inline
+[[nodiscard]] HRESULT
 ctEtwReader::EnableTraceProviders(
     _In_ const std::vector<GUID>& providerGUIDs,
     UCHAR uLevel,
@@ -429,9 +443,10 @@ ctEtwReader::EnableTraceProviders(
 try {
     // Block calling if an open session is not running
     VerifyTraceSessionIsRunning();
+
     // iterate through the std::vector of GUIDs, enabling each provider
     for (const auto& providerGUID : providerGUIDs) {
-        THROW_IF_WIN32_ERROR(EnableTraceEx(
+        RETURN_IF_WIN32_ERROR(EnableTraceEx(
             &providerGUID,
             &m_sessionGUID,
             m_sessionHandle,
@@ -443,6 +458,58 @@ try {
             nullptr));
     }
 
+    return S_OK;
+}
+CATCH_RETURN();
+	
+inline
+[[nodiscard]] HRESULT
+ctEtwReader::EnableTraceProvidersPerEventId(
+    _In_ const GUID& providerGUID,
+    std::vector<uint16_t> eventIds) noexcept
+try {
+	if (eventIds.empty()) {
+        return E_INVALIDARG;
+    }
+	if (eventIds.size() > MAXSHORT) {
+		return E_INVALIDARG;
+	}
+    // Block calling if an open session is not running
+    VerifyTraceSessionIsRunning();
+    
+	const auto required_size = sizeof(EVENT_FILTER_EVENT_ID) + (sizeof(USHORT) * eventIds.size());
+    std::unique_ptr<BYTE[]> eventFilterStructure = std::make_unique<BYTE[]>(required_size);
+	ZeroMemory(eventFilterStructure.get(), required_size);
+
+    EVENT_FILTER_EVENT_ID* eventIdFilters = reinterpret_cast<EVENT_FILTER_EVENT_ID*>(eventFilterStructure.get());
+    eventIdFilters->FilterIn = TRUE;
+	eventIdFilters->Count = static_cast<USHORT>(eventIds.size());
+	for (size_t i = 0; i < eventIds.size(); ++i) {
+		eventIdFilters->Events[i] = eventIds[i];
+	}
+
+    EVENT_FILTER_DESCRIPTOR descriptor{};
+    descriptor.Type = EVENT_FILTER_TYPE_EVENT_ID;
+    descriptor.Ptr = reinterpret_cast<ULONGLONG>(eventIdFilters);
+    descriptor.Size = static_cast<ULONG>(required_size);
+
+	ENABLE_TRACE_PARAMETERS traceParameters{};
+	traceParameters.Version = ENABLE_TRACE_PARAMETERS_VERSION_2;
+	traceParameters.EnableProperty = 0;
+	traceParameters.ControlFlags = 0;
+    CoCreateGuid(&traceParameters.SourceId);
+    traceParameters.FilterDescCount = 1;
+	traceParameters.EnableFilterDesc = &descriptor;
+
+    RETURN_IF_WIN32_ERROR(EnableTraceEx2(
+        m_sessionHandle,
+        &providerGUID,
+        EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+        0,
+        0,
+        0,
+        0,
+        &traceParameters));
     return S_OK;
 }
 CATCH_RETURN();
@@ -518,7 +585,7 @@ try {
     // Block calling if an open session is not running
     VerifyTraceSessionIsRunning();
     for (const auto& providerGUID : providerGUIDs) {
-        THROW_IF_WIN32_ERROR(
+        RETURN_IF_WIN32_ERROR(
             ::EnableTraceEx(&providerGUID, &m_sessionGUID, m_sessionHandle, FALSE, 0, 0, 0, 0, nullptr));
     }
 
@@ -540,7 +607,7 @@ try {
         // stops the session even when returned ERROR_MORE_DATA
         // - if this fails, there's nothing we can do to compensate
         if (error_code != ERROR_MORE_DATA && error_code != ERROR_SUCCESS) {
-            THROW_WIN32(error_code);
+            RETURN_IF_WIN32_ERROR(error_code);
         }
     }
 

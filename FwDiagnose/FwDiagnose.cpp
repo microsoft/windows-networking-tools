@@ -16,6 +16,7 @@
 #include "WfpCounters.h"
 #include "WfpEvents.h"
 
+#include <wil/network.h>
 #include <wil/registry.h>
 #include <wil/resource.h>
 
@@ -166,6 +167,7 @@ static void PrintUsage() noexcept
 
 int __cdecl wmain(int argc, wchar_t* argv[]) try
 {
+	const auto wsa_startup = wil::network::WSAStartup();
 	const auto coInit = wil::CoInitializeEx();
 
 	if (argc < 2)

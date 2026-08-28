@@ -8,6 +8,7 @@
 #include <cwchar>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -280,6 +281,8 @@ class ctEtwRecord
     queryEventProperty(_In_ PCWSTR, _Out_ ctPropertyPair&) const;
     bool
     queryEventProperty(_In_ ULONG, _Out_ std::wstring&) const;
+
+    std::optional<std::wstring> readEventProperty(_In_ PCWSTR) const;
     /** @} */
 
   private:
@@ -1610,6 +1613,15 @@ ctEtwRecord::queryEventPropertyName(_In_ const ULONG index, _Out_ std::wstring& 
 
     return true;
 }
+	
+inline std::optional<std::wstring> ctEtwRecord::readEventProperty(_In_ PCWSTR property_name) const
+{
+    std::wstring property_value;
+    if (queryEventProperty(property_name, property_value)) {
+        return property_value;
+    }
+    return std::nullopt;
+}
 
 inline bool
 ctEtwRecord::queryEventProperty(_In_ PCWSTR property_name, _Out_ std::wstring& property_value) const
@@ -2092,6 +2104,11 @@ details::PrintHexBinary(_TDH_OUT_TYPE propertyOutType, const BYTE* propertyBuffe
             &dwSize);
         if (0 == iReturn) {
             wsData = stackBuffer;
+        }
+        else
+        {
+            DebugBreak();
+            THROW_LAST_ERROR();
         }
     } else {
         // Unknown TDH_OUTTYPE [%u] for the TDH_INTYPE_BINARY value
