@@ -13,6 +13,7 @@
 #include "FwDiagnose.h"
 
 #include "FirewallRules.h"
+#include "TcpipEvents.h"
 #include "WfpCounters.h"
 #include "WfpEvents.h"
 
@@ -100,6 +101,12 @@ bool WfpEventEnumerationEnabled() noexcept
 	return g_wfpEventEnumeration;
 }
 
+static bool g_tcpipEventEnumeration = false;
+static bool TcpipEventEnumerationEnabled() noexcept
+{
+	return g_tcpipEventEnumeration;
+}
+
 static bool g_removeWfpCalloutFilters = false;
 static std::wstring g_removeCalloutDriverName;
 bool RemoveWfpCalloutFiltersEnabled() noexcept
@@ -150,9 +157,10 @@ static void PrintUsage() noexcept
 		"  -list-app-packages         : Output details of all app-container packages\n"
 		"  -analyze-app-package-rules : Analyzes Firewall rules referencing app-packages\n"
 		"\n"
-		"  -analyze-wfp : Output details of WFP objects (callouts, sublayers, and filters)\n"
-		"               : This requires Administrator privileges\n"
-		"  -wfp-events  : Listen for and print all NetEvents from WFP\n"
+		"  -analyze-wfp  : Output details of WFP objects (callouts, sublayers, and filters)\n"
+		"                : This requires Administrator privileges\n"
+		"  -wfp-events   : Listen for and print all NetEvents from WFP\n"
+		"  -tcpip-events : Listen for and print TCPIP packet drop events from ETW\n"
 		"\n"
 		"  -remove-callouts      : Prompt to temporarily remove filters for 3rd party WFP callout drivers\n"
 		"                        : By default will prompt for all drivers to be temporarily removed (unless -driver is specified)\n"
@@ -238,6 +246,13 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-wfp-events") == 0; });
 		args.erase(removed_args.cbegin(), args.end());
 		g_wfpEventEnumeration = true;
+	}
+
+	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-tcpip-events") == 0; }) != args.end())
+	{
+		auto removed_args = std::ranges::remove_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-tcpip-events") == 0; });
+		args.erase(removed_args.cbegin(), args.end());
+		g_tcpipEventEnumeration = true;
 	}
 
 	if (std::ranges::find_if(args, [&](const auto* lhs) { return _wcsicmp(lhs, L"-analyze-inbound-rules") == 0; }) != args.end())
@@ -459,6 +474,11 @@ int __cdecl wmain(int argc, wchar_t* argv[]) try
 	if (WfpEventEnumerationEnabled())
 	{
 		ListenForWfpNetEvents();
+	}
+
+	if (TcpipEventEnumerationEnabled())
+	{
+		ListenForTcpipEvents();
 	}
 
 	return 0;
