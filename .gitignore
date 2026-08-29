@@ -1,6 +1,7 @@
 ﻿*.user
 *.filters
 *.log
+/mappings.txt
 /.vs
 /packages
 /Win32
@@ -27,6 +28,21 @@
 /MultipathLatencyAnalyzer/x64
 /MultipathLatencyAnalyzer/ARM64
 
+/MigrateIpProperties/.vs
+/MigrateIpProperties/packages
+/MigrateIpProperties/ARM64
+/MigrateIpProperties/Debug
+/MigrateIpProperties/Release
+/MigrateIpProperties/x64
+
+/FwDiagnose/.vs
+/FwDiagnose/packages
+/FwDiagnose/ARM64
+/FwDiagnose/Debug
+/FwDiagnose/Release
+/FwDiagnose/x64
+/FwDiagnose/FwDiagnose/
+
 /QueryFirewallProperties/.vs
 /QueryFirewallProperties/packages
 /QueryFirewallProperties/ARM64
@@ -34,9 +50,10 @@
 /QueryFirewallProperties/Release
 /QueryFirewallProperties/x64
 
-/FirewallRuleAnalysis/.vs
-/FirewallRuleAnalysis/packages
-/FirewallRuleAnalysis/ARM64
-/FirewallRuleAnalysis/Debug
-/FirewallRuleAnalysis/Release
-/FirewallRuleAnalysis/x64
+/ValidateLineEndings/.vs
+/ValidateLineEndings/packages
+/ValidateLineEndings/ARM64
+/ValidateLineEndings/Debug
+/ValidateLineEndings/Release
+/ValidateLineEndings/x64
+/ValidateLineEndings/Validate.*
