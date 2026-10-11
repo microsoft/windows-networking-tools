@@ -1,0 +1,3 @@
+BasedOnStyle: InheritParentConfig
+BreakAfterReturnType: All
+BreakAfterAttributes: Never

@@ -57,7 +57,7 @@ public:
     void Cancel() noexcept;
 
     void CheckConnectivity();
-    void PrepareToReceive(std::function<void(ReceiveResult&)> clientCallback) noexcept;
+    void PrepareToReceive(const std::function<void(ReceiveResult&)>& clientCallback) noexcept;
 
     void SendDatagram(long long sequenceNumber, std::function<void(const SendResult&)> clientCallback) noexcept;
 

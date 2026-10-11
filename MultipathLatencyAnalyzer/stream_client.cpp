@@ -159,7 +159,7 @@ void StreamClient::Start(unsigned long bitRate, unsigned long grouping, unsigned
     m_latencyData.m_latencies.resize(static_cast<size_t>(m_finalSequenceNumber));
     m_latencyData.m_datagramSize = MeasuredSocket::c_bufferSize;
 
-    // Setup the interfaces
+    // Set up the interfaces
     Log<LogLevel::Info>("Setting up the interfaces\n");
     m_primaryState.Setup(m_targetAddress, m_receiveBufferCount);
     m_primaryState.CheckConnectivity();
