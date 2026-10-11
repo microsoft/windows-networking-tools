@@ -67,22 +67,22 @@ struct RecordedAddressProperties
 	WritableAddressProperties properties{};
 };
 
-inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interfaceIndex)
+inline std::vector<RecordedAddressProperties>
+ReadIPAddresses(uint32_t interfaceIndex)
 {
 	std::vector<RecordedAddressProperties> saved_addresses{};
 
-	for (const auto& store : { L"PersistentStore", L"ActiveStore" })
+	for (const auto& store : {L"PersistentStore", L"ActiveStore"})
 	{
 		wprintf(L"\n\nEnumerating NetIPAddress settings for interface index %u (%s)\n", interfaceIndex, store);
 		const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
-		THROW_IF_FAILED(policyStoreContext->SetValue(
-			L"PolicyStore",
-			0,
-			wil::make_variant_bstr(store).addressof()));
+		THROW_IF_FAILED(policyStoreContext->SetValue(L"PolicyStore", 0, wil::make_variant_bstr(store).addressof()));
 
 		// filters for addresses that are statically assigned (i.e. not from DHCP, SLAAC, etc.)
 		// only querying for unicast addresses (Type = 1)
-		const std::wstring query = L"SELECT * FROM MSFT_NetIPAddress WHERE InterfaceIndex = " + std::to_wstring(interfaceIndex) + L" AND Type = 1 AND PrefixOrigin = 1 AND SuffixOrigin = 1";
+		const std::wstring query = L"SELECT * FROM MSFT_NetIPAddress WHERE InterfaceIndex = " +
+		                           std::to_wstring(interfaceIndex) +
+		                           L" AND Type = 1 AND PrefixOrigin = 1 AND SuffixOrigin = 1";
 		std::wprintf(L"Querying WMI with: %ls\n", query.c_str());
 		for (auto& address_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
@@ -90,7 +90,10 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceIndex", &queried_interface_index));
 			if (queried_interface_index != interfaceIndex)
 			{
-				std::printf("Unexpected InterfaceIndex value %u (expected %u)\n", queried_interface_index, interfaceIndex);
+				std::printf(
+				    "Unexpected InterfaceIndex value %u (expected %u)\n",
+				    queried_interface_index,
+				    interfaceIndex);
 				THROW_HR(E_UNEXPECTED);
 			}
 
@@ -99,45 +102,64 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 
 			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"InterfaceAlias", &address_properties.InterfaceAlias));
 			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"Store", &address_properties.Store));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"AddressFamily", &address_properties.properties.AddressFamily));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"AddressFamily", &address_properties.properties.AddressFamily));
 			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"IPAddress", &address_properties.properties.IPAddress));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"PrefixOrigin", &address_properties.properties.PrefixOrigin));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"SuffixOrigin", &address_properties.properties.SuffixOrigin));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"AddressState", &address_properties.properties.AddressState));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"ValidLifetime", &address_properties.properties.ValidLifetime));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"PreferredLifetime", &address_properties.properties.PreferredLifetime));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"SkipAsSource", &address_properties.properties.SkipAsSource));
-			THROW_HR_IF(E_UNEXPECTED, !address_instance.get(L"PrefixLength", &address_properties.properties.PrefixLength));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"PrefixOrigin", &address_properties.properties.PrefixOrigin));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"SuffixOrigin", &address_properties.properties.SuffixOrigin));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"AddressState", &address_properties.properties.AddressState));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"ValidLifetime", &address_properties.properties.ValidLifetime));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"PreferredLifetime", &address_properties.properties.PreferredLifetime));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"SkipAsSource", &address_properties.properties.SkipAsSource));
+			THROW_HR_IF(
+			    E_UNEXPECTED,
+			    !address_instance.get(L"PrefixLength", &address_properties.properties.PrefixLength));
 
 			wprintf(
-				L"\n"
-				L"  Store: %d\n"
-				L"  Interface Index: %d\n"
-				L"  Interface Alias: %ls\n"
-				L"  IPAddress: %ls\n"
-				L"  AddressFamily: %ls\n"
-				L"  PrefixOrigin: %ls\n"
-				L"  SuffixOrigin: %ls\n"
-				L"  AddressState: %ls\n"
-				L"  ValidLifetime: %ls\n"
-				L"  PreferredLifetime: %ls\n"
-				L"  SkipAsSource: %ls\n"
-				L"  PrefixLength: %ls\n",
-				address_properties.Store,
-				interfaceIndex,
-				address_properties.InterfaceAlias.c_str(),
-				ctl::VariantToString(address_properties.properties.IPAddress).c_str(),
-				ctl::VariantToString(address_properties.properties.AddressFamily).c_str(),
-				ctl::VariantToString(address_properties.properties.PrefixOrigin.addressof()).c_str(),
-				ctl::VariantToString(address_properties.properties.SuffixOrigin.addressof()).c_str(),
-				ctl::VariantToString(address_properties.properties.AddressState.addressof()).c_str(),
-				ctl::VariantToString(address_properties.properties.ValidLifetime.addressof()).c_str(),
-				ctl::VariantToString(address_properties.properties.PreferredLifetime.addressof()).c_str(),
-				ctl::VariantToString(address_properties.properties.SkipAsSource.addressof()).c_str(),
-				ctl::VariantToString(address_properties.properties.PrefixLength.addressof()).c_str());
+			    L"\n"
+			    L"  Store: %d\n"
+			    L"  Interface Index: %d\n"
+			    L"  Interface Alias: %ls\n"
+			    L"  IPAddress: %ls\n"
+			    L"  AddressFamily: %ls\n"
+			    L"  PrefixOrigin: %ls\n"
+			    L"  SuffixOrigin: %ls\n"
+			    L"  AddressState: %ls\n"
+			    L"  ValidLifetime: %ls\n"
+			    L"  PreferredLifetime: %ls\n"
+			    L"  SkipAsSource: %ls\n"
+			    L"  PrefixLength: %ls\n",
+			    address_properties.Store,
+			    interfaceIndex,
+			    address_properties.InterfaceAlias.c_str(),
+			    ctl::VariantToString(address_properties.properties.IPAddress).c_str(),
+			    ctl::VariantToString(address_properties.properties.AddressFamily).c_str(),
+			    ctl::VariantToString(address_properties.properties.PrefixOrigin.addressof()).c_str(),
+			    ctl::VariantToString(address_properties.properties.SuffixOrigin.addressof()).c_str(),
+			    ctl::VariantToString(address_properties.properties.AddressState.addressof()).c_str(),
+			    ctl::VariantToString(address_properties.properties.ValidLifetime.addressof()).c_str(),
+			    ctl::VariantToString(address_properties.properties.PreferredLifetime.addressof()).c_str(),
+			    ctl::VariantToString(address_properties.properties.SkipAsSource.addressof()).c_str(),
+			    ctl::VariantToString(address_properties.properties.PrefixLength.addressof()).c_str());
 
 			const auto delete_hr = address_instance.delete_instance_no_throw();
-			wprintf(L"  Deleting original address instance... %s (0x%x)\n", SUCCEEDED(delete_hr) ? L"Succeeded" : L"Failed", delete_hr);
+			wprintf(
+			    L"  Deleting original address instance... %s (0x%x)\n",
+			    SUCCEEDED(delete_hr) ? L"Succeeded" : L"Failed",
+			    delete_hr);
 		}
 	}
 
@@ -145,7 +167,8 @@ inline std::vector<RecordedAddressProperties> ReadIPAddresses(uint32_t interface
 	return saved_addresses;
 }
 
-inline void WriteIPAddresses(std::vector<RecordedAddressProperties>&& originalProperties, uint32_t interfaceIndex)
+inline void
+WriteIPAddresses(std::vector<RecordedAddressProperties>&& originalProperties, uint32_t interfaceIndex)
 {
 	ctl::ctWmiService wmiService(L"ROOT\\StandardCimv2"); // MSFT_NetRoute is in ROOT\StandardCimv2 namespace
 
@@ -183,25 +206,29 @@ inline void WriteIPAddresses(std::vector<RecordedAddressProperties>&& originalPr
 		create_address.add_parameter(L"PreferredLifetime", original_address.properties.PreferredLifetime.addressof());
 		create_address.add_parameter(L"SkipAsSource", original_address.properties.SkipAsSource.addressof());
 		create_address.add_parameter(L"DefaultGateway", nullptr);
-		create_address.add_parameter(L"PolicyStore", original_address.Store == 0 ? nullptr : ctl::ctWmiMakeVariant(L"ActiveStore").addressof());
+		create_address.add_parameter(
+		    L"PolicyStore",
+		    original_address.Store == 0 ? nullptr : ctl::ctWmiMakeVariant(L"ActiveStore").addressof());
 		create_address.add_parameter(L"PassThru", ctl::ctWmiMakeVariant(false).addressof());
 		const auto hr = create_address.execute_method_nothrow();
 
 		// print the result of the execute_method call, but continue with the next route even if it failed
 		if (SUCCEEDED(hr))
 		{
-			std::wprintf(L"Successfully created address (%ls) from Store %u with PrefixLength %ls\n",
-				ctl::VariantToString(original_address.properties.IPAddress.addressof()).c_str(),
-				original_address.Store,
-				ctl::VariantToString(original_address.properties.PrefixLength.addressof()).c_str());
+			std::wprintf(
+			    L"Successfully created address (%ls) from Store %u with PrefixLength %ls\n",
+			    ctl::VariantToString(original_address.properties.IPAddress.addressof()).c_str(),
+			    original_address.Store,
+			    ctl::VariantToString(original_address.properties.PrefixLength.addressof()).c_str());
 		}
 		else
 		{
-			std::wprintf(L"Failed to create address (%ls) from Store %u with PrefixLength %ls (0x%x)\n",
-				ctl::VariantToString(original_address.properties.IPAddress.addressof()).c_str(),
-				original_address.Store,
-				ctl::VariantToString(original_address.properties.PrefixLength.addressof()).c_str(),
-				hr);
+			std::wprintf(
+			    L"Failed to create address (%ls) from Store %u with PrefixLength %ls (0x%x)\n",
+			    ctl::VariantToString(original_address.properties.IPAddress.addressof()).c_str(),
+			    original_address.Store,
+			    ctl::VariantToString(original_address.properties.PrefixLength.addressof()).c_str(),
+			    hr);
 		}
 	}
 }

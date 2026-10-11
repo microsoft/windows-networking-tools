@@ -7,26 +7,38 @@
 #include <windows.h>
 #include <fwpmtypes.h>
 
+void
+ListenForWfpNetEvents();
 
-void ListenForWfpNetEvents();
-
-std::wstring PrintNetEventType(const FWPM_NET_EVENT5* net_event);
-std::wstring PrintNetEventHeader(const FWPM_NET_EVENT5* net_event);
-
-std::wstring PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE2*);
-std::wstring PrintNetEventIkeExtQmFailure(const FWPM_NET_EVENT_IKEEXT_QM_FAILURE1*);
-std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE1*);
-std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2*);
-std::wstring PrintNetEventIpSecKernelDrop(const FWPM_NET_EVENT_IPSEC_KERNEL_DROP0*);
-std::wstring PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0*);
-std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALLOW0*);
-std::wstring PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_DROP0*);
-std::wstring PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY_ALLOW0*);
-std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0*);
-std::wstring PrintNetEventLpmPacketArrival(const FWPM_NET_EVENT_LPM_PACKET_ARRIVAL0*);
-
-inline
 std::wstring
+PrintNetEventType(const FWPM_NET_EVENT5* net_event);
+std::wstring
+PrintNetEventHeader(const FWPM_NET_EVENT5* net_event);
+
+std::wstring
+PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE2*);
+std::wstring
+PrintNetEventIkeExtQmFailure(const FWPM_NET_EVENT_IKEEXT_QM_FAILURE1*);
+std::wstring
+PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE1*);
+std::wstring
+PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2*);
+std::wstring
+PrintNetEventIpSecKernelDrop(const FWPM_NET_EVENT_IPSEC_KERNEL_DROP0*);
+std::wstring
+PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0*);
+std::wstring
+PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALLOW0*);
+std::wstring
+PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_DROP0*);
+std::wstring
+PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY_ALLOW0*);
+std::wstring
+PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0*);
+std::wstring
+PrintNetEventLpmPacketArrival(const FWPM_NET_EVENT_LPM_PACKET_ARRIVAL0*);
+
+inline std::wstring
 PrintNetEventDetailedStruct(const FWPM_NET_EVENT5* net_event)
 {
 	switch (net_event->type)
@@ -65,6 +77,7 @@ PrintNetEventDetailedStruct(const FWPM_NET_EVENT5* net_event)
 		// print FWPM_NET_EVENT_LPM_PACKET_ARRIVAL0
 		return PrintNetEventLpmPacketArrival(net_event->lpmPacketArrival);
 	default:
-		return L"(unknown FWPM_NET_EVENT_TYPE (not expected - should never see this) - " + std::to_wstring(net_event->type) + L")";
+		return L"(unknown FWPM_NET_EVENT_TYPE (not expected - should never see this) - " +
+		       std::to_wstring(net_event->type) + L")";
 	}
 }

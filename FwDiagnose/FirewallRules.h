@@ -20,16 +20,25 @@ struct FirewallPolicyObjects
 	PCSTR store_type_string{};
 	FW_STORE_TYPE store_type{};
 	WORD rule_version{};
+	HRESULT load_result{E_PENDING};
 };
 
-HRESULT LoadFirewallRules() noexcept;
-HRESULT AnalyzeFirewallRulesReferencingAppPackages();
+HRESULT
+LoadFirewallRules() noexcept;
+HRESULT
+AnalyzeFirewallRulesReferencingAppPackages();
 
-std::vector<std::tuple<std::string, FW_RULE*, WORD>> GetRulesWithAppPackages();
+std::vector<std::tuple<std::string, FW_RULE*, WORD>>
+GetRulesWithAppPackages();
 
-bool HasFirewallAdminAccess();
+bool
+HasFirewallAdminAccess();
 
-void ProcessFirewallPolicy() noexcept;
-void ProcessFirewallRules();
-void ProcessInboundRules();
-void ProcessShieldsUp() noexcept;
+void
+ProcessFirewallPolicy(PCWSTR command = L"analyze_rules") noexcept;
+void
+ProcessFirewallRules();
+void
+ProcessInboundRules();
+void
+ProcessShieldsUp() noexcept;

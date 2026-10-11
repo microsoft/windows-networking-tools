@@ -5,13 +5,15 @@
 #include <windows.h>
 
 #pragma warning(push)
-#pragma warning(disable : 4201)   // nonstandard extension used : nameless struct/union
+#pragma warning(disable : 4201) // nonstandard extension used : nameless struct/union
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-	constexpr WORD FW_VERSION(WORD major, WORD minor) noexcept
+	constexpr WORD
+	FW_VERSION(WORD major, WORD minor) noexcept
 	{
 		return (WORD)((BYTE)(minor) | ((WORD)((BYTE)(major))) << 8);
 	}
@@ -96,7 +98,6 @@ extern "C" {
 		FW_IPV4_SUBNET* pSubNets;
 	};
 
-
 	struct FW_IPV6_SUBNET
 	{
 		BYTE Address[16];
@@ -108,7 +109,6 @@ extern "C" {
 		DWORD dwNumEntries;
 		FW_IPV6_SUBNET* pSubNets;
 	};
-
 
 	struct FW_IPV4_ADDRESS_RANGE
 	{
@@ -175,8 +175,8 @@ extern "C" {
 		FW_PORT_RANGE_LIST Ports;
 	};
 
-#define FW_ICMP_CODE_ANY       256
-#define FW_IP_PROTOCOL_ANY     256
+#define FW_ICMP_CODE_ANY 256
+#define FW_IP_PROTOCOL_ANY 256
 
 	struct FW_ICMP_TYPE_CODE
 	{
@@ -1004,20 +1004,22 @@ extern "C" {
 		// authentication methods specified in the associated
 		// authentication sets.
 
-		FW_RULE_STATUS_ERROR = FW_RULE_STATUS_PARSING_ERROR | FW_RULE_STATUS_SEMANTIC_ERROR | FW_RULE_STATUS_RUNTIME_ERROR,
+		FW_RULE_STATUS_ERROR =
+		    FW_RULE_STATUS_PARSING_ERROR | FW_RULE_STATUS_SEMANTIC_ERROR | FW_RULE_STATUS_RUNTIME_ERROR,
 		// An error occurred.
 
 		FW_RULE_STATUS_ALL = 0xFFFF0000
 		// Enumerate all rules, regardless of status.
 	};
 
-
 	//rule status bitflags
 	enum FW_RULE_STATUS_CLASS
 	{
 		FW_RULE_STATUS_CLASS_OK = FW_RULE_STATUS_OK, // The rule was parsed successfully from the store
-		FW_RULE_STATUS_CLASS_PARTIALLY_IGNORED = FW_RULE_STATUS_PARTIALLY_IGNORED, // The rule has fields that the service can successfully ignore
-		FW_RULE_STATUS_CLASS_IGNORED = FW_RULE_STATUS_IGNORED, // The rule has a higher version that the service must ignore
+		FW_RULE_STATUS_CLASS_PARTIALLY_IGNORED =
+		    FW_RULE_STATUS_PARTIALLY_IGNORED, // The rule has fields that the service can successfully ignore
+		FW_RULE_STATUS_CLASS_IGNORED =
+		    FW_RULE_STATUS_IGNORED, // The rule has a higher version that the service must ignore
 		FW_RULE_STATUS_CLASS_PARSING_ERROR = FW_RULE_STATUS_PARSING_ERROR, // The rule failed to be parsed correctly
 		FW_RULE_STATUS_CLASS_SEMANTIC_ERROR = FW_RULE_STATUS_SEMANTIC_ERROR,
 		//There is a semantic error when considering the fields of the rule in conjunction
@@ -1026,7 +1028,8 @@ extern "C" {
 
 		FW_RULE_STATUS_CLASS_ERROR = FW_RULE_STATUS_ERROR, // An Error occurred
 
-		FW_RULE_STATUS_CLASS_ALL = FW_RULE_STATUS_ALL // All the status. (Used to enum ALL the rules, regardless the status.)
+		FW_RULE_STATUS_CLASS_ALL =
+		    FW_RULE_STATUS_ALL // All the status. (Used to enum ALL the rules, regardless the status.)
 	};
 
 	enum FW_ENFORCEMENT_STATE
@@ -1111,11 +1114,14 @@ extern "C" {
 	{
 		FW_ENUM_RULES_FLAG_NONE = 0x0000,
 		FW_ENUM_RULES_FLAG_RESOLVE_NAME = 0x0001, // Resolves rule name if in the format of '@file.dll,-<resID>'
-		FW_ENUM_RULES_FLAG_RESOLVE_DESCRIPTION = 0x0002, // Resolves rule descriptions if in the format of '@file.dll,-<resID>'
+		FW_ENUM_RULES_FLAG_RESOLVE_DESCRIPTION =
+		    0x0002, // Resolves rule descriptions if in the format of '@file.dll,-<resID>'
 		FW_ENUM_RULES_FLAG_RESOLVE_APPLICATION = 0x0004, // Resolves environment variables in the application string
-		FW_ENUM_RULES_FLAG_RESOLVE_KEYWORD = 0x0008, // Resolves Keywords in addresses and ports to the actual addresses and ports (dynamic store only)
+		FW_ENUM_RULES_FLAG_RESOLVE_KEYWORD =
+		    0x0008, // Resolves Keywords in addresses and ports to the actual addresses and ports (dynamic store only)
 		FW_ENUM_RULES_FLAG_RESOLVE_GPO_NAME = 0x0010, // Resolves GPO name for the GP_RSOP rules
-		FW_ENUM_RULES_FLAG_EFFECTIVE = 0x0020, // Enum Rules only if we attempted to push them to BFE (dynamic store only)
+		FW_ENUM_RULES_FLAG_EFFECTIVE =
+		    0x0020, // Enum Rules only if we attempted to push them to BFE (dynamic store only)
 		FW_ENUM_RULES_FLAG_INCLUDE_METADATA = 0x0040, // Inlude Object MetaData in the Enumerated Object.
 		FW_ENUM_RULES_FLAG_MAX = 0x0080
 	};
@@ -1199,8 +1205,7 @@ extern "C" {
 
 		FW_DIRECTION Direction;
 		WORD wIpProtocol; //0-255 or FW_IP_PROTOCOL_ANY
-		union
-		{
+		union {
 			// Ports specified if wIpProtocol = 6(TCP) or 17(UDP)
 			struct
 			{
@@ -1224,18 +1229,17 @@ extern "C" {
 		WORD wFlags; // Bit flags from FW_RULE_FLAGS
 
 		LPWSTR wszRemoteMachineAuthorizationList; //Authorized remote machines SDDL
-		LPWSTR wszRemoteUserAuthorizationList; //Authorized remote users SDDL
+		LPWSTR wszRemoteUserAuthorizationList;    //Authorized remote users SDDL
 
 		LPWSTR wszEmbeddedContext;
 		FW_OS_PLATFORM_LIST PlatformValidityList;
 
-		FW_RULE_STATUS Status; //Parsing error if any, filled on return. On input, set this to FW_RULE_STATUS_OK
+		FW_RULE_STATUS Status;      //Parsing error if any, filled on return. On input, set this to FW_RULE_STATUS_OK
 		FW_RULE_ORIGIN_TYPE Origin; //Rule origin, filled on enumerated rules. Ignored on input
-		LPWSTR wszGPOName; //Name of originating GPO, if rule origin is GP.
+		LPWSTR wszGPOName;          //Name of originating GPO, if rule origin is GP.
 		DWORD Reserved;
 
 		FW_OBJECT_METADATA* pMetaData;
-
 
 		WCHAR* wszLocalUserAuthorizationList; //Authorized local users SDDL
 
@@ -1304,49 +1308,34 @@ extern "C" {
 	using PFW_POLICY_STORE_HANDLE = FW_POLICY_STORE_HANDLE*;
 
 	DWORD WINAPI
-		FWOpenPolicyStore(
-			WORD                    wBinaryVersion,
-			__in_opt
-			PCWSTR                  wszMachineOrGPO,  // Object to connect to - machine name or GPO path (NULL for local machine)
-			FW_STORE_TYPE           StoreType,
-			FW_POLICY_ACCESS_RIGHT  AccessRight,
-			DWORD                   dwFlags,          // Bit-flags from FW_POLICY_STORE_FLAGS
-			__out
-			PFW_POLICY_STORE_HANDLE phPolicyStore
-		);
+	FWOpenPolicyStore(
+	    WORD wBinaryVersion,
+	    __in_opt PCWSTR wszMachineOrGPO, // Object to connect to - machine name or GPO path (NULL for local machine)
+	    FW_STORE_TYPE StoreType,
+	    FW_POLICY_ACCESS_RIGHT AccessRight,
+	    DWORD dwFlags, // Bit-flags from FW_POLICY_STORE_FLAGS
+	    __out PFW_POLICY_STORE_HANDLE phPolicyStore);
 
 	DWORD WINAPI
-		FWClosePolicyStore(
-			FW_POLICY_STORE_HANDLE      hPolicyStore
-		);
+	FWClosePolicyStore(FW_POLICY_STORE_HANDLE hPolicyStore);
 
 	DWORD WINAPI
-		FWAddFirewallRule(
-			FW_POLICY_STORE_HANDLE  hPolicyStore,
-			FW_RULE* pRule
-		);
+	FWAddFirewallRule(FW_POLICY_STORE_HANDLE hPolicyStore, FW_RULE* pRule);
 
 	DWORD WINAPI
-		FWDeleteFirewallRule(
-			FW_POLICY_STORE_HANDLE  hPolicyStore,
-			PCWSTR             wszRuleID
-		);
+	FWDeleteFirewallRule(FW_POLICY_STORE_HANDLE hPolicyStore, PCWSTR wszRuleID);
 
 	DWORD WINAPI
-		FWEnumFirewallRules(
-			FW_POLICY_STORE_HANDLE  hPolicyStore,
-			DWORD                   dwFilteredByStatus, // Bit-flags from FW_RULE_STATUS_CLASS
-			DWORD                   dwProfileFilter,    // Bit-flags from FW_PROFILE_TYPE
-			WORD                    wFlags,             // Bit-flags from FW_ENUM_RULES_FLAGS
-			__out  DWORD* pdwNumRules,
-			__deref_out_ecount_opt(*pdwNumRules)
-			FW_RULE** ppRules
-		);
+	FWEnumFirewallRules(
+	    FW_POLICY_STORE_HANDLE hPolicyStore,
+	    DWORD dwFilteredByStatus, // Bit-flags from FW_RULE_STATUS_CLASS
+	    DWORD dwProfileFilter,    // Bit-flags from FW_PROFILE_TYPE
+	    WORD wFlags,              // Bit-flags from FW_ENUM_RULES_FLAGS
+	    __out DWORD* pdwNumRules,
+	    __deref_out_ecount_opt(*pdwNumRules) FW_RULE** ppRules);
 
 	DWORD WINAPI
-		FWFreeFirewallRules(
-			FW_RULE* pRules
-		);
+	FWFreeFirewallRules(FW_RULE* pRules);
 
 #ifdef __cplusplus
 }

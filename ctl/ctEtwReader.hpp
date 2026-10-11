@@ -30,7 +30,8 @@
 constexpr ULONG EVENT_TRACE_USE_MS_FLUSH_TIMER = 0x00000010; ///< FlushTimer value in milliseconds
 constexpr uint32_t SLEEP_MS_WAITING_FOR_EXPECTED_RECORDS = 50;
 
-namespace ctl {
+namespace ctl
+{
 /**
  * @brief Reads and manages ETW trace sessions.
  */
@@ -46,7 +47,10 @@ class ctEtwReader
      * @brief Constructs ctEtwReader with an event filter.
      * @param _eventFilter Event filter function.
      */
-    template <typename T> explicit ctEtwReader(T _eventFilter) noexcept : m_eventFilter(std::move(_eventFilter)) {}
+    template <typename T>
+    explicit ctEtwReader(T _eventFilter) noexcept : m_eventFilter(std::move(_eventFilter))
+    {
+    }
 
     /**
      * @brief Destructor. Stops the session and asserts handles are closed.
@@ -102,7 +106,7 @@ class ctEtwReader
      * @return HANDLE to the session thread.
      */
     [[nodiscard]] HANDLE
-        GetTraceSessionHandle() const noexcept
+    GetTraceSessionHandle() const noexcept
     {
         return m_threadHandle;
     }
@@ -147,11 +151,9 @@ class ctEtwReader
      * @return HRESULT status code.
      */
     [[nodiscard]] HRESULT
-        EnableTraceProvidersPerEventId(
-            _In_ const GUID& providerGUID,
-            std::vector<uint16_t> eventIds) noexcept;
+    EnableTraceProvidersPerEventId(_In_ const GUID& providerGUID, std::vector<uint16_t> eventIds) noexcept;
 
-	/**
+    /**
      * @brief Disables the specified ETW providers in the existing trace session.
      * Fails if StartSession() has not been called successfully, or if the worker thread pumping events has stopped
      * unexpectedly.
@@ -225,9 +227,11 @@ class ctEtwReader
 inline HRESULT
 ctEtwReader::StartTraceSession(
     _In_ PCWSTR szSessionName, _In_opt_ PCWSTR szFileName, const GUID& sessionGUID, ULONG msFlushTimer) noexcept
-try {
+try
+{
     // block improper reentrancy
-    if (m_sessionHandle != NULL || m_traceHandle != INVALID_PROCESSTRACE_HANDLE || m_threadHandle != nullptr) {
+    if (m_sessionHandle != NULL || m_traceHandle != INVALID_PROCESSTRACE_HANDLE || m_threadHandle != nullptr)
+    {
         throw std::runtime_error("ctEtwReader::StartSession is called while a session is already started");
     }
 
@@ -246,7 +250,8 @@ try {
         szSessionName,    // session name
         pProperties       // trace properties struct
     );
-    if (ERROR_ALREADY_EXISTS == error_code) {
+    if (ERROR_ALREADY_EXISTS == error_code)
+    {
         // Try to stop the session by its session name
         EVENT_TRACE_PROPERTIES tempProperties{};
         tempProperties.Wnode.BufferSize = sizeof(EVENT_TRACE_PROPERTIES);
@@ -259,7 +264,8 @@ try {
             pProperties       // trace properties struct
         );
     }
-    if (error_code != ERROR_SUCCESS) {
+    if (error_code != ERROR_SUCCESS)
+    {
         THROW_WIN32(error_code);
     }
 
@@ -287,8 +293,10 @@ CATCH_RETURN();
 
 inline HRESULT
 ctEtwReader::OpenSavedTraceSession(_In_ PCWSTR szFileName) noexcept
-try {
-    if (m_sessionHandle != NULL || m_traceHandle != INVALID_PROCESSTRACE_HANDLE || m_threadHandle != nullptr) {
+try
+{
+    if (m_sessionHandle != NULL || m_traceHandle != INVALID_PROCESSTRACE_HANDLE || m_threadHandle != nullptr)
+    {
         throw std::runtime_error("ctEtwReader::StartSession is called while a session is already started");
     }
 
@@ -319,13 +327,15 @@ ctEtwReader::OpenTraceImpl(EVENT_TRACE_LOGFILE& eventLogfile)
     // - need to define "Invalid handle value" as a TRACEHANDLE,
     //   since they are different types (ULONG64 versus void*)
     m_traceHandle = ::OpenTrace(&eventLogfile);
-    if (m_traceHandle == INVALID_PROCESSTRACE_HANDLE) {
+    if (m_traceHandle == INVALID_PROCESSTRACE_HANDLE)
+    {
         THROW_LAST_ERROR();
     }
     m_threadHandle = CreateThread(
         nullptr,
         0,
-        [](LPVOID lpParameter) -> DWORD {
+        [](LPVOID lpParameter) -> DWORD
+        {
             // Must call ProcessTrace to start the events going to the callback
             // ProcessTrace will put the thread into an alertable state while it waits for events
             // and only exit when CloseTrace is called on the trace handle
@@ -334,7 +344,8 @@ ctEtwReader::OpenTraceImpl(EVENT_TRACE_LOGFILE& eventLogfile)
         &m_traceHandle,
         0,
         nullptr);
-    if (nullptr == m_threadHandle) {
+    if (nullptr == m_threadHandle)
+    {
         THROW_LAST_ERROR();
     }
     // Quick check to see that the worker tread calling ProcessTrace didn't fail out
@@ -346,14 +357,17 @@ ctEtwReader::VerifyTraceSessionIsRunning()
 {
     // traceHandle will be reset after the user explicitly calls StopSession(),
     // - so only verify the thread if the user hasn't stopped the session
-    if (m_traceHandle != INVALID_PROCESSTRACE_HANDLE && m_threadHandle != nullptr) {
+    if (m_traceHandle != INVALID_PROCESSTRACE_HANDLE && m_threadHandle != nullptr)
+    {
         // Quick check to see that the worker tread calling ProcessTrace didn't fail out
         const DWORD dwWait = WaitForSingleObject(m_threadHandle, 0);
-        if (WAIT_OBJECT_0 == dwWait) {
+        if (WAIT_OBJECT_0 == dwWait)
+        {
             // The worker thread already exited - ProcessTrace() failed
             // - see what the error code was from that thread
             DWORD dwError = 0;
-            if (!GetExitCodeThread(m_threadHandle, &dwError)) {
+            if (!GetExitCodeThread(m_threadHandle, &dwError))
+            {
                 dwError = GetLastError();
             }
             // Close the thread handle now that it's dead
@@ -367,7 +381,8 @@ ctEtwReader::VerifyTraceSessionIsRunning()
 inline void
 ctEtwReader::WaitForTraceSessionToExit() const noexcept
 {
-    if (m_threadHandle) {
+    if (m_threadHandle)
+    {
         const DWORD dwWait = WaitForSingleObject(m_threadHandle, INFINITE);
         FAIL_FAST_IF_MSG(
             dwWait != WAIT_OBJECT_0,
@@ -380,7 +395,8 @@ ctEtwReader::WaitForTraceSessionToExit() const noexcept
 inline void
 ctEtwReader::StopTraceSession() noexcept
 {
-    if (m_sessionHandle != NULL) {
+    if (m_sessionHandle != NULL)
+    {
         // Stop the session
         EVENT_TRACE_PROPERTIES tempProperties{};
         tempProperties.Wnode.BufferSize = sizeof(EVENT_TRACE_PROPERTIES);
@@ -398,7 +414,8 @@ ctEtwReader::StopTraceSession() noexcept
     }
 
     // Close the handle from OpenTrace
-    if (m_traceHandle != INVALID_PROCESSTRACE_HANDLE) {
+    if (m_traceHandle != INVALID_PROCESSTRACE_HANDLE)
+    {
         // ProcessTrace is still unblocked and returns success when
         //    ERROR_CTX_CLOSE_PENDING is returned
         const auto error_code = CloseTrace(m_traceHandle);
@@ -410,7 +427,8 @@ ctEtwReader::StopTraceSession() noexcept
     }
 
     // the above call to CloseTrace should exit the thread
-    if (m_threadHandle) {
+    if (m_threadHandle)
+    {
         const auto error_code = WaitForSingleObject(m_threadHandle, INFINITE);
         FAIL_FAST_IF_MSG(
             error_code != WAIT_OBJECT_0,
@@ -434,19 +452,20 @@ ctEtwReader::StopTraceSession(_In_ PCWSTR szSessionName) noexcept
         error_code);
 }
 
-inline
-[[nodiscard]] HRESULT
+inline [[nodiscard]] HRESULT
 ctEtwReader::EnableTraceProviders(
     _In_ const std::vector<GUID>& providerGUIDs,
     UCHAR uLevel,
     ULONGLONG uMatchAnyKeyword,
     ULONGLONG uMatchAllKeyword) noexcept
-try {
+try
+{
     // Block calling if an open session is not running
     VerifyTraceSessionIsRunning();
 
     // iterate through the std::vector of GUIDs, enabling each provider
-    for (const auto& providerGUID : providerGUIDs) {
+    for (const auto& providerGUID : providerGUIDs)
+    {
         RETURN_IF_WIN32_ERROR(EnableTraceEx(
             &providerGUID,
             &m_sessionGUID,
@@ -462,46 +481,46 @@ try {
     return S_OK;
 }
 CATCH_RETURN();
-	
-inline
-[[nodiscard]] HRESULT
-ctEtwReader::EnableTraceProvidersPerEventId(
-    _In_ const GUID& providerGUID,
-    std::vector<uint16_t> eventIds) noexcept
-try {
-	if (eventIds.empty()) {
+
+inline [[nodiscard]] HRESULT
+ctEtwReader::EnableTraceProvidersPerEventId(_In_ const GUID& providerGUID, std::vector<uint16_t> eventIds) noexcept
+try
+{
+    if (eventIds.empty())
+    {
         return E_INVALIDARG;
     }
-	if (eventIds.size() > MAX_EVENT_FILTER_EVENT_ID_COUNT) {
-		return E_INVALIDARG;
-	}
+    if (eventIds.size() > MAX_EVENT_FILTER_EVENT_ID_COUNT)
+    {
+        return E_INVALIDARG;
+    }
     // Block calling if an open session is not running
     VerifyTraceSessionIsRunning();
-    
-	const auto required_size =
-		offsetof(EVENT_FILTER_EVENT_ID, Events) + (sizeof(eventIds[0]) * eventIds.size());
+
+    const auto required_size = offsetof(EVENT_FILTER_EVENT_ID, Events) + (sizeof(eventIds[0]) * eventIds.size());
     std::unique_ptr<BYTE[]> eventFilterStructure = std::make_unique<BYTE[]>(required_size);
-	ZeroMemory(eventFilterStructure.get(), required_size);
+    ZeroMemory(eventFilterStructure.get(), required_size);
 
     EVENT_FILTER_EVENT_ID* eventIdFilters = reinterpret_cast<EVENT_FILTER_EVENT_ID*>(eventFilterStructure.get());
     eventIdFilters->FilterIn = TRUE;
-	eventIdFilters->Count = static_cast<USHORT>(eventIds.size());
-	for (size_t i = 0; i < eventIds.size(); ++i) {
-		eventIdFilters->Events[i] = eventIds[i];
-	}
+    eventIdFilters->Count = static_cast<USHORT>(eventIds.size());
+    for (size_t i = 0; i < eventIds.size(); ++i)
+    {
+        eventIdFilters->Events[i] = eventIds[i];
+    }
 
     EVENT_FILTER_DESCRIPTOR descriptor{};
     descriptor.Type = EVENT_FILTER_TYPE_EVENT_ID;
     descriptor.Ptr = reinterpret_cast<ULONGLONG>(eventIdFilters);
     descriptor.Size = static_cast<ULONG>(required_size);
 
-	ENABLE_TRACE_PARAMETERS traceParameters{};
-	traceParameters.Version = ENABLE_TRACE_PARAMETERS_VERSION_2;
-	traceParameters.EnableProperty = 0;
-	traceParameters.ControlFlags = 0;
+    ENABLE_TRACE_PARAMETERS traceParameters{};
+    traceParameters.Version = ENABLE_TRACE_PARAMETERS_VERSION_2;
+    traceParameters.EnableProperty = 0;
+    traceParameters.ControlFlags = 0;
     RETURN_IF_FAILED(CoCreateGuid(&traceParameters.SourceId));
     traceParameters.FilterDescCount = 1;
-	traceParameters.EnableFilterDesc = &descriptor;
+    traceParameters.EnableFilterDesc = &descriptor;
 
     RETURN_IF_WIN32_ERROR(EnableTraceEx2(
         m_sessionHandle,
@@ -527,15 +546,18 @@ ctEtwReader::BuildEventTraceProperties(
     //     +1 for null-terminators
     const size_t cchSessionLength = wcslen(szSessionName) + 1;
     const size_t cbSessionSize = cchSessionLength * sizeof(wchar_t);
-    if (cbSessionSize < cchSessionLength) {
+    if (cbSessionSize < cchSessionLength)
+    {
         throw std::runtime_error("Overflow passing Session string to ctEtwReader");
     }
     size_t cchFileNameLength = 0;
-    if (szFileName) {
+    if (szFileName)
+    {
         cchFileNameLength = wcslen(szFileName) + 1;
     }
     const size_t cbFileNameSize = cchFileNameLength * sizeof(wchar_t);
-    if (cbFileNameSize < cchFileNameLength) {
+    if (cbFileNameSize < cchFileNameLength)
+    {
         throw std::runtime_error("Overflow passing Filename string to ctEtwReader");
     }
 
@@ -543,13 +565,18 @@ ctEtwReader::BuildEventTraceProperties(
     pPropertyBuffer.reset(new BYTE[cbProperties]);
     ::ZeroMemory(pPropertyBuffer.get(), cbProperties);
     // Append the strings to the end of the struct
-    if (szFileName) {
+    if (szFileName)
+    {
         // append the filename to the end of the struct
         ::CopyMemory(pPropertyBuffer.get() + sizeof(EVENT_TRACE_PROPERTIES), szFileName, cbFileNameSize);
         // append the session name to the end of the struct
         ::CopyMemory(
-            pPropertyBuffer.get() + sizeof(EVENT_TRACE_PROPERTIES) + cbFileNameSize, szSessionName, cbSessionSize);
-    } else {
+            pPropertyBuffer.get() + sizeof(EVENT_TRACE_PROPERTIES) + cbFileNameSize,
+            szSessionName,
+            cbSessionSize);
+    }
+    else
+    {
         // append the session name to the end of the struct
         ::CopyMemory(pPropertyBuffer.get() + sizeof(EVENT_TRACE_PROPERTIES), szSessionName, cbSessionSize);
     }
@@ -573,7 +600,8 @@ ctEtwReader::BuildEventTraceProperties(
     pProperties->LoggerNameOffset = nullptr == szFileName
                                         ? static_cast<ULONG>(sizeof(EVENT_TRACE_PROPERTIES))
                                         : static_cast<ULONG>(sizeof(EVENT_TRACE_PROPERTIES) + cbFileNameSize);
-    if (msFlushTimer != 0) {
+    if (msFlushTimer != 0)
+    {
         pProperties->LogFileMode |= EVENT_TRACE_USE_MS_FLUSH_TIMER;
         pProperties->FlushTimer = msFlushTimer;
     }
@@ -583,10 +611,12 @@ ctEtwReader::BuildEventTraceProperties(
 
 inline HRESULT
 ctEtwReader::DisableTraceProviders(const std::vector<GUID>& providerGUIDs) noexcept
-try {
+try
+{
     // Block calling if an open session is not running
     VerifyTraceSessionIsRunning();
-    for (const auto& providerGUID : providerGUIDs) {
+    for (const auto& providerGUID : providerGUIDs)
+    {
         RETURN_IF_WIN32_ERROR(
             ::EnableTraceEx(&providerGUID, &m_sessionGUID, m_sessionHandle, FALSE, 0, 0, 0, 0, nullptr));
     }
@@ -597,8 +627,10 @@ CATCH_RETURN();
 
 inline HRESULT
 ctEtwReader::FlushTraceSession() const noexcept
-try {
-    if (m_sessionHandle) {
+try
+{
+    if (m_sessionHandle)
+    {
         // Stop the session
         EVENT_TRACE_PROPERTIES tempProperties{};
         tempProperties.Wnode.BufferSize = sizeof(EVENT_TRACE_PROPERTIES);
@@ -608,7 +640,8 @@ try {
         const auto error_code = ::ControlTrace(m_sessionHandle, nullptr, &tempProperties, EVENT_TRACE_CONTROL_FLUSH);
         // stops the session even when returned ERROR_MORE_DATA
         // - if this fails, there's nothing we can do to compensate
-        if (error_code != ERROR_MORE_DATA && error_code != ERROR_SUCCESS) {
+        if (error_code != ERROR_MORE_DATA && error_code != ERROR_SUCCESS)
+        {
             RETURN_IF_WIN32_ERROR(error_code);
         }
     }
@@ -619,7 +652,8 @@ CATCH_RETURN();
 
 inline VOID WINAPI
 ctEtwReader::EventRecordCallback(PEVENT_RECORD pEventRecord) noexcept
-try {
+try
+{
     ctEtwReader* pEventReader = static_cast<ctEtwReader*>(pEventRecord->UserContext);
 
     // When opening a saved session from an ETL file, the first event record
@@ -629,23 +663,29 @@ try {
     // force ProcessTrace() to return when the entire contents of the session
     // have been read.
     bool process = true;
-    if (!pEventReader->m_initNumBuffers) {
+    if (!pEventReader->m_initNumBuffers)
+    {
         const ctEtwRecord eventMessage(pEventRecord);
         std::wstring task;
-        if (eventMessage.queryTaskName(task) && task == L"EventTrace") {
+        if (eventMessage.queryTaskName(task) && task == L"EventTrace")
+        {
             process = false;
             ctEtwRecord::ctPropertyPair pair;
-            if (eventMessage.queryEventProperty(L"BuffersWritten", pair)) {
+            if (eventMessage.queryEventProperty(L"BuffersWritten", pair))
+            {
                 pEventReader->m_initNumBuffers = true;
                 pEventReader->m_numBuffers = *reinterpret_cast<int*>(pair.first.get());
             }
         }
     }
 
-    if (process) {
+    if (process)
+    {
         pEventReader->m_eventFilter(pEventRecord);
     }
-} catch (...) {
+}
+catch (...)
+{
 }
 
 inline ULONG WINAPI

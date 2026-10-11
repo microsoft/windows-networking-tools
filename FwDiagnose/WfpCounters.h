@@ -19,14 +19,20 @@
 
 #include "NormalizedString.h"
 
-bool InitializeWfpPerfCounters() noexcept;
-uint64_t ReadWfpPerfCounters();
+bool
+InitializeWfpPerfCounters() noexcept;
+uint64_t
+ReadWfpPerfCounters();
 
-void OutputWfpDetails();
+void
+OutputWfpDetails();
 
-HANDLE GetFwpmEngineHandle();
-uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept;
-std::string FwpmLayerToString(const GUID& layerGuid);
+HANDLE
+GetFwpmEngineHandle();
+uint32_t
+SortedLayerRelativePriority(const GUID& layer) noexcept;
+std::string
+FwpmLayerToString(const GUID& layerGuid);
 
 struct FilterDetails
 {
@@ -53,22 +59,26 @@ struct FilterDetails
 
 	FWPM_ACTION0 action_type;
 
-    [[nodiscard]] bool IsDisabled() const noexcept
+	[[nodiscard]] bool
+	IsDisabled() const noexcept
 	{
 		return (flags & FWPM_FILTER_FLAG_DISABLED) != 0;
 	}
 
-    [[nodiscard]] bool IsPersistent() const noexcept
+	[[nodiscard]] bool
+	IsPersistent() const noexcept
 	{
 		return (flags & FWPM_FILTER_FLAG_PERSISTENT) != 0;
 	}
 
-    [[nodiscard]] bool InvokesCallout() const noexcept
+	[[nodiscard]] bool
+	InvokesCallout() const noexcept
 	{
 		return (action_type.type & FWP_ACTION_FLAG_CALLOUT) != 0;
 	}
 
-    [[nodiscard]] bool InvokesCallout(const GUID& calloutKey) const noexcept
+	[[nodiscard]] bool
+	InvokesCallout(const GUID& calloutKey) const noexcept
 	{
 		if ((action_type.type & FWP_ACTION_FLAG_CALLOUT) == 0)
 		{
@@ -79,35 +89,48 @@ struct FilterDetails
 };
 
 // allow searching FilterDetails by name
-inline bool operator<(const FilterDetails & lhs, const NormalizedString & rhs) noexcept
+inline bool
+operator<(const FilterDetails& lhs, const NormalizedString& rhs) noexcept
 {
 	return lhs.name.value < rhs.value;
 }
-inline bool operator<(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
+inline bool
+operator<(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
 {
 	return lhs.value < rhs.name.value;
 }
-inline bool operator==(const FilterDetails& lhs, const NormalizedString& rhs) noexcept
+inline bool
+operator==(const FilterDetails& lhs, const NormalizedString& rhs) noexcept
 {
 	return lhs.name.value == rhs.value;
 }
-inline bool operator==(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
+inline bool
+operator==(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
 {
 	return lhs.value == rhs.name.value;
 }
 
-void LoadWfpFilters() noexcept;
-const std::vector<FilterDetails>& ReadWfpFilters() noexcept;
-void WriteWfpFilters() noexcept;
+void
+LoadWfpFilters() noexcept;
+const std::vector<FilterDetails>&
+ReadWfpFilters() noexcept;
+void
+WriteWfpFilters() noexcept;
 
-void UpdateCalloutsByFilterCounts() noexcept;
+void
+UpdateCalloutsByFilterCounts() noexcept;
 
-const std::vector<FilterDetails>& SortFilterDetailsByFilterId();
-const FilterDetails& FindFilterByFilterId(UINT64 filter_id);
+const std::vector<FilterDetails>&
+SortFilterDetailsByFilterId();
+const FilterDetails&
+FindFilterByFilterId(UINT64 filter_id);
 
-const std::vector<FilterDetails>& SortFilterDetailsByName();
-size_t CountFiltersByName(const NormalizedString& rule_name);
-size_t CountFilterConditionsByName(const NormalizedString& rule_name);
+const std::vector<FilterDetails>&
+SortFilterDetailsByName();
+size_t
+CountFiltersByName(const NormalizedString& rule_name);
+size_t
+CountFilterConditionsByName(const NormalizedString& rule_name);
 
 // callout support
 struct CalloutDetails
@@ -116,29 +139,38 @@ struct CalloutDetails
 	GUID applicable_layer{};
 	uint32_t callout_id{};
 
-    std::string layer{};
+	std::string layer{};
 	std::wstring name{};
 	std::wstring description{};
 	std::wstring driver_name{};
 
-    uint64_t referenced_by_filter_count_enabled{};
-    uint64_t referenced_by_filter_count_disabled{};
-	bool is_third_party_callout{ false };
-	bool name_is_non_ascii_string{ true };
+	uint64_t referenced_by_filter_count_enabled{};
+	uint64_t referenced_by_filter_count_disabled{};
+	bool is_third_party_callout{false};
+	bool name_is_non_ascii_string{true};
 };
 
-void LoadWfpCallouts() noexcept;
-std::vector<CalloutDetails>& ReadWfpCallouts() noexcept;
-void WriteWfpCallouts() noexcept;
-void WriteThirdPartyCalloutDetails() noexcept;
+void
+LoadWfpCallouts() noexcept;
+std::vector<CalloutDetails>&
+ReadWfpCallouts() noexcept;
+void
+WriteWfpCallouts() noexcept;
+void
+WriteThirdPartyCalloutDetails() noexcept;
 
-const std::vector<CalloutDetails>& SortCalloutsByFilterCounts();
+const std::vector<CalloutDetails>&
+SortCalloutsByFilterCounts();
 
-void TemporarilyRemoveWfpCalloutFilters();
+void
+TemporarilyRemoveWfpCalloutFilters();
 
-std::wstring GetInternalCalloutString(const CalloutDetails& callout);
-std::wstring PrintCallout(const CalloutDetails& callout);
-std::wstring PrintCallout(const GUID& calloutKey);
+std::wstring
+GetInternalCalloutString(const CalloutDetails& callout);
+std::wstring
+PrintCallout(const CalloutDetails& callout);
+std::wstring
+PrintCallout(const GUID& calloutKey);
 
 // sublayer support
 struct SubLayerDetails
@@ -150,17 +182,24 @@ struct SubLayerDetails
 	size_t disabledFilterCount{};
 	size_t persistentFilterCount{};
 	uint16_t weight{};
-	bool is_third_party_sublayer{ false };
+	bool is_third_party_sublayer{false};
 };
 
-void LoadWfpSubLayers() noexcept;
-const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept;
-void WriteWfpSubLayers() noexcept;
+void
+LoadWfpSubLayers() noexcept;
+const std::vector<SubLayerDetails>&
+ReadWfpSubLayers() noexcept;
+void
+WriteWfpSubLayers() noexcept;
 
-SubLayerDetails& FindSublayer(const GUID& subLayerKey);
-std::wstring SublayerToString(const SubLayerDetails& sublayer);
-std::wstring SublayerToSimpleString(const SubLayerDetails& sublayer);
-void PrintSublayerFilterDetails();
+SubLayerDetails&
+FindSublayer(const GUID& subLayerKey);
+std::wstring
+SublayerToString(const SubLayerDetails& sublayer);
+std::wstring
+SublayerToSimpleString(const SubLayerDetails& sublayer);
+void
+PrintSublayerFilterDetails();
 
 // providers support
 struct ProviderDetails
@@ -171,13 +210,19 @@ struct ProviderDetails
 	size_t filterCount{};
 	size_t disabledFilterCount{};
 	size_t persistentFilterCount{};
-	bool is_third_party_provider{ false };
+	bool is_third_party_provider{false};
 };
 
-void LoadWfpProviders() noexcept;
-const std::vector<ProviderDetails>& ReadWfpProviders() noexcept;
-void WriteWfpProviders() noexcept;
+void
+LoadWfpProviders() noexcept;
+const std::vector<ProviderDetails>&
+ReadWfpProviders() noexcept;
+void
+WriteWfpProviders() noexcept;
 
-ProviderDetails& FindProvider(const GUID& providerKey);
-std::wstring ProviderToString(const ProviderDetails& provider);
-void PrintProviderFilterDetails();
+ProviderDetails&
+FindProvider(const GUID& providerKey);
+std::wstring
+ProviderToString(const ProviderDetails& provider);
+void
+PrintProviderFilterDetails();

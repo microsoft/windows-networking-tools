@@ -93,21 +93,20 @@ struct RecordedIpInterfaceProperties
 	WritableIpInterfaceProperties PersistentStoreProperties[2];
 };
 
-inline RecordedIpInterfaceProperties ReadIPInterfaceProperties(uint32_t interfaceIndex)
+inline RecordedIpInterfaceProperties
+ReadIPInterfaceProperties(uint32_t interfaceIndex)
 {
 	RecordedIpInterfaceProperties recordedProperties{};
 
 	bool persistentStoreQuery = true;
-	for (const auto& store : { L"PersistentStore", L"ActiveStore" })
+	for (const auto& store : {L"PersistentStore", L"ActiveStore"})
 	{
 		wprintf(L"\n\nEnumerating NetIPInterface settings for interface index %u (%s)\n", interfaceIndex, store);
 		const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
-		THROW_IF_FAILED(policyStoreContext->SetValue(
-			L"PolicyStore",
-			0,
-			wil::make_variant_bstr(store).addressof()));
+		THROW_IF_FAILED(policyStoreContext->SetValue(L"PolicyStore", 0, wil::make_variant_bstr(store).addressof()));
 
-		const std::wstring query = L"SELECT * FROM MSFT_NetIPInterface WHERE InterfaceIndex = " + std::to_wstring(interfaceIndex);
+		const std::wstring query =
+		    L"SELECT * FROM MSFT_NetIPInterface WHERE InterfaceIndex = " + std::to_wstring(interfaceIndex);
 		for (const auto& interface_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
 			// InterfaceIndex, AddressFamily, and Store are required properties
@@ -138,15 +137,19 @@ inline RecordedIpInterfaceProperties ReadIPInterfaceProperties(uint32_t interfac
 			THROW_HR_IF(E_UNEXPECTED, !interface_instance.get(L"AddressFamily", &AddressFamily));
 			if (AddressFamily == AF_INET)
 			{
-				properties = persistentStoreQuery ?
-					&recordedProperties.PersistentStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily] :
-					&recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily];
+				properties =
+				    persistentStoreQuery
+				        ? &recordedProperties
+				               .PersistentStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily]
+				        : &recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily];
 			}
 			else if (AddressFamily == AF_INET6)
 			{
-				properties = persistentStoreQuery ?
-					&recordedProperties.PersistentStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily] :
-					&recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily];
+				properties =
+				    persistentStoreQuery
+				        ? &recordedProperties
+				               .PersistentStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily]
+				        : &recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily];
 			}
 			else
 			{
@@ -180,59 +183,59 @@ inline RecordedIpInterfaceProperties ReadIPInterfaceProperties(uint32_t interfac
 			interface_instance.get(L"DadRetransmitTime", &properties->DadRetransmitTime);
 
 			wprintf(
-				L"\n"
-				L"  Interface Index: %d\n"
-				L"  AddressFamily: %d\n"
-				L"  Store: %d\n"
-				L"  Forwarding: %ls\n"
-				L"  ClampMss: %ls\n"
-				L"  Advertising: %ls\n"
-				L"  NlMtu: %ls\n"
-				L"  InterfaceMetric: %ls\n"
-				L"  BaseReachableTime: %ls\n"
-				L"  RetransmitTime: %ls\n"
-				L"  DadTransmits: %ls\n"
-				L"  RouterDiscovery: %ls\n"
-				L"  ManagedAddressConfiguration: %ls\n"
-				L"  OtherStatefulConfiguration: %ls\n"
-				L"  WeakHostSend: %ls\n"
-				L"  WeakHostReceive: %ls\n"
-				L"  IgnoreDefaultRoutes: %ls\n"
-				L"  AdvertisedRouterLifetime: %ls\n"
-				L"  AdvertiseDefaultRoute: %ls\n"
-				L"  CurrentHopLimit: %ls\n"
-				L"  ForceArpNdWolPattern: %ls\n"
-				L"  DirectedMacWolPattern: %ls\n"
-				L"  EcnMarking: %ls\n"
-				L"  Dhcp: %ls\n"
-				L"  AutomaticMetric: %ls\n"
-				L"  DadRetransmitTime: %ls\n",
-				InterfaceIndexValue,
-				AddressFamily,
-				Store,
-				ctl::VariantToString(properties->Forwarding.addressof()).c_str(),
-				ctl::VariantToString(properties->ClampMss.addressof()).c_str(),
-				ctl::VariantToString(properties->Advertising.addressof()).c_str(),
-				ctl::VariantToString(properties->NlMtu.addressof()).c_str(),
-				ctl::VariantToString(properties->InterfaceMetric.addressof()).c_str(),
-				ctl::VariantToString(properties->BaseReachableTime.addressof()).c_str(),
-				ctl::VariantToString(properties->RetransmitTime.addressof()).c_str(),
-				ctl::VariantToString(properties->DadTransmits.addressof()).c_str(),
-				ctl::VariantToString(properties->RouterDiscovery.addressof()).c_str(),
-				ctl::VariantToString(properties->ManagedAddressConfiguration.addressof()).c_str(),
-				ctl::VariantToString(properties->OtherStatefulConfiguration.addressof()).c_str(),
-				ctl::VariantToString(properties->WeakHostSend.addressof()).c_str(),
-				ctl::VariantToString(properties->WeakHostReceive.addressof()).c_str(),
-				ctl::VariantToString(properties->IgnoreDefaultRoutes.addressof()).c_str(),
-				ctl::VariantToString(properties->AdvertisedRouterLifetime.addressof()).c_str(),
-				ctl::VariantToString(properties->AdvertiseDefaultRoute.addressof()).c_str(),
-				ctl::VariantToString(properties->CurrentHopLimit.addressof()).c_str(),
-				ctl::VariantToString(properties->ForceArpNdWolPattern.addressof()).c_str(),
-				ctl::VariantToString(properties->DirectedMacWolPattern.addressof()).c_str(),
-				ctl::VariantToString(properties->EcnMarking.addressof()).c_str(),
-				ctl::VariantToString(properties->Dhcp.addressof()).c_str(),
-				ctl::VariantToString(properties->AutomaticMetric.addressof()).c_str(),
-				ctl::VariantToString(properties->DadRetransmitTime.addressof()).c_str());
+			    L"\n"
+			    L"  Interface Index: %d\n"
+			    L"  AddressFamily: %d\n"
+			    L"  Store: %d\n"
+			    L"  Forwarding: %ls\n"
+			    L"  ClampMss: %ls\n"
+			    L"  Advertising: %ls\n"
+			    L"  NlMtu: %ls\n"
+			    L"  InterfaceMetric: %ls\n"
+			    L"  BaseReachableTime: %ls\n"
+			    L"  RetransmitTime: %ls\n"
+			    L"  DadTransmits: %ls\n"
+			    L"  RouterDiscovery: %ls\n"
+			    L"  ManagedAddressConfiguration: %ls\n"
+			    L"  OtherStatefulConfiguration: %ls\n"
+			    L"  WeakHostSend: %ls\n"
+			    L"  WeakHostReceive: %ls\n"
+			    L"  IgnoreDefaultRoutes: %ls\n"
+			    L"  AdvertisedRouterLifetime: %ls\n"
+			    L"  AdvertiseDefaultRoute: %ls\n"
+			    L"  CurrentHopLimit: %ls\n"
+			    L"  ForceArpNdWolPattern: %ls\n"
+			    L"  DirectedMacWolPattern: %ls\n"
+			    L"  EcnMarking: %ls\n"
+			    L"  Dhcp: %ls\n"
+			    L"  AutomaticMetric: %ls\n"
+			    L"  DadRetransmitTime: %ls\n",
+			    InterfaceIndexValue,
+			    AddressFamily,
+			    Store,
+			    ctl::VariantToString(properties->Forwarding.addressof()).c_str(),
+			    ctl::VariantToString(properties->ClampMss.addressof()).c_str(),
+			    ctl::VariantToString(properties->Advertising.addressof()).c_str(),
+			    ctl::VariantToString(properties->NlMtu.addressof()).c_str(),
+			    ctl::VariantToString(properties->InterfaceMetric.addressof()).c_str(),
+			    ctl::VariantToString(properties->BaseReachableTime.addressof()).c_str(),
+			    ctl::VariantToString(properties->RetransmitTime.addressof()).c_str(),
+			    ctl::VariantToString(properties->DadTransmits.addressof()).c_str(),
+			    ctl::VariantToString(properties->RouterDiscovery.addressof()).c_str(),
+			    ctl::VariantToString(properties->ManagedAddressConfiguration.addressof()).c_str(),
+			    ctl::VariantToString(properties->OtherStatefulConfiguration.addressof()).c_str(),
+			    ctl::VariantToString(properties->WeakHostSend.addressof()).c_str(),
+			    ctl::VariantToString(properties->WeakHostReceive.addressof()).c_str(),
+			    ctl::VariantToString(properties->IgnoreDefaultRoutes.addressof()).c_str(),
+			    ctl::VariantToString(properties->AdvertisedRouterLifetime.addressof()).c_str(),
+			    ctl::VariantToString(properties->AdvertiseDefaultRoute.addressof()).c_str(),
+			    ctl::VariantToString(properties->CurrentHopLimit.addressof()).c_str(),
+			    ctl::VariantToString(properties->ForceArpNdWolPattern.addressof()).c_str(),
+			    ctl::VariantToString(properties->DirectedMacWolPattern.addressof()).c_str(),
+			    ctl::VariantToString(properties->EcnMarking.addressof()).c_str(),
+			    ctl::VariantToString(properties->Dhcp.addressof()).c_str(),
+			    ctl::VariantToString(properties->AutomaticMetric.addressof()).c_str(),
+			    ctl::VariantToString(properties->DadRetransmitTime.addressof()).c_str());
 		}
 
 		// 2nd pass is for ActiveStore
@@ -242,23 +245,22 @@ inline RecordedIpInterfaceProperties ReadIPInterfaceProperties(uint32_t interfac
 	return recordedProperties;
 }
 
-inline HRESULT WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& recordedProperties, uint32_t interface_index)
+inline HRESULT
+WriteIPInterfaceProperties(const RecordedIpInterfaceProperties& recordedProperties, uint32_t interface_index)
 try
 {
 	// for demonstration purposes, we'll just write the same properties back to the interface
 	// in a real-world scenario, you would likely modify some of these properties before writing them back
 
 	bool persistentStoreQuery = true;
-	for (const auto& store : { L"PersistentStore", L"ActiveStore" })
+	for (const auto& store : {L"PersistentStore", L"ActiveStore"})
 	{
 		wprintf(L"\n\nEnumerating NetIPInterface objects for the target interface %u (%s)\n", interface_index, store);
 		const wil::com_ptr<IWbemContext> policyStoreContext = wil::CoCreateInstance<WbemContext, IWbemContext>();
-		THROW_IF_FAILED(policyStoreContext->SetValue(
-			L"PolicyStore",
-			0,
-			wil::make_variant_bstr(store).addressof()));
+		THROW_IF_FAILED(policyStoreContext->SetValue(L"PolicyStore", 0, wil::make_variant_bstr(store).addressof()));
 
-		const std::wstring query = L"SELECT * FROM MSFT_NetIPInterface WHERE InterfaceIndex = " + std::to_wstring(interface_index);
+		const std::wstring query =
+		    L"SELECT * FROM MSFT_NetIPInterface WHERE InterfaceIndex = " + std::to_wstring(interface_index);
 		for (auto& interface_instance : ctl::ctWmiEnumerateInstance::Query(query.c_str(), policyStoreContext))
 		{
 			// InterfaceIndex, AddressFamily, and Store are required properties
@@ -289,15 +291,19 @@ try
 			THROW_HR_IF(E_UNEXPECTED, !interface_instance.get(L"AddressFamily", &AddressFamily));
 			if (AddressFamily == AF_INET)
 			{
-				properties = persistentStoreQuery ?
-					&recordedProperties.PersistentStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily] :
-					&recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily];
+				properties =
+				    persistentStoreQuery
+				        ? &recordedProperties
+				               .PersistentStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily]
+				        : &recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv4AddressFamily];
 			}
 			else if (AddressFamily == AF_INET6)
 			{
-				properties = persistentStoreQuery ?
-					&recordedProperties.PersistentStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily] :
-					&recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily];
+				properties =
+				    persistentStoreQuery
+				        ? &recordedProperties
+				               .PersistentStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily]
+				        : &recordedProperties.ActiveStoreProperties[RecordedIpInterfaceProperties::IPv6AddressFamily];
 			}
 			else
 			{
@@ -311,9 +317,15 @@ try
 				continue;
 			}
 
-			const auto LogFailure = [&](PCWSTR propertyName, HRESULT hr)  noexcept {
-				std::printf(" - Failed to set %ls property for AddressFamily %u in %ls (0x%08X)\n", propertyName, AddressFamily, store, hr);
-				};
+			const auto LogFailure = [&](PCWSTR propertyName, HRESULT hr) noexcept
+			{
+				std::printf(
+				    " - Failed to set %ls property for AddressFamily %u in %ls (0x%08X)\n",
+				    propertyName,
+				    AddressFamily,
+				    store,
+				    hr);
+			};
 
 			HRESULT hrAggregate = S_OK;
 			HRESULT hr{};
@@ -337,12 +349,16 @@ try
 				hrAggregate = hr;
 				LogFailure(L"NlMtu", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"InterfaceMetric", properties->InterfaceMetric)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(L"InterfaceMetric", properties->InterfaceMetric)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"InterfaceMetric", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"BaseReachableTime", properties->BaseReachableTime)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"BaseReachableTime",
+			            properties->BaseReachableTime)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"BaseReachableTime", hr);
@@ -357,17 +373,24 @@ try
 				hrAggregate = hr;
 				LogFailure(L"DadTransmits", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"RouterDiscovery", properties->RouterDiscovery)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(L"RouterDiscovery", properties->RouterDiscovery)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"RouterDiscovery", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"ManagedAddressConfiguration", properties->ManagedAddressConfiguration)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"ManagedAddressConfiguration",
+			            properties->ManagedAddressConfiguration)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"ManagedAddressConfiguration", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"OtherStatefulConfiguration", properties->OtherStatefulConfiguration)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"OtherStatefulConfiguration",
+			            properties->OtherStatefulConfiguration)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"OtherStatefulConfiguration", hr);
@@ -377,37 +400,54 @@ try
 				hrAggregate = hr;
 				LogFailure(L"WeakHostSend", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"WeakHostReceive", properties->WeakHostReceive)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(L"WeakHostReceive", properties->WeakHostReceive)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"WeakHostReceive", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"IgnoreDefaultRoutes", properties->IgnoreDefaultRoutes)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"IgnoreDefaultRoutes",
+			            properties->IgnoreDefaultRoutes)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"IgnoreDefaultRoutes", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"AdvertisedRouterLifetime", properties->AdvertisedRouterLifetime)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"AdvertisedRouterLifetime",
+			            properties->AdvertisedRouterLifetime)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"AdvertisedRouterLifetime", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"AdvertiseDefaultRoute", properties->AdvertiseDefaultRoute)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"AdvertiseDefaultRoute",
+			            properties->AdvertiseDefaultRoute)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"AdvertiseDefaultRoute", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"CurrentHopLimit", properties->CurrentHopLimit)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(L"CurrentHopLimit", properties->CurrentHopLimit)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"CurrentHopLimit", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"ForceArpNdWolPattern", properties->ForceArpNdWolPattern)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"ForceArpNdWolPattern",
+			            properties->ForceArpNdWolPattern)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"ForceArpNdWolPattern", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"DirectedMacWolPattern", properties->DirectedMacWolPattern)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"DirectedMacWolPattern",
+			            properties->DirectedMacWolPattern)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"DirectedMacWolPattern", hr);
@@ -422,23 +462,29 @@ try
 				hrAggregate = hr;
 				LogFailure(L"Dhcp", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"AutomaticMetric", properties->AutomaticMetric)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(L"AutomaticMetric", properties->AutomaticMetric)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"AutomaticMetric", hr);
 			}
-			if (FAILED(hr = interface_instance.set_if_not_null_no_throw(L"DadRetransmitTime", properties->DadRetransmitTime)))
+			if (FAILED(
+			        hr = interface_instance.set_if_not_null_no_throw(
+			            L"DadRetransmitTime",
+			            properties->DadRetransmitTime)))
 			{
 				hrAggregate = hr;
 				LogFailure(L"DadRetransmitTime", hr);
 			}
 
 			hr = interface_instance.write_instance_no_throw(policyStoreContext.get());
-			std::printf("Attempting to update all properties for AddressFamily %u in %ls %ls -- writing the instance returned 0x%08lX\n",
-				AddressFamily,
-				store,
-				FAILED(hrAggregate) ? L"failed" : L"succeeded",
-				hr);
+			std::printf(
+			    "Attempting to update all properties for AddressFamily %u in %ls %ls -- writing the instance returned "
+			    "0x%08lX\n",
+			    AddressFamily,
+			    store,
+			    FAILED(hrAggregate) ? L"failed" : L"succeeded",
+			    hr);
 		}
 
 		// 2nd pass is for ActiveStore

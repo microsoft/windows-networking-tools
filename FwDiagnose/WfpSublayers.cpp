@@ -16,47 +16,47 @@
 static std::vector<SubLayerDetails> g_all_sublayers;
 
 // additional internal sublayers
-constexpr GUID IPXLAT_WFP_OUTBOUND_IPV4_SUBLAYER =
-{.Data1 = 0xd3e70856, .Data2 = 0xfc90, .Data3 = 0x4c0a, .Data4 = {0xb9, 0xb2, 0xa6, 0xf7, 0x3e, 0x20, 0xb5, 0xcc} };
-constexpr GUID IPXLAT_WFP_INBOUND_IPV6_SUBLAYER =
-{.Data1 = 0xdfb035ca, .Data2 = 0xc2a7, .Data3 = 0x4684, .Data4 = {0x97, 0xb6, 0x4d, 0xbc, 0x57, 0xc6, 0x35, 0x90} };
-constexpr GUID IPXLAT_WFP_FORWARD_IPV4_SUBLAYER =
-{.Data1 = 0x4351e497, .Data2 = 0x5d8b, .Data3 = 0x46bc, .Data4 = {0x86, 0xd9, 0xab, 0xcc, 0xdb, 0x86, 0x8d, 0x6d} };
-constexpr GUID IPXLAT_WFP_OUTBOUND_ETHERNET_SUBLAYER =
-{.Data1 = 0x7ea20fed, .Data2 = 0x30e, .Data3 = 0x4db0, .Data4 = {0x85, 0xf9, 0x23, 0x4f, 0x9a, 0xf5, 0xab, 0x50} };
-constexpr GUID FWPM_SUBLAYER_EDGE_TRAVERSAL_TEREDO_AUTHORIZATION =
-{.Data1 = 0x7b6b11f6, .Data2 = 0xcbb5, .Data3 = 0x433c, .Data4 = {0xae, 0x06, 0x6a, 0x4f, 0x00, 0x76, 0xe4, 0x9e} };
+constexpr GUID IPXLAT_WFP_OUTBOUND_IPV4_SUBLAYER = {
+    .Data1 = 0xd3e70856, .Data2 = 0xfc90, .Data3 = 0x4c0a, .Data4 = {0xb9, 0xb2, 0xa6, 0xf7, 0x3e, 0x20, 0xb5, 0xcc}};
+constexpr GUID IPXLAT_WFP_INBOUND_IPV6_SUBLAYER = {
+    .Data1 = 0xdfb035ca, .Data2 = 0xc2a7, .Data3 = 0x4684, .Data4 = {0x97, 0xb6, 0x4d, 0xbc, 0x57, 0xc6, 0x35, 0x90}};
+constexpr GUID IPXLAT_WFP_FORWARD_IPV4_SUBLAYER = {
+    .Data1 = 0x4351e497, .Data2 = 0x5d8b, .Data3 = 0x46bc, .Data4 = {0x86, 0xd9, 0xab, 0xcc, 0xdb, 0x86, 0x8d, 0x6d}};
+constexpr GUID IPXLAT_WFP_OUTBOUND_ETHERNET_SUBLAYER = {
+    .Data1 = 0x7ea20fed, .Data2 = 0x30e, .Data3 = 0x4db0, .Data4 = {0x85, 0xf9, 0x23, 0x4f, 0x9a, 0xf5, 0xab, 0x50}};
+constexpr GUID FWPM_SUBLAYER_EDGE_TRAVERSAL_TEREDO_AUTHORIZATION = {
+    .Data1 = 0x7b6b11f6, .Data2 = 0xcbb5, .Data3 = 0x433c, .Data4 = {0xae, 0x06, 0x6a, 0x4f, 0x00, 0x76, 0xe4, 0x9e}};
 constexpr GUID MPSSVC_IPSEC_MM_RULE_SUBLAYER = // the constant MMRuleSublayerGuid in the firewall codebase
-{.Data1 = 0x9ba30013, .Data2 = 0xc84e, .Data3 = 0x47e5, .Data4 = {0xac, 0x6e, 0x1e, 0x1a, 0xed, 0x72, 0xfa, 0x69} };
+    {.Data1 = 0x9ba30013, .Data2 = 0xc84e, .Data3 = 0x47e5, .Data4 = {0xac, 0x6e, 0x1e, 0x1a, 0xed, 0x72, 0xfa, 0x69}};
 
 const GUID BuiltInSublayers[] = {
-	FWPM_SUBLAYER_RPC_AUDIT,
-	FWPM_SUBLAYER_IPSEC_TUNNEL,
-	FWPM_SUBLAYER_UNIVERSAL,
-	FWPM_SUBLAYER_LIPS,
-	FWPM_SUBLAYER_SECURE_SOCKET,
-	FWPM_SUBLAYER_TCP_CHIMNEY_OFFLOAD,
-	FWPM_SUBLAYER_INSPECTION,
-	FWPM_SUBLAYER_EDGE_TRAVERSAL, // previously called FWPM_SUBLAYER_TEREDO
-	FWPM_SUBLAYER_IPSEC_FORWARD_OUTBOUND_TUNNEL,
-	FWPM_SUBLAYER_IPSEC_DOSP,
-	FWPM_SUBLAYER_TCP_TEMPLATES,
-	FWPM_SUBLAYER_IPSEC_SECURITY_REALM,
-	FWPM_SUBLAYER_MPSSVC_WSH,
-	FWPM_SUBLAYER_MPSSVC_WF,
-	FWPM_SUBLAYER_MPSSVC_QUARANTINE,
-	FWPM_SUBLAYER_MPSSVC_EDP,
-	FWPM_SUBLAYER_MPSSVC_TENANT_RESTRICTIONS,
-	FWPM_SUBLAYER_MPSSVC_APP_ISOLATION,
-	IPXLAT_WFP_OUTBOUND_IPV4_SUBLAYER,
-	IPXLAT_WFP_INBOUND_IPV6_SUBLAYER,
-	IPXLAT_WFP_FORWARD_IPV4_SUBLAYER,
-	IPXLAT_WFP_OUTBOUND_ETHERNET_SUBLAYER,
-	FWPM_SUBLAYER_EDGE_TRAVERSAL_TEREDO_AUTHORIZATION,
-	MPSSVC_IPSEC_MM_RULE_SUBLAYER
-};
+    FWPM_SUBLAYER_RPC_AUDIT,
+    FWPM_SUBLAYER_IPSEC_TUNNEL,
+    FWPM_SUBLAYER_UNIVERSAL,
+    FWPM_SUBLAYER_LIPS,
+    FWPM_SUBLAYER_SECURE_SOCKET,
+    FWPM_SUBLAYER_TCP_CHIMNEY_OFFLOAD,
+    FWPM_SUBLAYER_INSPECTION,
+    FWPM_SUBLAYER_EDGE_TRAVERSAL, // previously called FWPM_SUBLAYER_TEREDO
+    FWPM_SUBLAYER_IPSEC_FORWARD_OUTBOUND_TUNNEL,
+    FWPM_SUBLAYER_IPSEC_DOSP,
+    FWPM_SUBLAYER_TCP_TEMPLATES,
+    FWPM_SUBLAYER_IPSEC_SECURITY_REALM,
+    FWPM_SUBLAYER_MPSSVC_WSH,
+    FWPM_SUBLAYER_MPSSVC_WF,
+    FWPM_SUBLAYER_MPSSVC_QUARANTINE,
+    FWPM_SUBLAYER_MPSSVC_EDP,
+    FWPM_SUBLAYER_MPSSVC_TENANT_RESTRICTIONS,
+    FWPM_SUBLAYER_MPSSVC_APP_ISOLATION,
+    IPXLAT_WFP_OUTBOUND_IPV4_SUBLAYER,
+    IPXLAT_WFP_INBOUND_IPV6_SUBLAYER,
+    IPXLAT_WFP_FORWARD_IPV4_SUBLAYER,
+    IPXLAT_WFP_OUTBOUND_ETHERNET_SUBLAYER,
+    FWPM_SUBLAYER_EDGE_TRAVERSAL_TEREDO_AUTHORIZATION,
+    MPSSVC_IPSEC_MM_RULE_SUBLAYER};
 
-static PCWSTR BuiltInSublayerToString(const GUID& guid) noexcept
+static PCWSTR
+BuiltInSublayerToString(const GUID& guid) noexcept
 {
 	if (guid == FWPM_SUBLAYER_RPC_AUDIT)
 	{
@@ -158,138 +158,145 @@ static PCWSTR BuiltInSublayerToString(const GUID& guid) noexcept
 	FAIL_FAST();
 }
 
-std::wstring SublayerToString(const SubLayerDetails& sublayer)
+std::wstring
+SublayerToString(const SubLayerDetails& sublayer)
 {
 	if (std::ranges::find(BuiltInSublayers, sublayer.subLayerKey) != std::end(BuiltInSublayers))
 	{
 		if (sublayer.displayName == sublayer.description)
 		{
 			return wil::str_printf<std::wstring>(
-				L"%ls : [%04x] %ls (%ls)",
-				GuidToString(sublayer.subLayerKey).c_str(),
-				sublayer.weight,
-				BuiltInSublayerToString(sublayer.subLayerKey),
-				sublayer.displayName.empty() ? L"no display name or description" : sublayer.displayName.c_str());
+			    L"%ls : [%04x] %ls (%ls)",
+			    GuidToString(sublayer.subLayerKey).c_str(),
+			    sublayer.weight,
+			    BuiltInSublayerToString(sublayer.subLayerKey),
+			    sublayer.displayName.empty() ? L"no display name or description" : sublayer.displayName.c_str());
 		}
 
 		if (!sublayer.description.empty())
 		{
 			return wil::str_printf<std::wstring>(
-				L"%ls : [%04x] %ls (%ls) [%ls]",
-				GuidToString(sublayer.subLayerKey).c_str(),
-				sublayer.weight,
-				BuiltInSublayerToString(sublayer.subLayerKey),
-				sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str(),
-				sublayer.description.empty() ? L"no description" : sublayer.description.c_str());
+			    L"%ls : [%04x] %ls (%ls) [%ls]",
+			    GuidToString(sublayer.subLayerKey).c_str(),
+			    sublayer.weight,
+			    BuiltInSublayerToString(sublayer.subLayerKey),
+			    sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str(),
+			    sublayer.description.empty() ? L"no description" : sublayer.description.c_str());
 		}
 		return wil::str_printf<std::wstring>(
-			L"%ls : [%04x] %ls (%ls)",
-			GuidToString(sublayer.subLayerKey).c_str(),
-			sublayer.weight,
-			BuiltInSublayerToString(sublayer.subLayerKey),
-			sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str());
+		    L"%ls : [%04x] %ls (%ls)",
+		    GuidToString(sublayer.subLayerKey).c_str(),
+		    sublayer.weight,
+		    BuiltInSublayerToString(sublayer.subLayerKey),
+		    sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str());
 	}
 
 	if (sublayer.displayName == sublayer.description)
 	{
 		return wil::str_printf<std::wstring>(
-			L"%ls : [%04x] %ls",
-			GuidToString(sublayer.subLayerKey).c_str(),
-			sublayer.weight,
-			sublayer.displayName.empty() ? L"[no display name or description]" : sublayer.displayName.c_str());
+		    L"%ls : [%04x] %ls",
+		    GuidToString(sublayer.subLayerKey).c_str(),
+		    sublayer.weight,
+		    sublayer.displayName.empty() ? L"[no display name or description]" : sublayer.displayName.c_str());
 	}
 
 	if (!sublayer.description.empty())
 	{
 		return wil::str_printf<std::wstring>(
-			L"%ls : [%04x] %ls (%ls)",
-			GuidToString(sublayer.subLayerKey).c_str(),
-			sublayer.weight,
-			sublayer.displayName.c_str(),
-			sublayer.description.c_str());
+		    L"%ls : [%04x] %ls (%ls)",
+		    GuidToString(sublayer.subLayerKey).c_str(),
+		    sublayer.weight,
+		    sublayer.displayName.c_str(),
+		    sublayer.description.c_str());
 	}
 	return wil::str_printf<std::wstring>(
-		L"%ls : [%04x] %ls",
-		GuidToString(sublayer.subLayerKey).c_str(),
-		sublayer.weight,
-		sublayer.displayName.c_str());
+	    L"%ls : [%04x] %ls",
+	    GuidToString(sublayer.subLayerKey).c_str(),
+	    sublayer.weight,
+	    sublayer.displayName.c_str());
 }
 
-std::wstring SublayerToSimpleString(const SubLayerDetails& sublayer)
+std::wstring
+SublayerToSimpleString(const SubLayerDetails& sublayer)
 {
 	if (std::ranges::find(BuiltInSublayers, sublayer.subLayerKey) != std::end(BuiltInSublayers))
 	{
 		if (sublayer.displayName == sublayer.description)
 		{
 			return wil::str_printf<std::wstring>(
-				L"%ls (%ls)",
-				BuiltInSublayerToString(sublayer.subLayerKey),
-				sublayer.displayName.empty() ? L"no display name or description" : sublayer.displayName.c_str());
+			    L"%ls (%ls)",
+			    BuiltInSublayerToString(sublayer.subLayerKey),
+			    sublayer.displayName.empty() ? L"no display name or description" : sublayer.displayName.c_str());
 		}
 
 		if (!sublayer.description.empty())
 		{
 			return wil::str_printf<std::wstring>(
-				L"%ls (%ls) (%ls)",
-				BuiltInSublayerToString(sublayer.subLayerKey),
-				sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str(),
-				sublayer.description.empty() ? L"no description" : sublayer.description.c_str());
+			    L"%ls (%ls) (%ls)",
+			    BuiltInSublayerToString(sublayer.subLayerKey),
+			    sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str(),
+			    sublayer.description.empty() ? L"no description" : sublayer.description.c_str());
 		}
 		return wil::str_printf<std::wstring>(
-			L"%ls (%ls)",
-			BuiltInSublayerToString(sublayer.subLayerKey),
-			sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str());
+		    L"%ls (%ls)",
+		    BuiltInSublayerToString(sublayer.subLayerKey),
+		    sublayer.displayName.empty() ? L"no display name" : sublayer.displayName.c_str());
 	}
 
 	if (sublayer.displayName == sublayer.description)
 	{
 		return wil::str_printf<std::wstring>(
-			L"%ls [%ls]",
-			sublayer.displayName.empty() ? L"[no display name or description]" : sublayer.displayName.c_str(),
-			GuidToString(sublayer.subLayerKey).c_str());
+		    L"%ls [%ls]",
+		    sublayer.displayName.empty() ? L"[no display name or description]" : sublayer.displayName.c_str(),
+		    GuidToString(sublayer.subLayerKey).c_str());
 	}
 
 	if (!sublayer.description.empty())
 	{
 		return wil::str_printf<std::wstring>(
-			L"%ls (%ls) [%ls]",
-			sublayer.displayName.c_str(),
-			sublayer.description.c_str(),
-			GuidToString(sublayer.subLayerKey).c_str());
+		    L"%ls (%ls) [%ls]",
+		    sublayer.displayName.c_str(),
+		    sublayer.description.c_str(),
+		    GuidToString(sublayer.subLayerKey).c_str());
 	}
 
 	return wil::str_printf<std::wstring>(
-		L"%ls [%ls]",
-		sublayer.displayName.c_str(),
-		GuidToString(sublayer.subLayerKey).c_str());
+	    L"%ls [%ls]",
+	    sublayer.displayName.c_str(),
+	    GuidToString(sublayer.subLayerKey).c_str());
 }
 
-const std::vector<SubLayerDetails>& ReadWfpSubLayers() noexcept
+const std::vector<SubLayerDetails>&
+ReadWfpSubLayers() noexcept
 {
 	return g_all_sublayers;
 }
 
-void WriteWfpSubLayers() noexcept
+void
+WriteWfpSubLayers() noexcept
 {
+	std::printf("\n"
+	            "**************************************************************************************\n"
+	            "                                     WFP Sublayers                                    \n"
+	            "**************************************************************************************\n");
 	std::printf(
-		"\n"
-		"**************************************************************************************\n"
-		"                                     WFP Sublayers                                    \n"
-		"**************************************************************************************\n");
-	std::printf(
-		"  * Total sublayers: %zu\n"
-		"  * Total 3rd party sublayers: %zd\n",
-		g_all_sublayers.size(),
-		std::ranges::count_if(
-			g_all_sublayers, [](const SubLayerDetails& sublayer)
-			{
-				return sublayer.is_third_party_sublayer;
-			}));
+	    "  * Total sublayers: %zu\n"
+	    "  * Total 3rd party sublayers: %zd\n",
+	    g_all_sublayers.size(),
+	    std::ranges::count_if(
+	        g_all_sublayers,
+	        [](const SubLayerDetails& sublayer)
+	        {
+		        return sublayer.is_third_party_sublayer;
+	        }));
 	for (const auto& sublayer : g_all_sublayers)
 	{
 		if (sublayer.is_third_party_sublayer)
 		{
-			std::printf("      %ls [weight %hu]\n", sublayer.displayName.empty() ? L"(no display name)" : sublayer.displayName.c_str(), sublayer.weight);
+			std::printf(
+			    "      %ls [weight %hu]\n",
+			    sublayer.displayName.empty() ? L"(no display name)" : sublayer.displayName.c_str(),
+			    sublayer.weight);
 		}
 	}
 
@@ -303,7 +310,8 @@ void WriteWfpSubLayers() noexcept
 	}
 }
 
-void LoadWfpSubLayers() noexcept
+void
+LoadWfpSubLayers() noexcept
 try
 {
 	g_all_sublayers.clear();
@@ -317,10 +325,10 @@ try
 		THROW_WIN32(fwpm_error);
 	}
 	const auto close_enum_handle = wil::scope_exit(
-		[&]
-		{
-			FwpmSubLayerDestroyEnumHandle0(fpwm_handle, enumHandle);
-		});
+	    [&]
+	    {
+		    FwpmSubLayerDestroyEnumHandle0(fpwm_handle, enumHandle);
+	    });
 
 	for (;;)
 	{
@@ -334,26 +342,22 @@ try
 			THROW_WIN32(fwpm_error);
 		}
 		const auto free_sublayer_entries = wil::scope_exit(
-			[&]
-			{
-				FwpmFreeMemory0(reinterpret_cast<void**>(&entries));
-			});
+		    [&]
+		    {
+			    FwpmFreeMemory0(reinterpret_cast<void**>(&entries));
+		    });
 
 		for (UINT32 i = 0; i < numEntriesReturned; ++i)
 		{
 			const auto* current_fwpm_filter = entries[i];
-			g_all_sublayers.push_back(
-				SubLayerDetails{
-					.subLayerKey = current_fwpm_filter->subLayerKey,
-					.displayName = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"",
-					.description = current_fwpm_filter->displayData.description ?
-									   current_fwpm_filter->displayData.description :
-									   L"",
-					.weight = current_fwpm_filter->weight,
-					.is_third_party_sublayer = std::ranges::find(
-						BuiltInSublayers, current_fwpm_filter->subLayerKey) == std::end(BuiltInSublayers)
-				});
-
+			g_all_sublayers.push_back(SubLayerDetails{
+			    .subLayerKey = current_fwpm_filter->subLayerKey,
+			    .displayName = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"",
+			    .description =
+			        current_fwpm_filter->displayData.description ? current_fwpm_filter->displayData.description : L"",
+			    .weight = current_fwpm_filter->weight,
+			    .is_third_party_sublayer = std::ranges::find(BuiltInSublayers, current_fwpm_filter->subLayerKey) ==
+			                               std::end(BuiltInSublayers)});
 		}
 
 		if (numEntriesReturned < entries_quested)
@@ -363,20 +367,21 @@ try
 	}
 
 	std::ranges::sort(
-		g_all_sublayers, [](const SubLayerDetails& left, const SubLayerDetails& right)
-		{
-			return left.weight > right.weight;
-		});
+	    g_all_sublayers,
+	    [](const SubLayerDetails& left, const SubLayerDetails& right)
+	    {
+		    return left.weight > right.weight;
+	    });
 }
 catch (const std::exception& e)
 {
 	std::printf("*** Exception occurred while reading sublayers : %hs\n", e.what());
 }
 
-SubLayerDetails& FindSublayer(const GUID& subLayerKey)
+SubLayerDetails&
+FindSublayer(const GUID& subLayerKey)
 {
-	const auto found_sublayer = std::ranges::find(
-		g_all_sublayers, subLayerKey, &SubLayerDetails::subLayerKey);
+	const auto found_sublayer = std::ranges::find(g_all_sublayers, subLayerKey, &SubLayerDetails::subLayerKey);
 	if (found_sublayer != g_all_sublayers.end())
 	{
 		return *found_sublayer;
@@ -384,13 +389,17 @@ SubLayerDetails& FindSublayer(const GUID& subLayerKey)
 	THROW_WIN32(ERROR_NOT_FOUND);
 }
 
-void PrintSublayerFilterDetails()
+void
+PrintSublayerFilterDetails()
 {
 	// sort by filter counts, then print the details
-	std::ranges::sort(g_all_sublayers, [](const SubLayerDetails& left, const SubLayerDetails& right)
-		{
-			return (left.filterCount + left.disabledFilterCount + left.persistentFilterCount) > (right.filterCount + right.disabledFilterCount + right.persistentFilterCount);
-		});
+	std::ranges::sort(
+	    g_all_sublayers,
+	    [](const SubLayerDetails& left, const SubLayerDetails& right)
+	    {
+		    return (left.filterCount + left.disabledFilterCount + left.persistentFilterCount) >
+		           (right.filterCount + right.disabledFilterCount + right.persistentFilterCount);
+	    });
 
 	for (const auto& sublayer : g_all_sublayers)
 	{
@@ -402,22 +411,22 @@ void PrintSublayerFilterDetails()
 		if (std::ranges::find(BuiltInSublayers, sublayer.subLayerKey) != std::end(BuiltInSublayers))
 		{
 			std::printf(
-				"    %ls : [filter count: %zu] %ls (disabled filters: %zu, persistent filters: %zu)\n",
-				GuidToString(sublayer.subLayerKey).c_str(),
-				sublayer.filterCount,
-				BuiltInSublayerToString(sublayer.subLayerKey),
-				sublayer.disabledFilterCount,
-				sublayer.persistentFilterCount);
+			    "    %ls : [filter count: %zu] %ls (disabled filters: %zu, persistent filters: %zu)\n",
+			    GuidToString(sublayer.subLayerKey).c_str(),
+			    sublayer.filterCount,
+			    BuiltInSublayerToString(sublayer.subLayerKey),
+			    sublayer.disabledFilterCount,
+			    sublayer.persistentFilterCount);
 		}
 		else
 		{
 			std::printf(
-				"    %ls : [filter count: %zu] %ls (disabled: %zu, persistent: %zu)\n",
-				GuidToString(sublayer.subLayerKey).c_str(),
-				sublayer.filterCount,
-				sublayer.displayName.c_str(),
-				sublayer.disabledFilterCount,
-				sublayer.persistentFilterCount);
+			    "    %ls : [filter count: %zu] %ls (disabled: %zu, persistent: %zu)\n",
+			    GuidToString(sublayer.subLayerKey).c_str(),
+			    sublayer.filterCount,
+			    sublayer.displayName.c_str(),
+			    sublayer.disabledFilterCount,
+			    sublayer.persistentFilterCount);
 		}
 	}
 }

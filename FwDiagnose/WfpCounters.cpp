@@ -20,7 +20,8 @@ static std::shared_ptr<ctl::ctPerformanceCounterCounter<ULONGLONG>>* g_wfp_filte
 
 static HANDLE g_wfp_engineHandle = nullptr;
 static wil::critical_section g_wfp_engineHandleLock;
-HANDLE GetFwpmEngineHandle()
+HANDLE
+GetFwpmEngineHandle()
 {
 	// [[maybe_unused]] to suppress unused variable warnings for RAII objects
 	[[maybe_unused]] const auto lock = g_wfp_engineHandleLock.lock();
@@ -36,7 +37,8 @@ HANDLE GetFwpmEngineHandle()
 	return g_wfp_engineHandle;
 }
 
-bool InitializeWfpPerfCounters() noexcept
+bool
+InitializeWfpPerfCounters() noexcept
 try
 {
 	g_wmi = new ctl::ctWmiService(L"root\\cimv2");
@@ -44,10 +46,10 @@ try
 	g_wfp_filter_count = new std::shared_ptr<ctl::ctPerformanceCounterCounter<ULONGLONG>>();
 
 	*g_wfp_filter_count = ctCreatePerfCounter<ULONGLONG>(
-		*g_wmi,
-		ctl::ctWmiEnumClassName::WfpFilterCount,
-		L"Total",
-		ctl::ctPerformanceCounterCollectionType::Detailed);
+	    *g_wmi,
+	    ctl::ctWmiEnumClassName::WfpFilterCount,
+	    L"Total",
+	    ctl::ctPerformanceCounterCollectionType::Detailed);
 	g_wmi_performance->add_counter(*g_wfp_filter_count);
 	return true;
 }
@@ -56,18 +58,20 @@ catch (...)
 	return false;
 }
 
-uint64_t ReadWfpPerfCounters()
+uint64_t
+ReadWfpPerfCounters()
 {
 	g_wmi_performance->start_all_counters(1);
 	Sleep(100);
 	g_wmi_performance->stop_all_counters();
 
 	auto [begin_wfp_filter_total, end_wfp_filter_total] = (*g_wfp_filter_count)->reference_range();
-	const std::vector<ULONGLONG> ull_filter_count{ begin_wfp_filter_total, end_wfp_filter_total };
+	const std::vector<ULONGLONG> ull_filter_count{begin_wfp_filter_total, end_wfp_filter_total};
 	return *ull_filter_count.rbegin();
 }
 
-uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept
+uint32_t
+SortedLayerRelativePriority(const GUID& layer) noexcept
 {
 	uint32_t layer_priority = 0;
 	// first ALE layers
@@ -214,14 +218,21 @@ uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept
 	{
 		return layer_priority;
 	}
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 =
-	{ .Data1 = 0x29243AF8, .Data2 = 0xECAF, .Data3 = 0x4436, .Data4 = {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 = {
+	    .Data1 = 0x29243AF8,
+	    .Data2 = 0xECAF,
+	    .Data3 = 0x4436,
+	    .Data4 = {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04}};
 	++layer_priority;
 	if (layer == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4)
 	{
 		return layer_priority;
 	}
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 = { .Data1 = 0xC9809347, .Data2 = 0x218F, .Data3 = 0x4B7F, .Data4 = {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 = {
+	    .Data1 = 0xC9809347,
+	    .Data2 = 0x218F,
+	    .Data3 = 0x4B7F,
+	    .Data4 = {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4}};
 	++layer_priority;
 	if (layer == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6)
 	{
@@ -601,7 +612,8 @@ uint32_t SortedLayerRelativePriority(const GUID& layer) noexcept
 	FAIL_FAST();
 }
 
-std::string FwpmLayerToString(const GUID& layerGuid)
+std::string
+FwpmLayerToString(const GUID& layerGuid)
 {
 	if (layerGuid == FWPM_LAYER_INBOUND_IPPACKET_V4)
 	{
@@ -992,14 +1004,20 @@ std::string FwpmLayerToString(const GUID& layerGuid)
 		return "FWPM_LAYER_OUTBOUND_NETWORK_CONNECTION_POLICY_V6";
 	}
 
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 = 
-	{ .Data1 = 0x29243AF8, .Data2 = 0xECAF, .Data3 = 0x4436, .Data4 = {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4 = {
+	    .Data1 = 0x29243AF8,
+	    .Data2 = 0xECAF,
+	    .Data3 = 0x4436,
+	    .Data4 = {0xA4, 0x4E, 0xF9, 0xFB, 0x70, 0x70, 0xAA, 0x04}};
 	if (layerGuid == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4)
 	{
 		return "FWPM_LAYER_ALE_ACCEPT_REDIRECT_V4";
 	}
-	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 =
-	{ .Data1 = 0xC9809347, .Data2 = 0x218F, .Data3 = 0x4B7F, .Data4 = {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4} };
+	constexpr GUID FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6 = {
+	    .Data1 = 0xC9809347,
+	    .Data2 = 0x218F,
+	    .Data3 = 0x4B7F,
+	    .Data4 = {0xA7, 0x42, 0xB2, 0x81, 0xA3, 0xF6, 0x31, 0xB4}};
 	if (layerGuid == FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6)
 	{
 		return "FWPM_LAYER_ALE_ACCEPT_REDIRECT_V6";

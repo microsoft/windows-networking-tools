@@ -13,8 +13,7 @@
 #include <wil/network.h>
 #include <wil/resource.h>
 
-static
-std::wstring
+static std::wstring
 IpProtocolToString(UINT8 protocol)
 {
 	switch (protocol)
@@ -82,8 +81,7 @@ IpProtocolToString(UINT8 protocol)
 	}
 }
 
-static
-std::wstring
+static std::wstring
 IpProtocolToString(int protocol)
 {
 	if (protocol > 0xff)
@@ -107,7 +105,7 @@ enum IpDiscardReason
 	IpDiscardMalformedHeader,
 	IpDiscardNoRoute,
 	IpDiscardBeyondScope,
-	IpDiscardInspectionDrop,  // Blocked by firewall, ICMP should not be sent.
+	IpDiscardInspectionDrop, // Blocked by firewall, ICMP should not be sent.
 	IpDiscardTooManyDecapsulations,
 	IpDiscardAdministrativelyProhibited, // Blocked, ICMP should be sent.
 	IpDiscardBadChecksum,
@@ -183,7 +181,8 @@ enum IpDiscardReason
 	IpDiscardMax
 };
 
-enum InetDiscardReason {
+enum InetDiscardReason
+{
 	InetDiscardSourceUnspecified = 0,
 	InetDiscardDestinationMulticast = 1,
 	InetDiscardHeaderInvalid = 2,
@@ -221,7 +220,8 @@ enum InetDiscardReason {
 	InetDiscardReasonMaxEnumValue
 };
 
-enum FlDiscardReason {
+enum FlDiscardReason
+{
 	FlDiscardLoopbackPacket = 1,
 	FlDiscardInvalidSnapHeader = 2,
 	FlDiscardInvalidEthernetType = 3,
@@ -241,141 +241,260 @@ enum FlDiscardReason {
 	FlDiscardMax
 };
 
-static PCSTR TransportDiscardReasonToString(InetDiscardReason reason) noexcept
+static PCSTR
+TransportDiscardReasonToString(InetDiscardReason reason) noexcept
 {
 	switch (reason)
 	{
-	case InetDiscardSourceUnspecified: return "InetDiscardSourceUnspecified";
-	case InetDiscardDestinationMulticast: return "InetDiscardDestinationMulticast";
-	case InetDiscardHeaderInvalid: return "InetDiscardHeaderInvalid";
-	case InetDiscardChecksumInvalid: return "InetDiscardChecksumInvalid";
-	case InetDiscardEndpointNotFound: return "InetDiscardEndpointNotFound";
-	case InetDiscardConnectedPath: return "InetDiscardConnectedPath";
-	case InetDiscardSessionState: return "InetDiscardSessionState";
-	case InetDiscardReceiveInspection: return "InetDiscardReceiveInspection";
-	case InetDiscardAckInvalid: return "InetDiscardAckInvalid";
-	case InetDiscardExpectedSyn: return "InetDiscardExpectedSyn";
-	case InetDiscardRst: return "InetDiscardRst";
-	case InetDiscardSynRcvdSyn: return "InetDiscardSynRcvdSyn";
-	case InetDiscardSimultaneousConnect: return "InetDiscardSimultaneousConnect";
-	case InetDiscardPawsFailed: return "InetDiscardPawsFailed";
-	case InetDiscardLandAttack: return "InetDiscardLandAttack";
-	case InetDiscardMissedReset: return "InetDiscardMissedReset";
-	case InetDiscardOutsideWindow: return "InetDiscardOutsideWindow";
-	case InetDiscardDuplicateSegment: return "InetDiscardDuplicateSegment";
-	case InetDiscardClosedWindow: return "InetDiscardClosedWindow";
-	case InetDiscardTcbRemoved: return "InetDiscardTcbRemoved";
-	case InetDiscardFinWait2: return "InetDiscardFinWait2";
-	case InetDiscardReassemblyConflict: return "InetDiscardReassemblyConflict";
-	case InetDiscardFinReceived: return "InetDiscardFinReceived";
-	case InetDiscardListenerInvalidFlags: return "InetDiscardListenerInvalidFlags";
-	case InetDiscardUrgentDeliveryAllocationFailure: return "InetDiscardUrgentDeliveryAllocationFailure";
-	case InetDiscardTcbNotInTcbTable: return "InetDiscardTcbNotInTcbTable";
-	case InetDiscardTimeWaitTcbReceivedRstOutsideWindow: return "InetDiscardTimeWaitTcbReceivedRstOutsideWindow";
-	case InetDiscardTimeWaitTcbSynAndOtherFlags: return "InetDiscardTimeWaitTcbSynAndOtherFlags";
-	case InetDiscardTimeWaitTcb: return "InetDiscardTimeWaitTcb";
-	case InetDiscardSynAckWithFastopenCookieRequest: return "InetDiscardSynAckWithFastopenCookieRequest";
-	case InetDiscardPauseAccept: return "InetDiscardPauseAccept";
-	case InetDiscardSynAttack: return "InetDiscardSynAttack";
-	case InetDiscardAcceptInspection: return "InetDiscardAcceptInspection";
-	case InetDiscardAcceptRedirection: return "InetDiscardAcceptRedirection";
-	case InetDiscardReasonMaxEnumValue: return "InetDiscardReasonMaxEnumValue";
-	default: return "Unknown InetDiscardReason";
+	case InetDiscardSourceUnspecified:
+		return "InetDiscardSourceUnspecified";
+	case InetDiscardDestinationMulticast:
+		return "InetDiscardDestinationMulticast";
+	case InetDiscardHeaderInvalid:
+		return "InetDiscardHeaderInvalid";
+	case InetDiscardChecksumInvalid:
+		return "InetDiscardChecksumInvalid";
+	case InetDiscardEndpointNotFound:
+		return "InetDiscardEndpointNotFound";
+	case InetDiscardConnectedPath:
+		return "InetDiscardConnectedPath";
+	case InetDiscardSessionState:
+		return "InetDiscardSessionState";
+	case InetDiscardReceiveInspection:
+		return "InetDiscardReceiveInspection";
+	case InetDiscardAckInvalid:
+		return "InetDiscardAckInvalid";
+	case InetDiscardExpectedSyn:
+		return "InetDiscardExpectedSyn";
+	case InetDiscardRst:
+		return "InetDiscardRst";
+	case InetDiscardSynRcvdSyn:
+		return "InetDiscardSynRcvdSyn";
+	case InetDiscardSimultaneousConnect:
+		return "InetDiscardSimultaneousConnect";
+	case InetDiscardPawsFailed:
+		return "InetDiscardPawsFailed";
+	case InetDiscardLandAttack:
+		return "InetDiscardLandAttack";
+	case InetDiscardMissedReset:
+		return "InetDiscardMissedReset";
+	case InetDiscardOutsideWindow:
+		return "InetDiscardOutsideWindow";
+	case InetDiscardDuplicateSegment:
+		return "InetDiscardDuplicateSegment";
+	case InetDiscardClosedWindow:
+		return "InetDiscardClosedWindow";
+	case InetDiscardTcbRemoved:
+		return "InetDiscardTcbRemoved";
+	case InetDiscardFinWait2:
+		return "InetDiscardFinWait2";
+	case InetDiscardReassemblyConflict:
+		return "InetDiscardReassemblyConflict";
+	case InetDiscardFinReceived:
+		return "InetDiscardFinReceived";
+	case InetDiscardListenerInvalidFlags:
+		return "InetDiscardListenerInvalidFlags";
+	case InetDiscardUrgentDeliveryAllocationFailure:
+		return "InetDiscardUrgentDeliveryAllocationFailure";
+	case InetDiscardTcbNotInTcbTable:
+		return "InetDiscardTcbNotInTcbTable";
+	case InetDiscardTimeWaitTcbReceivedRstOutsideWindow:
+		return "InetDiscardTimeWaitTcbReceivedRstOutsideWindow";
+	case InetDiscardTimeWaitTcbSynAndOtherFlags:
+		return "InetDiscardTimeWaitTcbSynAndOtherFlags";
+	case InetDiscardTimeWaitTcb:
+		return "InetDiscardTimeWaitTcb";
+	case InetDiscardSynAckWithFastopenCookieRequest:
+		return "InetDiscardSynAckWithFastopenCookieRequest";
+	case InetDiscardPauseAccept:
+		return "InetDiscardPauseAccept";
+	case InetDiscardSynAttack:
+		return "InetDiscardSynAttack";
+	case InetDiscardAcceptInspection:
+		return "InetDiscardAcceptInspection";
+	case InetDiscardAcceptRedirection:
+		return "InetDiscardAcceptRedirection";
+	case InetDiscardReasonMaxEnumValue:
+		return "InetDiscardReasonMaxEnumValue";
+	default:
+		return "Unknown InetDiscardReason";
 	}
 }
-static PCSTR NetworkDiscardReasonToString(IpDiscardReason reason) noexcept
+static PCSTR
+NetworkDiscardReasonToString(IpDiscardReason reason) noexcept
 {
 	switch (reason)
 	{
-	case IpDiscardBadSourceAddress: return "IpDiscardBadSourceAddress";
-	case IpDiscardNotLocallyDestined: return "IpDiscardNotLocallyDestined";
-	case IpDiscardProtocolUnreachable: return "IpDiscardProtocolUnreachable";
-	case IpDiscardPortUnreachable: return "IpDiscardPortUnreachable";
-	case IpDiscardBadLength: return "IpDiscardBadLength";
-	case IpDiscardMalformedHeader: return "IpDiscardMalformedHeader";
-	case IpDiscardNoRoute: return "IpDiscardNoRoute";
-	case IpDiscardBeyondScope: return "IpDiscardBeyondScope";
-	case IpDiscardInspectionDrop: return "IpDiscardInspectionDrop";
-	case IpDiscardTooManyDecapsulations: return "IpDiscardTooManyDecapsulations";
-	case IpDiscardAdministrativelyProhibited: return "IpDiscardAdministrativelyProhibited";
-	case IpDiscardBadChecksum: return "IpDiscardBadChecksum";
-	case IpDiscardFirstFragmentIncomplete: return "IpDiscardFirstFragmentIncomplete";
-	case IpDiscardHeaderNotContiguous: return "IpDiscardHeaderNotContiguous";
-	case IpDiscardHeaderNotAligned: return "IpDiscardHeaderNotAligned";
-	case IpDiscardReceivePathMax: return "IpDiscardReceivePathMax";
-	case IpDiscardHopLimitExceeded: return "IpDiscardHopLimitExceeded";
-	case IpDiscardAddressUnreachable: return "IpDiscardAddressUnreachable";
-	case IpDiscardRscPacket: return "IpDiscardRscPacket";
-	case IpDiscardSourceViolation: return "IpDiscardSourceViolation";
-	case IpDiscardForwardPathMax: return "IpDiscardForwardPathMax";
-	case IpDiscardArbitrationUnhandled: return "IpDiscardArbitrationUnhandled";
-	case IpDiscardInspectionAbsorb: return "IpDiscardInspectionAbsorb";
-	case IpDiscardDontFragmentMtuExceeded: return "IpDiscardDontFragmentMtuExceeded";
-	case IpDiscardBufferLengthExceeded: return "IpDiscardBufferLengthExceeded";
-	case IpDiscardAddressResolutionTimeout: return "IpDiscardAddressResolutionTimeout";
-	case IpDiscardAddressResolutionFailure: return "IpDiscardAddressResolutionFailure";
-	case IpDiscardIpsecFailure: return "IpDiscardIpsecFailure";
-	case IpDiscardExtensionHeadersFailure: return "IpDiscardExtensionHeadersFailure";
-	case IpDiscardAllocationFailure: return "IpDiscardAllocationFailure";
-	case IpDiscardIpsnpiClientDrop: return "IpDiscardIpsnpiClientDrop";
-	case IpDiscardUnsupportedOffload: return "IpDiscardUnsupportedOffload";
-	case IpDiscardRoutingFailure: return "IpDiscardRoutingFailure";
-	case IpDiscardAncillaryDataFailure: return "IpDiscardAncillaryDataFailure";
-	case IpDiscardRawDataFailure: return "IpDiscardRawDataFailure";
-	case IpDiscardSessionStateFailure: return "IpDiscardSessionStateFailure";
-	case IpDiscardIpsnpiAllocationFailure: return "IpDiscardIpsnpiAllocationFailure";
-	case IpDiscardIpsnpiModifiedButNotForwarded: return "IpDiscardIpsnpiModifiedButNotForwarded";
-	case IpDiscardIpsnpiNoNextHop: return "IpDiscardIpsnpiNoNextHop";
-	case IpDiscardIpsnpiNoCompartment: return "IpDiscardIpsnpiNoCompartment";
-	case IpDiscardIpsnpiNoInterface: return "IpDiscardIpsnpiNoInterface";
-	case IpDiscardIpsnpiNoSubInterface: return "IpDiscardIpsnpiNoSubInterface";
-	case IpDiscardIpsnpiInterfaceDisabled: return "IpDiscardIpsnpiInterfaceDisabled";
-	case IpDiscardIpsnpiSegmentationFailed: return "IpDiscardIpsnpiSegmentationFailed";
-	case IpDiscardIpsnpiNoEthernetHeader: return "IpDiscardIpsnpiNoEthernetHeader";
-	case IpDiscardIpsnpiUnexpectedFragment: return "IpDiscardIpsnpiUnexpectedFragment";
-	case IpDiscardIpsnpiUnsupportedInterfaceType: return "IpDiscardIpsnpiUnsupportedInterfaceType";
-	case IpDiscardIpsnpiInvalidLsoInfo: return "IpDiscardIpsnpiInvalidLsoInfo";
-	case IpDiscardIpsnpiInvalidUsoInfo: return "IpDiscardIpsnpiInvalidUsoInfo";
-	case IpDiscardInternalError: return "IpDiscardInternalError";
-	case IpDiscardAdministrativelyConfigured: return "IpDiscardAdministrativelyConfigured";
-	case IpDiscardBadOption: return "IpDiscardBadOption";
-	case IpDiscardLoopbackDisallowed: return "IpDiscardLoopbackDisallowed";
-	case IpDiscardSmallerScope: return "IpDiscardSmallerScope";
-	case IpDiscardQueueFull: return "IpDiscardQueueFull";
-	case IpDiscardInterfaceDisabled: return "IpDiscardInterfaceDisabled";
-	case IpDiscardNlClientDiscard: return "IpDiscardNlClientDiscard";
-	case IpDiscardIpsnpiUroSegmentSizeExceedsMtu: return "IpDiscardIpsnpiUroSegmentSizeExceedsMtu";
-	case IpDiscardSwUsoFailure: return "IpDiscardSwUsoFailure";
-	case IpDiscardMax: return "IpDiscardMax";
-	default: return "<unknown IpDiscardReason>";
+	case IpDiscardBadSourceAddress:
+		return "IpDiscardBadSourceAddress";
+	case IpDiscardNotLocallyDestined:
+		return "IpDiscardNotLocallyDestined";
+	case IpDiscardProtocolUnreachable:
+		return "IpDiscardProtocolUnreachable";
+	case IpDiscardPortUnreachable:
+		return "IpDiscardPortUnreachable";
+	case IpDiscardBadLength:
+		return "IpDiscardBadLength";
+	case IpDiscardMalformedHeader:
+		return "IpDiscardMalformedHeader";
+	case IpDiscardNoRoute:
+		return "IpDiscardNoRoute";
+	case IpDiscardBeyondScope:
+		return "IpDiscardBeyondScope";
+	case IpDiscardInspectionDrop:
+		return "IpDiscardInspectionDrop";
+	case IpDiscardTooManyDecapsulations:
+		return "IpDiscardTooManyDecapsulations";
+	case IpDiscardAdministrativelyProhibited:
+		return "IpDiscardAdministrativelyProhibited";
+	case IpDiscardBadChecksum:
+		return "IpDiscardBadChecksum";
+	case IpDiscardFirstFragmentIncomplete:
+		return "IpDiscardFirstFragmentIncomplete";
+	case IpDiscardHeaderNotContiguous:
+		return "IpDiscardHeaderNotContiguous";
+	case IpDiscardHeaderNotAligned:
+		return "IpDiscardHeaderNotAligned";
+	case IpDiscardReceivePathMax:
+		return "IpDiscardReceivePathMax";
+	case IpDiscardHopLimitExceeded:
+		return "IpDiscardHopLimitExceeded";
+	case IpDiscardAddressUnreachable:
+		return "IpDiscardAddressUnreachable";
+	case IpDiscardRscPacket:
+		return "IpDiscardRscPacket";
+	case IpDiscardSourceViolation:
+		return "IpDiscardSourceViolation";
+	case IpDiscardForwardPathMax:
+		return "IpDiscardForwardPathMax";
+	case IpDiscardArbitrationUnhandled:
+		return "IpDiscardArbitrationUnhandled";
+	case IpDiscardInspectionAbsorb:
+		return "IpDiscardInspectionAbsorb";
+	case IpDiscardDontFragmentMtuExceeded:
+		return "IpDiscardDontFragmentMtuExceeded";
+	case IpDiscardBufferLengthExceeded:
+		return "IpDiscardBufferLengthExceeded";
+	case IpDiscardAddressResolutionTimeout:
+		return "IpDiscardAddressResolutionTimeout";
+	case IpDiscardAddressResolutionFailure:
+		return "IpDiscardAddressResolutionFailure";
+	case IpDiscardIpsecFailure:
+		return "IpDiscardIpsecFailure";
+	case IpDiscardExtensionHeadersFailure:
+		return "IpDiscardExtensionHeadersFailure";
+	case IpDiscardAllocationFailure:
+		return "IpDiscardAllocationFailure";
+	case IpDiscardIpsnpiClientDrop:
+		return "IpDiscardIpsnpiClientDrop";
+	case IpDiscardUnsupportedOffload:
+		return "IpDiscardUnsupportedOffload";
+	case IpDiscardRoutingFailure:
+		return "IpDiscardRoutingFailure";
+	case IpDiscardAncillaryDataFailure:
+		return "IpDiscardAncillaryDataFailure";
+	case IpDiscardRawDataFailure:
+		return "IpDiscardRawDataFailure";
+	case IpDiscardSessionStateFailure:
+		return "IpDiscardSessionStateFailure";
+	case IpDiscardIpsnpiAllocationFailure:
+		return "IpDiscardIpsnpiAllocationFailure";
+	case IpDiscardIpsnpiModifiedButNotForwarded:
+		return "IpDiscardIpsnpiModifiedButNotForwarded";
+	case IpDiscardIpsnpiNoNextHop:
+		return "IpDiscardIpsnpiNoNextHop";
+	case IpDiscardIpsnpiNoCompartment:
+		return "IpDiscardIpsnpiNoCompartment";
+	case IpDiscardIpsnpiNoInterface:
+		return "IpDiscardIpsnpiNoInterface";
+	case IpDiscardIpsnpiNoSubInterface:
+		return "IpDiscardIpsnpiNoSubInterface";
+	case IpDiscardIpsnpiInterfaceDisabled:
+		return "IpDiscardIpsnpiInterfaceDisabled";
+	case IpDiscardIpsnpiSegmentationFailed:
+		return "IpDiscardIpsnpiSegmentationFailed";
+	case IpDiscardIpsnpiNoEthernetHeader:
+		return "IpDiscardIpsnpiNoEthernetHeader";
+	case IpDiscardIpsnpiUnexpectedFragment:
+		return "IpDiscardIpsnpiUnexpectedFragment";
+	case IpDiscardIpsnpiUnsupportedInterfaceType:
+		return "IpDiscardIpsnpiUnsupportedInterfaceType";
+	case IpDiscardIpsnpiInvalidLsoInfo:
+		return "IpDiscardIpsnpiInvalidLsoInfo";
+	case IpDiscardIpsnpiInvalidUsoInfo:
+		return "IpDiscardIpsnpiInvalidUsoInfo";
+	case IpDiscardInternalError:
+		return "IpDiscardInternalError";
+	case IpDiscardAdministrativelyConfigured:
+		return "IpDiscardAdministrativelyConfigured";
+	case IpDiscardBadOption:
+		return "IpDiscardBadOption";
+	case IpDiscardLoopbackDisallowed:
+		return "IpDiscardLoopbackDisallowed";
+	case IpDiscardSmallerScope:
+		return "IpDiscardSmallerScope";
+	case IpDiscardQueueFull:
+		return "IpDiscardQueueFull";
+	case IpDiscardInterfaceDisabled:
+		return "IpDiscardInterfaceDisabled";
+	case IpDiscardNlClientDiscard:
+		return "IpDiscardNlClientDiscard";
+	case IpDiscardIpsnpiUroSegmentSizeExceedsMtu:
+		return "IpDiscardIpsnpiUroSegmentSizeExceedsMtu";
+	case IpDiscardSwUsoFailure:
+		return "IpDiscardSwUsoFailure";
+	case IpDiscardMax:
+		return "IpDiscardMax";
+	default:
+		return "<unknown IpDiscardReason>";
 	}
 }
-static PCSTR FramingDiscardReasonToString(FlDiscardReason reason) noexcept
+static PCSTR
+FramingDiscardReasonToString(FlDiscardReason reason) noexcept
 {
 	switch (reason)
 	{
-	case FlDiscardLoopbackPacket: return "FlDiscardLoopbackPacket";
-	case FlDiscardInvalidSnapHeader: return "FlDiscardInvalidSnapHeader";
-	case FlDiscardInvalidEthernetType: return "FlDiscardInvalidEthernetType";
-	case FlDiscardInvalidPacketLength: return "FlDiscardInvalidPacketLength";
-	case FlDiscardHeaderNotContiguous: return "FlDiscardHeaderNotContiguous";
-	case FlDiscardInvalidDestinationType: return "FlDiscardInvalidDestinationType";
-	case FlDiscardAllocationFailure: return "FlDiscardAllocationFailure";
-	case FlDiscardInterfaceRefFailure: return "FlDiscardInterfaceRefFailure";
-	case FlDiscardProviderRefFailure: return "FlDiscardProviderRefFailure";
-	case FlDiscardInvalidLsoInfo: return "FlDiscardInvalidLsoInfo";
-	case FlDiscardInvalidUsoInfo: return "FlDiscardInvalidUsoInfo";
-	case FlDiscardInvalidMedium: return "FlDiscardInvalidMedium";
-	case FlDiscardInvalidArpHeader: return "FlDiscardInvalidArpHeader";
-	case FlDiscardNoClientInterface: return "FlDiscardNoClientInterface";
-	case FlDiscardTooManyNetBuffers: return "FlDiscardTooManyNetBuffers";
-	case FlDiscardFlsnpiClientDrop: return "FlDiscardFlsnpiClientDrop";
-	case FlDiscardMax: return "FlDiscardMax";
-	default: return "<unknown FlDiscardReason>";
+	case FlDiscardLoopbackPacket:
+		return "FlDiscardLoopbackPacket";
+	case FlDiscardInvalidSnapHeader:
+		return "FlDiscardInvalidSnapHeader";
+	case FlDiscardInvalidEthernetType:
+		return "FlDiscardInvalidEthernetType";
+	case FlDiscardInvalidPacketLength:
+		return "FlDiscardInvalidPacketLength";
+	case FlDiscardHeaderNotContiguous:
+		return "FlDiscardHeaderNotContiguous";
+	case FlDiscardInvalidDestinationType:
+		return "FlDiscardInvalidDestinationType";
+	case FlDiscardAllocationFailure:
+		return "FlDiscardAllocationFailure";
+	case FlDiscardInterfaceRefFailure:
+		return "FlDiscardInterfaceRefFailure";
+	case FlDiscardProviderRefFailure:
+		return "FlDiscardProviderRefFailure";
+	case FlDiscardInvalidLsoInfo:
+		return "FlDiscardInvalidLsoInfo";
+	case FlDiscardInvalidUsoInfo:
+		return "FlDiscardInvalidUsoInfo";
+	case FlDiscardInvalidMedium:
+		return "FlDiscardInvalidMedium";
+	case FlDiscardInvalidArpHeader:
+		return "FlDiscardInvalidArpHeader";
+	case FlDiscardNoClientInterface:
+		return "FlDiscardNoClientInterface";
+	case FlDiscardTooManyNetBuffers:
+		return "FlDiscardTooManyNetBuffers";
+	case FlDiscardFlsnpiClientDrop:
+		return "FlDiscardFlsnpiClientDrop";
+	case FlDiscardMax:
+		return "FlDiscardMax";
+	default:
+		return "<unknown FlDiscardReason>";
 	}
 }
 
-void ListenForTcpipEvents()
+void
+ListenForTcpipEvents()
 {
 	constexpr auto TcpipTransportPacketDrops = 1214;
 	constexpr auto TcpipNetworkPacketDropEventId = 1215;
@@ -386,7 +505,8 @@ void ListenForTcpipEvents()
 	constexpr auto TcpGlobalConnectionRateLimitViolation = 1057;
 	constexpr auto TcpGlobalLandAttackSegmentDrop = 1058;
 	constexpr auto TcpGlobalSynAttackExit = 1063;
-	const auto callback_fn = [](const EVENT_RECORD* pRecord) {
+	const auto callback_fn = [](const EVENT_RECORD* pRecord)
+	{
 		try
 		{
 			// Process the ETW event record
@@ -399,27 +519,24 @@ void ListenForTcpipEvents()
 				const auto protocol_string = event_message.readEventProperty(L"IPTransportProtocol");
 				if (!protocol_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipTransportPacketDrops **\n"
-						"       <Failed to read 'IPTransportProtocol' from event record>\n");
+					std::printf("\n** TcpipTransportPacketDrops **\n"
+					            "       <Failed to read 'IPTransportProtocol' from event record>\n");
 					return;
 				}
 
 				const auto reason_string = event_message.readEventProperty(L"Reason");
 				if (!reason_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipTransportPacketDrops **\n"
-						"       <Failed to read 'Reason' from event record>\n");
+					std::printf("\n** TcpipTransportPacketDrops **\n"
+					            "       <Failed to read 'Reason' from event record>\n");
 					return;
 				}
 
 				const auto local_address_string = event_message.readEventProperty(L"LocalSockAddr");
 				if (!local_address_string)
 				{
-					std::printf(
-						"\n** TcpipTransportPacketDrops **\n"
-						"       <Failed to read 'LocalSockAddr' from event record>\n");
+					std::printf("\n** TcpipTransportPacketDrops **\n"
+					            "       <Failed to read 'LocalSockAddr' from event record>\n");
 					return;
 				}
 				const auto& local_address = local_address_string.value();
@@ -460,17 +577,21 @@ void ListenForTcpipEvents()
 				// so I don't have to query every time
 				PMIB_UNICASTIPADDRESS_TABLE unicast_ip_address_table = nullptr;
 				GetUnicastIpAddressTable(AF_UNSPEC, &unicast_ip_address_table);
-				const auto free_address_table = wil::scope_exit([&]() noexcept {
-					if (unicast_ip_address_table)
-					{
-						FreeMibTable(unicast_ip_address_table);
-					}
-					});
+				const auto free_address_table = wil::scope_exit(
+				    [&]() noexcept
+				    {
+					    if (unicast_ip_address_table)
+					    {
+						    FreeMibTable(unicast_ip_address_table);
+					    }
+				    });
 
 				if (unicast_ip_address_table)
 				{
 					bool found_local_address = false;
-					for (const auto& entry : wil::make_range(unicast_ip_address_table->Table, unicast_ip_address_table->Table + unicast_ip_address_table->NumEntries))
+					for (const auto& entry : wil::make_range(
+					         unicast_ip_address_table->Table,
+					         unicast_ip_address_table->Table + unicast_ip_address_table->NumEntries))
 					{
 						wil::network::socket_address entry_sockaddr(&entry.Address);
 						if (entry_sockaddr == local_sockaddr_without_port)
@@ -495,24 +616,25 @@ void ListenForTcpipEvents()
 					address_family = L"IPv6";
 				}
 
-                // TODO: consider a separate option for logging these reason codes:
+				// TODO: consider a separate option for logging these reason codes:
 				// InetDiscardSessionState
 				// InetDiscardRst
 				// InetDiscardFinWait2
 				std::printf(
-					"\n** TcpipTransportPacketDrops **\n"
-					"       Protocol %ls\n"
-					"       AddressFamily %ls\n"
-					"       Direction Inbound\n"
-					"       Local Address %ls\n"
-					"       Remote Address %ls\n"
-					"       Reason %hs\n",
-					IpProtocolToString(std::stoi(protocol_string.value())).c_str(),
-					address_family.c_str(),
-					local_address.c_str(),
-					event_message.readEventProperty(L"RemoteSockAddr").value_or(std::wstring(L"<etw-field-not-set>")).c_str(),
-					TransportDiscardReasonToString(static_cast<InetDiscardReason>(std::stoi(reason_string.value())))
-				);
+				    "\n** TcpipTransportPacketDrops **\n"
+				    "       Protocol %ls\n"
+				    "       AddressFamily %ls\n"
+				    "       Direction Inbound\n"
+				    "       Local Address %ls\n"
+				    "       Remote Address %ls\n"
+				    "       Reason %hs\n",
+				    IpProtocolToString(std::stoi(protocol_string.value())).c_str(),
+				    address_family.c_str(),
+				    local_address.c_str(),
+				    event_message.readEventProperty(L"RemoteSockAddr")
+				        .value_or(std::wstring(L"<etw-field-not-set>"))
+				        .c_str(),
+				    TransportDiscardReasonToString(static_cast<InetDiscardReason>(std::stoi(reason_string.value()))));
 				break;
 			}
 			case TcpipNetworkPacketDropEventId:
@@ -520,9 +642,8 @@ void ListenForTcpipEvents()
 				const auto protocol_string = event_message.readEventProperty(L"IPTransportProtocol");
 				if (!protocol_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipNetworkPacketDrops **\n"
-						"       <Failed to read 'IPTransportProtocol' from event record>\n");
+					std::printf("\n** TcpipNetworkPacketDrops **\n"
+					            "       <Failed to read 'IPTransportProtocol' from event record>\n");
 					return;
 				}
 
@@ -536,27 +657,24 @@ void ListenForTcpipEvents()
 				const auto address_family_string = event_message.readEventProperty(L"AddressFamily");
 				if (!address_family_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipNetworkPacketDrops **\n"
-						"       <Failed to read 'AddressFamily' from event record>\n");
+					std::printf("\n** TcpipNetworkPacketDrops **\n"
+					            "       <Failed to read 'AddressFamily' from event record>\n");
 					return;
 				}
 
 				const auto reason_string = event_message.readEventProperty(L"Reason");
 				if (!reason_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipNetworkPacketDrops **\n"
-						"       <Failed to read 'Reason' from event record>\n");
+					std::printf("\n** TcpipNetworkPacketDrops **\n"
+					            "       <Failed to read 'Reason' from event record>\n");
 					return;
 				}
 
 				const auto direction_string = event_message.readEventProperty(L"PathDirection");
 				if (!direction_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipNetworkPacketDrops **\n"
-						"       <Failed to read 'PathDirection' from event record>\n");
+					std::printf("\n** TcpipNetworkPacketDrops **\n"
+					            "       <Failed to read 'PathDirection' from event record>\n");
 					return;
 				}
 
@@ -566,14 +684,18 @@ void ListenForTcpipEvents()
 				if (address_family_string == std::wstring(L"2"))
 				{
 					address_family = L"IPv4";
-					source_address = event_message.readEventProperty(L"Source IPv4 Address").value_or(std::wstring(L"<etw-field-not-set>"));
-					destination_address = event_message.readEventProperty(L"Dest IPv4 Address").value_or(std::wstring(L"<etw-field-not-set>"));
+					source_address = event_message.readEventProperty(L"Source IPv4 Address")
+					                     .value_or(std::wstring(L"<etw-field-not-set>"));
+					destination_address = event_message.readEventProperty(L"Dest IPv4 Address")
+					                          .value_or(std::wstring(L"<etw-field-not-set>"));
 				}
 				else if (address_family_string == std::wstring(L"23"))
 				{
 					address_family = L"IPv6";
-					source_address = event_message.readEventProperty(L"IPv6 Source Address").value_or(std::wstring(L"<etw-field-not-set>"));
-					destination_address = event_message.readEventProperty(L"IPv6 Dest Address").value_or(std::wstring(L"<etw-field-not-set>"));
+					source_address = event_message.readEventProperty(L"IPv6 Source Address")
+					                     .value_or(std::wstring(L"<etw-field-not-set>"));
+					destination_address = event_message.readEventProperty(L"IPv6 Dest Address")
+					                          .value_or(std::wstring(L"<etw-field-not-set>"));
 				}
 				else
 				{
@@ -593,22 +715,21 @@ void ListenForTcpipEvents()
 				}
 
 				std::printf(
-					"\n** TcpipNetworkPacketDrops **\n"
-					"       Protocol %ls\n"
-					"       AddressFamily %ls\n"
-					"       Direction %ls\n"
-					"       Source Address %ls\n"
-					"       Destination Address %ls\n"
-					"       Reason %hs\n"
-					"       IfIndex %ls\n",
-					IpProtocolToString(std::stoi(protocol_string.value())).c_str(),
-					address_family.c_str(),
-					direction.c_str(),
-					source_address.c_str(),
-					destination_address.c_str(),
-					NetworkDiscardReasonToString(static_cast<IpDiscardReason>(std::stoi(reason_string.value()))),
-					event_message.readEventProperty(L"IfIndex").value_or(std::wstring(L"<etw-field-not-set>")).c_str()
-				);
+				    "\n** TcpipNetworkPacketDrops **\n"
+				    "       Protocol %ls\n"
+				    "       AddressFamily %ls\n"
+				    "       Direction %ls\n"
+				    "       Source Address %ls\n"
+				    "       Destination Address %ls\n"
+				    "       Reason %hs\n"
+				    "       IfIndex %ls\n",
+				    IpProtocolToString(std::stoi(protocol_string.value())).c_str(),
+				    address_family.c_str(),
+				    direction.c_str(),
+				    source_address.c_str(),
+				    destination_address.c_str(),
+				    NetworkDiscardReasonToString(static_cast<IpDiscardReason>(std::stoi(reason_string.value()))),
+				    event_message.readEventProperty(L"IfIndex").value_or(std::wstring(L"<etw-field-not-set>")).c_str());
 				break;
 			}
 			case TcpipFramingPacketDrops:
@@ -616,18 +737,16 @@ void ListenForTcpipEvents()
 				const auto path_direction = event_message.readEventProperty(L"PathDirection");
 				if (!path_direction.has_value())
 				{
-					std::printf(
-						"\n** TcpipFramingPacketDrops **\n"
-						"       <Failed to read 'PathDirection' from event record>\n");
+					std::printf("\n** TcpipFramingPacketDrops **\n"
+					            "       <Failed to read 'PathDirection' from event record>\n");
 					return;
 				}
 
 				const auto address_family_string = event_message.readEventProperty(L"AddressFamily");
 				if (!address_family_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipFramingPacketDrops **\n"
-						"       <Failed to read 'AddressFamily' from event record>\n");
+					std::printf("\n** TcpipFramingPacketDrops **\n"
+					            "       <Failed to read 'AddressFamily' from event record>\n");
 					return;
 				}
 				auto address_family = address_family_string.value();
@@ -643,9 +762,8 @@ void ListenForTcpipEvents()
 				const auto direction_string = event_message.readEventProperty(L"PathDirection");
 				if (!direction_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipFramingPacketDrops **\n"
-						"       <Failed to read 'PathDirection' from event record>\n");
+					std::printf("\n** TcpipFramingPacketDrops **\n"
+					            "       <Failed to read 'PathDirection' from event record>\n");
 					return;
 				}
 				std::wstring direction = direction_string.value();
@@ -661,9 +779,8 @@ void ListenForTcpipEvents()
 				const auto reason_string = event_message.readEventProperty(L"Reason");
 				if (!reason_string.has_value())
 				{
-					std::printf(
-						"\n** TcpipFramingPacketDrops **\n"
-						"       <Failed to read 'Reason' from event record>\n");
+					std::printf("\n** TcpipFramingPacketDrops **\n"
+					            "       <Failed to read 'Reason' from event record>\n");
 					return;
 				}
 				if (reason_string.value() == L"3")
@@ -673,16 +790,17 @@ void ListenForTcpipEvents()
 				}
 
 				std::printf(
-					"\n** TcpipFramingPacketDrops **\n"
-					"       AddressFamily %ls\n"
-					"       Direction %ls\n"
-					"       Interface %ls\n"
-					"       Reason %hs\n",
-					address_family.c_str(),
-					direction.c_str(),
-					event_message.readEventProperty(L"Interface").value_or(std::wstring(L"<etw-field-not-set>")).c_str(),
-					FramingDiscardReasonToString(static_cast<FlDiscardReason>(std::stoi(reason_string.value())))
-				);
+				    "\n** TcpipFramingPacketDrops **\n"
+				    "       AddressFamily %ls\n"
+				    "       Direction %ls\n"
+				    "       Interface %ls\n"
+				    "       Reason %hs\n",
+				    address_family.c_str(),
+				    direction.c_str(),
+				    event_message.readEventProperty(L"Interface")
+				        .value_or(std::wstring(L"<etw-field-not-set>"))
+				        .c_str(),
+				    FramingDiscardReasonToString(static_cast<FlDiscardReason>(std::stoi(reason_string.value()))));
 			}
 
 			case TcpSecurityRateLimit:
@@ -700,98 +818,95 @@ void ListenForTcpipEvents()
 				const auto SynAttacksDetected = event_message.readEventProperty(L"SynAttacksDetected");
 				if (!SynAttacksDetected.has_value())
 				{
-					std::printf(
-						"\n** TcpipSecurityEvent **\n"
-						"       <Failed to read 'SynAttacksDetected' from event record>\n");
+					std::printf("\n** TcpipSecurityEvent **\n"
+					            "       <Failed to read 'SynAttacksDetected' from event record>\n");
 					return;
 				}
 				const auto ReassemblyLimitViolations = event_message.readEventProperty(L"ReassemblyLimitViolations");
 				if (!ReassemblyLimitViolations.has_value())
 				{
-					std::printf(
-						"\n** TcpipSecurityEvent **\n"
-						"       <Failed to read 'ReassemblyLimitViolations' from event record>\n");
+					std::printf("\n** TcpipSecurityEvent **\n"
+					            "       <Failed to read 'ReassemblyLimitViolations' from event record>\n");
 					return;
 				}
 				const auto ConnectionRateLimitBacklog = event_message.readEventProperty(L"ConnectionRateLimitBacklog");
 				if (!ConnectionRateLimitBacklog.has_value())
 				{
-					std::printf(
-						"\n** TcpipSecurityEvent **\n"
-						"       <Failed to read 'ConnectionRateLimitBacklog' from event record>\n");
+					std::printf("\n** TcpipSecurityEvent **\n"
+					            "       <Failed to read 'ConnectionRateLimitBacklog' from event record>\n");
 					return;
 				}
-				const auto ConnectionRateLimitViolations = event_message.readEventProperty(L"ConnectionRateLimitViolations");
+				const auto ConnectionRateLimitViolations =
+				    event_message.readEventProperty(L"ConnectionRateLimitViolations");
 				if (!ConnectionRateLimitViolations.has_value())
 				{
-					std::printf(
-						"\n** TcpipSecurityEvent **\n"
-						"       <Failed to read 'ConnectionRateLimitViolations' from event record>\n");
+					std::printf("\n** TcpipSecurityEvent **\n"
+					            "       <Failed to read 'ConnectionRateLimitViolations' from event record>\n");
 					return;
 				}
 				const auto LandAttackSegmentsDropped = event_message.readEventProperty(L"LandAttackSegmentsDropped");
 				if (!LandAttackSegmentsDropped.has_value())
 				{
-					std::printf(
-						"\n** TcpipSecurityEvent **\n"
-						"       <Failed to read 'LandAttackSegmentsDropped' from event record>\n");
+					std::printf("\n** TcpipSecurityEvent **\n"
+					            "       <Failed to read 'LandAttackSegmentsDropped' from event record>\n");
 					return;
 				}
 				const auto ConnectionRateLimitDepth = event_message.readEventProperty(L"ConnectionRateLimitDepth");
 				if (!ConnectionRateLimitDepth.has_value())
 				{
-					std::printf(
-						"\n** TcpipSecurityEvent **\n"
-						"       <Failed to read 'ConnectionRateLimitDepth' from event record>\n");
+					std::printf("\n** TcpipSecurityEvent **\n"
+					            "       <Failed to read 'ConnectionRateLimitDepth' from event record>\n");
 					return;
 				}
 
 				std::printf(
-					"\n** TcpipSecurityEvent **\n"
-					"       SynAttacksDetected %ls\n"
-					"       ReassemblyLimitViolations %ls\n"
-					"       ConnectionRateLimitBacklog %ls\n"
-					"       ConnectionRateLimitViolations %ls\n"
-					"       LandAttackSegmentsDropped %ls\n"
-					"       ConnectionRateLimitDepth %ls\n",
-					SynAttacksDetected.value().c_str(),
-					ReassemblyLimitViolations.value().c_str(),
-					ConnectionRateLimitBacklog.value().c_str(),
-					ConnectionRateLimitViolations.value().c_str(),
-					LandAttackSegmentsDropped.value().c_str(),
-					ConnectionRateLimitDepth.value().c_str()
-				);
+				    "\n** TcpipSecurityEvent **\n"
+				    "       SynAttacksDetected %ls\n"
+				    "       ReassemblyLimitViolations %ls\n"
+				    "       ConnectionRateLimitBacklog %ls\n"
+				    "       ConnectionRateLimitViolations %ls\n"
+				    "       LandAttackSegmentsDropped %ls\n"
+				    "       ConnectionRateLimitDepth %ls\n",
+				    SynAttacksDetected.value().c_str(),
+				    ReassemblyLimitViolations.value().c_str(),
+				    ConnectionRateLimitBacklog.value().c_str(),
+				    ConnectionRateLimitViolations.value().c_str(),
+				    LandAttackSegmentsDropped.value().c_str(),
+				    ConnectionRateLimitDepth.value().c_str());
 				break;
 			}
 			}
 		}
 		CATCH_LOG()
-		};
+	};
 
-	ctl::ctEtwReader etw_reader{ callback_fn };
+	ctl::ctEtwReader etw_reader{callback_fn};
 
-	constexpr GUID tcpipTraceLoggingProvider = { .Data1 = 0x2F07E2EE, .Data2 = 0x15DB, .Data3 = 0x40F1, .Data4 = {0x90, 0xEF, 0x9D, 0x7B, 0xA2, 0x82, 0x18, 0x8A} };
+	constexpr GUID tcpipTraceLoggingProvider = {
+	    .Data1 = 0x2F07E2EE,
+	    .Data2 = 0x15DB,
+	    .Data3 = 0x40F1,
+	    .Data4 = {0x90, 0xEF, 0x9D, 0x7B, 0xA2, 0x82, 0x18, 0x8A}};
 	// flush every 100ms to be more responsive to new events
 	THROW_IF_FAILED(etw_reader.StartTraceSession(L"FwDiagnose-TCPIP", nullptr, tcpipTraceLoggingProvider));
 	THROW_IF_FAILED(etw_reader.EnableTraceProvidersPerEventId(
-		tcpipTraceLoggingProvider,
-		{ TcpipTransportPacketDrops, TcpipNetworkPacketDropEventId, TcpipFramingPacketDrops }));
+	    tcpipTraceLoggingProvider,
+	    {TcpipTransportPacketDrops, TcpipNetworkPacketDropEventId, TcpipFramingPacketDrops}));
 
-	std::printf(
-		"\n"
-		"**************************************************************************************\n"
-		"                         Subscribed to TCPIP ETW events                              \n"
-		"                      ( press Ctrl-C to stop processing events )                      \n"
-		"**************************************************************************************\n");
+	std::printf("\n"
+	            "**************************************************************************************\n"
+	            "                         Subscribed to TCPIP ETW events                              \n"
+	            "                      ( press Ctrl-C to stop processing events )                      \n"
+	            "**************************************************************************************\n");
 
 	static const wil::unique_event ctrl_event(wil::EventOptions::ManualReset);
 	SetConsoleCtrlHandler(
-		[](DWORD) -> BOOL
-		{
-			ctrl_event.SetEvent();
-			return TRUE;
-		},
-		TRUE);
+	    [](DWORD) -> BOOL
+	    {
+		    ctrl_event.SetEvent();
+		    return TRUE;
+	    },
+	    TRUE);
 	(void)ctrl_event.wait();
 
 	(void)etw_reader.FlushTraceSession();

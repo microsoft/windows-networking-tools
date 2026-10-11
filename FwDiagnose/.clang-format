@@ -1,0 +1,4 @@
+BasedOnStyle: InheritParentConfig
+UseTab: ForIndentation
+BreakAfterReturnType: All
+BreakAfterAttributes: Never

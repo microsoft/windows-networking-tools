@@ -1,0 +1,23 @@
+BasedOnStyle: Microsoft
+Language: Cpp
+IndentWidth: 4
+TabWidth: 4
+ColumnLimit: 120
+SortIncludes: Never
+PointerAlignment: Left
+LineEnding: CRLF
+AlignAfterOpenBracket: AlwaysBreak
+BinPackArguments: false
+BinPackParameters: false
+BreakTemplateDeclarations: Yes
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+InsertBraces: true
+AllowShortLambdasOnASingleLine: None
+ReflowComments: false
+BraceWrapping:
+  AfterCaseLabel: true
+  BeforeLambdaBody: true

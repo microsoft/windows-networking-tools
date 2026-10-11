@@ -14,14 +14,16 @@
 
 using std::to_wstring;
 
-inline std::wstring exception_to_wstring(const hresult_error& ex)
+inline std::wstring
+exception_to_wstring(const hresult_error& ex)
 {
     std::wstringstream ss(L"winrt hresult_error thrown :: ");
     ss << std::hex << ex.to_abi().value << L" :: " << ex.message().c_str() << std::endl;
     return ss.str();
 }
 
-inline std::wstring tabs_to_wstring(uint32_t count)
+inline std::wstring
+tabs_to_wstring(uint32_t count)
 {
     std::wstring returnString;
     for (uint32_t space_count = 0; space_count < count; ++space_count)
@@ -31,7 +33,8 @@ inline std::wstring tabs_to_wstring(uint32_t count)
     return returnString;
 }
 
-inline std::wstring to_wstring(const FILETIME& fileTime)
+inline std::wstring
+to_wstring(const FILETIME& fileTime)
 {
     std::wstring returnString;
     if (fileTime.dwHighDateTime > 0ul || fileTime.dwLowDateTime > 0ul)
@@ -44,11 +47,24 @@ inline std::wstring to_wstring(const FILETIME& fileTime)
             {
                 constexpr size_t formattedStringLength = 64;
                 WCHAR formattedString[formattedStringLength]{};
-                if (GetDateFormatEx(LOCALE_NAME_INVARIANT, DATE_SHORTDATE, &localTime, nullptr, formattedString, formattedStringLength, nullptr) > 0)
+                if (GetDateFormatEx(
+                        LOCALE_NAME_INVARIANT,
+                        DATE_SHORTDATE,
+                        &localTime,
+                        nullptr,
+                        formattedString,
+                        formattedStringLength,
+                        nullptr) > 0)
                 {
                     returnString.append(formattedString).append(L", ");
                 }
-                if (GetTimeFormatEx(LOCALE_NAME_INVARIANT, LOCALE_USE_CP_ACP | TIME_FORCE24HOURFORMAT, &localTime, nullptr, formattedString, formattedStringLength) > 0)
+                if (GetTimeFormatEx(
+                        LOCALE_NAME_INVARIANT,
+                        LOCALE_USE_CP_ACP | TIME_FORCE24HOURFORMAT,
+                        &localTime,
+                        nullptr,
+                        formattedString,
+                        formattedStringLength) > 0)
                 {
                     returnString.append(formattedString);
                 }
@@ -59,7 +75,8 @@ inline std::wstring to_wstring(const FILETIME& fileTime)
     return returnString;
 }
 
-inline std::wstring to_wstring(const DateTime& dateTime)
+inline std::wstring
+to_wstring(const DateTime& dateTime)
 {
     LARGE_INTEGER integerConversion{};
     integerConversion.QuadPart = dateTime.time_since_epoch().count();
@@ -69,104 +86,160 @@ inline std::wstring to_wstring(const DateTime& dateTime)
     return to_wstring(ft);
 }
 
-inline std::wstring to_wstring(const TimeSpan& timeSpan)
+inline std::wstring
+to_wstring(const TimeSpan& timeSpan)
 {
     return std::to_wstring(timeSpan.count() / 10000).append(L" ms.");
 }
 
-
-inline std::wstring to_wstring(bool b)
+inline std::wstring
+to_wstring(bool b)
 {
     return b ? L"true" : L"false";
 }
 
-inline std::wstring to_wstring(NetworkCostType cost)
+inline std::wstring
+to_wstring(NetworkCostType cost)
 {
     switch (cost)
     {
-    case NetworkCostType::Unknown: return L"Unknown";
-    case NetworkCostType::Unrestricted: return L"Unrestricted";
-    case NetworkCostType::Fixed: return L"Fixed";
-    case NetworkCostType::Variable: return L"Variable";
+    case NetworkCostType::Unknown:
+        return L"Unknown";
+    case NetworkCostType::Unrestricted:
+        return L"Unrestricted";
+    case NetworkCostType::Fixed:
+        return L"Fixed";
+    case NetworkCostType::Variable:
+        return L"Variable";
     }
     return std::wstring(L"<Unknown NetworkCost ").append(std::to_wstring(static_cast<uint32_t>(cost))).append(L">\n");
 }
 
-inline std::wstring to_wstring(NetworkConnectivityLevel level)
+inline std::wstring
+to_wstring(NetworkConnectivityLevel level)
 {
     switch (level)
     {
-    case NetworkConnectivityLevel::None: return L"None";
-    case NetworkConnectivityLevel::LocalAccess: return L"LocalAccess";
-    case NetworkConnectivityLevel::ConstrainedInternetAccess: return L"ConstrainedInternetAccess";
-    case NetworkConnectivityLevel::InternetAccess: return L"InternetAccess";
+    case NetworkConnectivityLevel::None:
+        return L"None";
+    case NetworkConnectivityLevel::LocalAccess:
+        return L"LocalAccess";
+    case NetworkConnectivityLevel::ConstrainedInternetAccess:
+        return L"ConstrainedInternetAccess";
+    case NetworkConnectivityLevel::InternetAccess:
+        return L"InternetAccess";
     }
-    return std::wstring(L"<Unknown NetworkConnectivityLevel ").append(std::to_wstring(static_cast<uint32_t>(level))).append(L">\n");
+    return std::wstring(L"<Unknown NetworkConnectivityLevel ")
+        .append(std::to_wstring(static_cast<uint32_t>(level)))
+        .append(L">\n");
 }
 
-inline std::wstring to_wstring(DomainConnectivityLevel level)
+inline std::wstring
+to_wstring(DomainConnectivityLevel level)
 {
     switch (level)
     {
-    case DomainConnectivityLevel::None: return L"None";
-    case DomainConnectivityLevel::Unauthenticated: return L"Unauthenticated";
-    case DomainConnectivityLevel::Authenticated: return L"Authenticated";
+    case DomainConnectivityLevel::None:
+        return L"None";
+    case DomainConnectivityLevel::Unauthenticated:
+        return L"Unauthenticated";
+    case DomainConnectivityLevel::Authenticated:
+        return L"Authenticated";
     }
-    return std::wstring(L"<Unknown DomainConnectivityLevel ").append(std::to_wstring(static_cast<uint32_t>(level))).append(L">\n");
+    return std::wstring(L"<Unknown DomainConnectivityLevel ")
+        .append(std::to_wstring(static_cast<uint32_t>(level)))
+        .append(L">\n");
 }
 
-inline std::wstring to_wstring(NetworkAuthenticationType type)
+inline std::wstring
+to_wstring(NetworkAuthenticationType type)
 {
     switch (type)
     {
-    case NetworkAuthenticationType::None: return L"None";
-    case NetworkAuthenticationType::Unknown: return L"Unknown";
-    case NetworkAuthenticationType::Open80211: return L"Open80211";
-    case NetworkAuthenticationType::SharedKey80211: return L"SharedKey80211";
-    case NetworkAuthenticationType::Wpa: return L"Wpa";
-    case NetworkAuthenticationType::WpaPsk: return L"WpaPsk";
-    case NetworkAuthenticationType::WpaNone: return L"WpaNone";
-    case NetworkAuthenticationType::Rsna: return L"Rsna";
-    case NetworkAuthenticationType::RsnaPsk: return L"RsnaPsk";
-    case NetworkAuthenticationType::Ihv: return L"Ihv";
-    case NetworkAuthenticationType::Wpa3: return L"Wpa3";
-    case NetworkAuthenticationType::Wpa3Sae: return L"Wpa3Sae";
+    case NetworkAuthenticationType::None:
+        return L"None";
+    case NetworkAuthenticationType::Unknown:
+        return L"Unknown";
+    case NetworkAuthenticationType::Open80211:
+        return L"Open80211";
+    case NetworkAuthenticationType::SharedKey80211:
+        return L"SharedKey80211";
+    case NetworkAuthenticationType::Wpa:
+        return L"Wpa";
+    case NetworkAuthenticationType::WpaPsk:
+        return L"WpaPsk";
+    case NetworkAuthenticationType::WpaNone:
+        return L"WpaNone";
+    case NetworkAuthenticationType::Rsna:
+        return L"Rsna";
+    case NetworkAuthenticationType::RsnaPsk:
+        return L"RsnaPsk";
+    case NetworkAuthenticationType::Ihv:
+        return L"Ihv";
+    case NetworkAuthenticationType::Wpa3:
+        return L"Wpa3";
+    case NetworkAuthenticationType::Wpa3Sae:
+        return L"Wpa3Sae";
     }
-    return std::wstring(L"<Unknown NetworkAuthenticationType ").append(std::to_wstring(static_cast<uint32_t>(type))).append(L">\n");
+    return std::wstring(L"<Unknown NetworkAuthenticationType ")
+        .append(std::to_wstring(static_cast<uint32_t>(type)))
+        .append(L">\n");
 }
 
-inline std::wstring to_wstring(NetworkEncryptionType type)
+inline std::wstring
+to_wstring(NetworkEncryptionType type)
 {
     switch (type)
     {
-    case NetworkEncryptionType::None: return L"None";
-    case NetworkEncryptionType::Unknown: return L"Unknown";
-    case NetworkEncryptionType::Wep: return L"Wep";
-    case NetworkEncryptionType::Wep40: return L"Wep40";
-    case NetworkEncryptionType::Wep104: return L"Wep104";
-    case NetworkEncryptionType::Tkip: return L"Tkip";
-    case NetworkEncryptionType::Ccmp: return L"Ccmp";
-    case NetworkEncryptionType::WpaUseGroup: return L"WpaUseGroup";
-    case NetworkEncryptionType::RsnUseGroup: return L"RsnUseGroup";
-    case NetworkEncryptionType::Ihv: return L"Ihv";
+    case NetworkEncryptionType::None:
+        return L"None";
+    case NetworkEncryptionType::Unknown:
+        return L"Unknown";
+    case NetworkEncryptionType::Wep:
+        return L"Wep";
+    case NetworkEncryptionType::Wep40:
+        return L"Wep40";
+    case NetworkEncryptionType::Wep104:
+        return L"Wep104";
+    case NetworkEncryptionType::Tkip:
+        return L"Tkip";
+    case NetworkEncryptionType::Ccmp:
+        return L"Ccmp";
+    case NetworkEncryptionType::WpaUseGroup:
+        return L"WpaUseGroup";
+    case NetworkEncryptionType::RsnUseGroup:
+        return L"RsnUseGroup";
+    case NetworkEncryptionType::Ihv:
+        return L"Ihv";
     }
-    return std::wstring(L"<Unknown NetworkEncryptionType ").append(std::to_wstring(static_cast<uint32_t>(type))).append(L">\n");
+    return std::wstring(L"<Unknown NetworkEncryptionType ")
+        .append(std::to_wstring(static_cast<uint32_t>(type)))
+        .append(L">\n");
 }
 
-inline std::wstring to_wstring(WwanNetworkIPKind kind)
+inline std::wstring
+to_wstring(WwanNetworkIPKind kind)
 {
     switch (kind)
     {
-        case WwanNetworkIPKind::None: return L"None";
-        case WwanNetworkIPKind::Ipv4: return L"Ipv4";
-        case WwanNetworkIPKind::Ipv6: return L"Ipv6";
-        case WwanNetworkIPKind::Ipv4v6: return L"Ipv4v6";
-        case WwanNetworkIPKind::Ipv4v6v4Xlat: return L"Ipv4v6v4Xlat";
+    case WwanNetworkIPKind::None:
+        return L"None";
+    case WwanNetworkIPKind::Ipv4:
+        return L"Ipv4";
+    case WwanNetworkIPKind::Ipv6:
+        return L"Ipv6";
+    case WwanNetworkIPKind::Ipv4v6:
+        return L"Ipv4v6";
+    case WwanNetworkIPKind::Ipv4v6v4Xlat:
+        return L"Ipv4v6v4Xlat";
     }
-    return std::wstring(L"<Unknown winrt::Windows::Networking::Connectivity::WwanNetworkIPKind ").append(std::to_wstring(static_cast<uint32_t>(kind))).append(L">\n");
+    return std::wstring(L"<Unknown winrt::Windows::Networking::Connectivity::WwanNetworkIPKind ")
+        .append(std::to_wstring(static_cast<uint32_t>(kind)))
+        .append(L">\n");
 }
 
-inline std::wstring to_wstring(NetworkTypes type)
+inline std::wstring
+to_wstring(NetworkTypes type)
 {
     if (type == NetworkTypes::None)
     {
@@ -184,12 +257,15 @@ inline std::wstring to_wstring(NetworkTypes type)
     }
     if (returnString.empty())
     {
-        return std::wstring(L"<unknown NetworkTypes ").append(std::to_wstring(static_cast<uint32_t>(type))).append(L">\n");
+        return std::wstring(L"<unknown NetworkTypes ")
+            .append(std::to_wstring(static_cast<uint32_t>(type)))
+            .append(L">\n");
     }
     return returnString;
 }
 
-inline std::wstring to_wstring(const WwanDataClass& dataClass)
+inline std::wstring
+to_wstring(const WwanDataClass& dataClass)
 {
     if (dataClass == WwanDataClass::None)
     {
@@ -255,27 +331,40 @@ inline std::wstring to_wstring(const WwanDataClass& dataClass)
     }
     if (returnString.empty())
     {
-        return std::wstring(L"<unknown winrt::Windows::Networking::Connectivity::WwanDataClass ").append(std::to_wstring(static_cast<uint32_t>(dataClass))).append(L">\n");
+        return std::wstring(L"<unknown winrt::Windows::Networking::Connectivity::WwanDataClass ")
+            .append(std::to_wstring(static_cast<uint32_t>(dataClass)))
+            .append(L">\n");
     }
     return returnString;
 }
 
-inline std::wstring to_wstring(const WwanNetworkRegistrationState& state)
+inline std::wstring
+to_wstring(const WwanNetworkRegistrationState& state)
 {
     switch (state)
     {
-    case WwanNetworkRegistrationState::None: return L"None";
-    case WwanNetworkRegistrationState::Deregistered: return L"Deregistered";
-    case WwanNetworkRegistrationState::Searching: return L"Searching";
-    case WwanNetworkRegistrationState::Home: return L"Home";
-    case WwanNetworkRegistrationState::Roaming: return L"Roaming";
-    case WwanNetworkRegistrationState::Partner: return L"Partner";
-    case WwanNetworkRegistrationState::Denied: return L"Denied";
+    case WwanNetworkRegistrationState::None:
+        return L"None";
+    case WwanNetworkRegistrationState::Deregistered:
+        return L"Deregistered";
+    case WwanNetworkRegistrationState::Searching:
+        return L"Searching";
+    case WwanNetworkRegistrationState::Home:
+        return L"Home";
+    case WwanNetworkRegistrationState::Roaming:
+        return L"Roaming";
+    case WwanNetworkRegistrationState::Partner:
+        return L"Partner";
+    case WwanNetworkRegistrationState::Denied:
+        return L"Denied";
     }
-    return std::wstring(L"<unknown winrt::Windows::Networking::Connectivity::WwanNetworkRegistrationState ").append(std::to_wstring(static_cast<uint32_t>(state))).append(L">\n");
+    return std::wstring(L"<unknown winrt::Windows::Networking::Connectivity::WwanNetworkRegistrationState ")
+        .append(std::to_wstring(static_cast<uint32_t>(state)))
+        .append(L">\n");
 }
 
-inline std::wstring to_wstring(const LanIdentifierData& data, uint32_t tabs)
+inline std::wstring
+to_wstring(const LanIdentifierData& data, uint32_t tabs)
 {
     if (!data)
     {
@@ -298,7 +387,8 @@ inline std::wstring to_wstring(const LanIdentifierData& data, uint32_t tabs)
     return returnString;
 }
 
-inline std::wstring to_wstring(const guid& g)
+inline std::wstring
+to_wstring(const guid& g)
 {
     UUID uuid{};
     uuid.Data1 = g.Data1;
@@ -320,46 +410,56 @@ inline std::wstring to_wstring(const guid& g)
         return {};
     }
 
-    return { reinterpret_cast<wchar_t*>(rpcString.get()) };
+    return {reinterpret_cast<wchar_t*>(rpcString.get())};
 }
 
-inline std::wstring to_wstring(const IReference<guid>& refGuid)
+inline std::wstring
+to_wstring(const IReference<guid>& refGuid)
 {
     const auto propertyValue = refGuid.try_as<IPropertyValue>();
-    return  propertyValue ? to_wstring(propertyValue.GetGuid()) : L"<null>";
+    return propertyValue ? to_wstring(propertyValue.GetGuid()) : L"<null>";
 }
 
-inline std::wstring to_wstring(const IReference<uint8_t>& refUint8)
+inline std::wstring
+to_wstring(const IReference<uint8_t>& refUint8)
 {
     const auto propertyValue = refUint8.try_as<IPropertyValue>();
-    return  propertyValue ? to_wstring(propertyValue.GetUInt8()) : L"<null>";
+    return propertyValue ? to_wstring(propertyValue.GetUInt8()) : L"<null>";
 }
 
-inline std::wstring to_wstring(const IReference<uint32_t>& refUint32)
+inline std::wstring
+to_wstring(const IReference<uint32_t>& refUint32)
 {
     const auto propertyValue = refUint32.try_as<IPropertyValue>();
-    return  propertyValue ? to_wstring(propertyValue.GetUInt32()) : L"<null>";
+    return propertyValue ? to_wstring(propertyValue.GetUInt32()) : L"<null>";
 }
 
-inline std::wstring to_wstring(const IReference<uint64_t>& refUint64)
+inline std::wstring
+to_wstring(const IReference<uint64_t>& refUint64)
 {
     const auto propertyValue = refUint64.try_as<IPropertyValue>();
-    return  propertyValue ? to_wstring(propertyValue.GetUInt64()) : L"<null>";
+    return propertyValue ? to_wstring(propertyValue.GetUInt64()) : L"<null>";
 }
 
-inline std::wstring to_wstring(const IReference<DateTime>& refDateTime)
+inline std::wstring
+to_wstring(const IReference<DateTime>& refDateTime)
 {
     const auto propertyValue = refDateTime.try_as<IPropertyValue>();
-    return  propertyValue ? to_wstring(propertyValue.GetDateTime()) : L"<null>";
+    return propertyValue ? to_wstring(propertyValue.GetDateTime()) : L"<null>";
 }
 
-inline std::wstring to_wstring(const NetworkAdapter& adapter, uint32_t tabs)
+inline std::wstring
+to_wstring(const NetworkAdapter& adapter, uint32_t tabs)
 {
     std::wstring adapterString;
     adapterString.append(tabs_to_wstring(tabs));
-    adapterString.append(L"OutboundMaxBitsPerSecond: ").append(std::to_wstring(adapter.OutboundMaxBitsPerSecond())).append(L"\n");
+    adapterString.append(L"OutboundMaxBitsPerSecond: ")
+        .append(std::to_wstring(adapter.OutboundMaxBitsPerSecond()))
+        .append(L"\n");
     adapterString.append(tabs_to_wstring(tabs));
-    adapterString.append(L"InboundMaxBitsPerSecond: ").append(std::to_wstring(adapter.InboundMaxBitsPerSecond())).append(L"\n");
+    adapterString.append(L"InboundMaxBitsPerSecond: ")
+        .append(std::to_wstring(adapter.InboundMaxBitsPerSecond()))
+        .append(L"\n");
     adapterString.append(tabs_to_wstring(tabs));
     adapterString.append(L"IanaInterfaceType: ").append(std::to_wstring(adapter.IanaInterfaceType())).append(L"\n");
     adapterString.append(tabs_to_wstring(tabs));
@@ -374,7 +474,8 @@ inline std::wstring to_wstring(const NetworkAdapter& adapter, uint32_t tabs)
     return adapterString;
 }
 
-inline std::wstring to_wstring(const Windows::Networking::HostName& hostName)
+inline std::wstring
+to_wstring(const Windows::Networking::HostName& hostName)
 {
     std::wstring hostNameString;
     hostNameString.append(tabs_to_wstring(1));
@@ -404,7 +505,8 @@ inline std::wstring to_wstring(const Windows::Networking::HostName& hostName)
     return hostNameString;
 }
 
-inline std::wstring to_wstring(const LanIdentifier& identifier, uint32_t tabs)
+inline std::wstring
+to_wstring(const LanIdentifier& identifier, uint32_t tabs)
 {
     std::wstring identifierString;
     identifierString.append(tabs_to_wstring(tabs));
@@ -418,7 +520,8 @@ inline std::wstring to_wstring(const LanIdentifier& identifier, uint32_t tabs)
     return identifierString;
 }
 
-inline std::wstring to_wstring(const ProxyConfiguration& config, uint32_t tabs)
+inline std::wstring
+to_wstring(const ProxyConfiguration& config, uint32_t tabs)
 {
     std::wstring proxyString;
     proxyString.append(tabs_to_wstring(tabs));

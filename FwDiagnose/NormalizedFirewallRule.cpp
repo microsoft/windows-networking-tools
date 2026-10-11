@@ -12,392 +12,431 @@
 
 namespace details
 {
-	static WORD MajorVersionFromSchemaVersion(WORD word) noexcept
+static WORD
+MajorVersionFromSchemaVersion(WORD word) noexcept
+{
+	constexpr WORD MajorVersionOffset = 8;
+	constexpr WORD MajorVersionBitMask = 0xFF00;
+	return (word & MajorVersionBitMask) >> MajorVersionOffset;
+}
+
+static WORD
+MinorVersionFromSchemaVersion(WORD word) noexcept
+{
+	constexpr WORD MinorVersionBitMask = 0x00FF;
+	return word & MinorVersionBitMask;
+}
+
+static WORD
+OSPlatformFromFWPlatform(FW_OS_PLATFORM platform)
+{
+	// trim off high-order FW bits to read the OS platform field that matches VER_PLATFORM_XXX values
+	constexpr BYTE FWPlatformBitMask = 7;
+	return platform.bPlatform & FWPlatformBitMask;
+}
+
+static std::wstring
+ToString(FW_DIRECTION direction)
+{
+	switch (direction)
 	{
-		constexpr WORD MajorVersionOffset = 8;
-		constexpr WORD MajorVersionBitMask = 0xFF00;
-		return (word & MajorVersionBitMask) >> MajorVersionOffset;
+	case FW_DIR_INVALID:
+		return L"FW_DIR_INVALID";
+	case FW_DIR_IN:
+		return L"FW_DIR_IN";
+	case FW_DIR_OUT:
+		return L"FW_DIR_OUT";
+	default:
+		return L"(unknown FW_DIRECTION " + std::to_wstring(direction) + L")";
+	}
+}
+
+static std::wstring
+ToString(NET_FW_IP_PROTOCOL protocol)
+{
+	switch (protocol)
+	{
+	case NET_FW_IP_PROTOCOL_TCP:
+		return L"NET_FW_IP_PROTOCOL_TCP";
+	case NET_FW_IP_PROTOCOL_UDP:
+		return L"NET_FW_IP_PROTOCOL_UDP";
+	case NET_FW_IP_PROTOCOL_ANY:
+		return L"NET_FW_IP_PROTOCOL_ANY";
+	default:
+		return std::to_wstring(protocol);
+	}
+}
+
+static std::wstring
+ToString(FW_RULE_ACTION action)
+{
+	switch (action)
+	{
+	case FW_RULE_ACTION_INVALID:
+		return L"FW_RULE_ACTION_INVALID";
+	case FW_RULE_ACTION_ALLOW_BYPASS:
+		return L"FW_RULE_ACTION_ALLOW_BYPASS";
+	case FW_RULE_ACTION_BLOCK:
+		return L"FW_RULE_ACTION_BLOCK";
+	case FW_RULE_ACTION_ALLOW:
+		return L"FW_RULE_ACTION_ALLOW";
+	default:
+		return L"(unknown FW_RULE_ACTION " + std::to_wstring(action) + L")";
+	}
+}
+
+static std::wstring
+ToString(FW_OS_PLATFORM platform)
+{
+	std::wstring result;
+	const auto os_platform = OSPlatformFromFWPlatform(platform);
+
+	result += L"Platform: ";
+	if (os_platform == VER_PLATFORM_WIN32s)
+	{
+		result += L"VER_PLATFORM_WIN32s";
+	}
+	else if (os_platform == VER_PLATFORM_WIN32_WINDOWS)
+	{
+		result += L"VER_PLATFORM_WIN32_WINDOWS";
+	}
+	else if (os_platform == VER_PLATFORM_WIN32_NT)
+	{
+		result += L"VER_PLATFORM_WIN32_NT";
+	}
+	else
+	{
+		result += L"(unknown platform " + std::to_wstring(platform.bPlatform) + L")";
 	}
 
-	static WORD MinorVersionFromSchemaVersion(WORD word) noexcept
+	result += L", Major Version: " + std::to_wstring(platform.bMajorVersion);
+	result += L", Minor Version: " + std::to_wstring(platform.bMinorVersion);
+	return result;
+}
+
+static std::wstring
+ToString(FW_RULE_ORIGIN_TYPE type)
+{
+	switch (type)
 	{
-		constexpr WORD MinorVersionBitMask = 0x00FF;
-		return word & MinorVersionBitMask;
+	case FW_RULE_ORIGIN_INVALID:
+		return L"FW_RULE_ORIGIN_INVALID";
+	case FW_RULE_ORIGIN_LOCAL:
+		return L"FW_RULE_ORIGIN_LOCAL";
+	case FW_RULE_ORIGIN_GP:
+		return L"FW_RULE_ORIGIN_GP";
+	case FW_RULE_ORIGIN_DYNAMIC:
+		return L"FW_RULE_ORIGIN_DYNAMIC";
+	case FW_RULE_ORIGIN_AUTOGEN:
+		return L"FW_RULE_ORIGIN_AUTOGEN";
+	case FW_RULE_ORIGIN_HARDCODED:
+		return L"FW_RULE_ORIGIN_HARDCODED";
+	case FW_RULE_ORIGIN_MDM:
+		return L"FW_RULE_ORIGIN_MDM";
+		// Hyper-V rule origins for host translated rules
+	case FW_RULE_ORIGIN_HOST_LOCAL:
+		return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_LOCAL)";
+	case FW_RULE_ORIGIN_HOST_GP:
+		return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_GP)";
+	case FW_RULE_ORIGIN_HOST_DYNAMIC:
+		return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_DYNAMIC)";
+	case FW_RULE_ORIGIN_HOST_MDM:
+		return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_MDM)";
+	default:
+		return L"(unknown FW_RULE_ORIGIN_TYPE " + std::to_wstring(type) + L")";
+	}
+}
+
+static std::wstring
+ToString(FW_RULE_FLAG flag)
+{
+	if (flag == FW_RULE_FLAGS_NONE)
+	{
+		return L"FW_RULE_FLAGS_NONE";
 	}
 
-
-	static		WORD OSPlatformFromFWPlatform(FW_OS_PLATFORM platform)
+	std::wstring result;
+	if (flag & FW_RULE_FLAGS_ACTIVE)
 	{
-		// trim off high-order FW bits to read the OS platform field that matches VER_PLATFORM_XXX values
-		constexpr BYTE FWPlatformBitMask = 7;
-		return platform.bPlatform & FWPlatformBitMask;
+		result += L"FW_RULE_FLAGS_ACTIVE | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTHENTICATE)
+	{
+		result += L"FW_RULE_FLAGS_AUTHENTICATE | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTHENTICATE_WITH_ENCRYPTION)
+	{
+		result += L"FW_RULE_FLAGS_AUTHENTICATE_WITH_ENCRYPTION | ";
+	}
+	if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE)
+	{
+		result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE | ";
+	}
+	if (flag & FW_RULE_FLAGS_LOOSE_SOURCE_MAPPED)
+	{
+		result += L"FW_RULE_FLAGS_LOOSE_SOURCE_MAPPED | ";
+	}
+	static_assert(FW_RULE_FLAGS_AUTOGENERATE_CONNECTION_SECURITY_RULE == FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION);
+	if (flag & FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION)
+	{
+		result += L"FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION + FW_RULE_FLAGS_AUTOGENERATE_CONNECTION_SECURITY_RULE | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTH_WITH_ENC_NEGOTIATE)
+	{
+		result += L"FW_RULE_FLAGS_AUTH_WITH_ENC_NEGOTIATE | ";
+	}
+	if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_APP)
+	{
+		result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_APP | ";
+	}
+	if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_USER)
+	{
+		result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_USER | ";
+	}
+	if (flag & FW_RULE_FLAGS_AUTHENTICATE_BYPASS_OUTBOUND)
+	{
+		result += L"FW_RULE_FLAGS_AUTHENTICATE_BYPASS_OUTBOUND | ";
+	}
+	if (flag & FW_RULE_FLAGS_ALLOW_PROFILE_CROSSING)
+	{
+		result += L"FW_RULE_FLAGS_ALLOW_PROFILE_CROSSING | ";
+	}
+	if (flag & FW_RULE_FLAGS_LOCAL_ONLY_MAPPED)
+	{
+		result += L"FW_RULE_FLAGS_LOCAL_ONLY_MAPPED | ";
+	}
+	if (flag & FW_RULE_FLAGS_LUA_CONDITIONAL_ACE)
+	{
+		result += L"FW_RULE_FLAGS_LUA_CONDITIONAL_ACE | ";
+	}
+	if (flag & FW_RULE_FLAGS_BIND_TO_INTERFACE)
+	{
+		result += L"FW_RULE_FLAGS_BIND_TO_INTERFACE | ";
 	}
 
-	static		std::wstring		ToString(FW_DIRECTION direction)
+	if (!result.empty())
 	{
-		switch (direction)
-		{
-		case FW_DIR_INVALID: return L"FW_DIR_INVALID";
-		case FW_DIR_IN: return L"FW_DIR_IN";
-		case FW_DIR_OUT: return L"FW_DIR_OUT";
-		default:
-			return L"(unknown FW_DIRECTION " + std::to_wstring(direction) + L")";
-		}
+		// remove trailing " | "
+		result.erase(result.size() - 3);
+	}
+	return result;
+}
+
+static std::wstring
+ToString(FW_RULE_FLAGS2 flag)
+{
+	if (flag == FW_RULE_FLAGS2_NONE)
+	{
+		return L"FW_RULE_FLAGS2_NONE";
 	}
 
-	static		std::wstring		ToString(NET_FW_IP_PROTOCOL protocol)
+	std::wstring result;
+
+	if (flag & FW_RULE_FLAGS2_SYSTEMOS_ONLY)
 	{
-		switch (protocol)
-		{
-		case NET_FW_IP_PROTOCOL_TCP: return L"NET_FW_IP_PROTOCOL_TCP";
-		case NET_FW_IP_PROTOCOL_UDP: return L"NET_FW_IP_PROTOCOL_UDP";
-		case NET_FW_IP_PROTOCOL_ANY: return L"NET_FW_IP_PROTOCOL_ANY";
-		default:
-			return std::to_wstring(protocol);
-		}
+		result += L"FW_RULE_FLAGS2_SYSTEMOS_ONLY | ";
+	}
+	if (flag & FW_RULE_FLAGS2_GAMEOS_ONLY)
+	{
+		result += L"FW_RULE_FLAGS2_GAMEOS_ONLY | ";
+	}
+	if (flag & FW_RULE_FLAGS2_DEVMODE)
+	{
+		result += L"FW_RULE_FLAGS2_DEVMODE | ";
+	}
+	if (flag & FW_RULE_FLAGS2_EMPTY_REMOTENAME)
+	{
+		result += L"FW_RULE_FLAGS2_EMPTY_REMOTENAME | ";
+	}
+	if (flag & FW_RULE_FLAGS2_NOT_REMOTENAME)
+	{
+		result += L"FW_RULE_FLAGS2_NOT_REMOTENAME | ";
+	}
+	if (flag & FW_RULE_FLAGS2_CALLOUT_AND_AUDIT)
+	{
+		result += L"FW_RULE_FLAGS2_CALLOUT_AND_AUDIT | ";
+	}
+	if (flag & FW_RULE_FLAGS2_APP_LOOPBACK)
+	{
+		result += L"FW_RULE_FLAGS2_APP_LOOPBACK | ";
+	}
+	if (flag & FW_RULE_FLAGS2_INDIRECT_NAME_RESOLVED)
+	{
+		result += L"FW_RULE_FLAGS2_INDIRECT_NAME_RESOLVED | ";
+	}
+	if (flag & FW_RULE_FLAGS2_INDIRECT_DESCRIPTION_RESOLVED)
+	{
+		result += L"FW_RULE_FLAGS2_INDIRECT_DESCRIPTION_RESOLVED | ";
+	}
+	if (flag & FW_RULE_FLAGS2_DELAY_ENFORCE)
+	{
+		result += L"FW_RULE_FLAGS2_DELAY_ENFORCE | ";
+	}
+	if (flag & FW_RULE_FLAGS2_AVOID_NETID)
+	{
+		result += L"FW_RULE_FLAGS2_AVOID_NETID | ";
+	}
+	if (flag & FW_RULE_FLAGS2_LOOPBACK)
+	{
+		result += L"FW_RULE_FLAGS2_LOOPBACK | ";
+	}
+	if (flag & FW_RULE_FLAGS2_EDP)
+	{
+		result += L"FW_RULE_FLAGS2_EDP | ";
+	}
+	if (flag & FW_RULE_FLAGS2_TENANT_RESTRICTIONS_HIGH_WEIGHT)
+	{
+		result += L"FW_RULE_FLAGS2_TENANT_RESTRICTIONS_HIGH_WEIGHT | ";
 	}
 
-	static		std::wstring		ToString(FW_RULE_ACTION action)
+	if (!result.empty())
 	{
-		switch (action)
-		{
-		case FW_RULE_ACTION_INVALID: return L"FW_RULE_ACTION_INVALID";
-		case FW_RULE_ACTION_ALLOW_BYPASS: return L"FW_RULE_ACTION_ALLOW_BYPASS";
-		case FW_RULE_ACTION_BLOCK: return L"FW_RULE_ACTION_BLOCK";
-		case FW_RULE_ACTION_ALLOW: return L"FW_RULE_ACTION_ALLOW";
-		default:
-			return L"(unknown FW_RULE_ACTION " + std::to_wstring(action) + L")";
-		}
+		// remove trailing " | "
+		result.erase(result.size() - 3);
 	}
+	return result;
+}
 
-	static		std::wstring		ToString(FW_OS_PLATFORM platform)
+static std::wstring
+ExpandString(const std::wstring& original_filename)
+{
+	// resolve any environment variables in the string, then verify it exists
+	std::wstring expanded_string;
+	expanded_string.resize(original_filename.size() + 10, L' ');
+
+	for (;;)
 	{
-		std::wstring result;
-		const auto os_platform = OSPlatformFromFWPlatform(platform);
-
-		result += L"Platform: ";
-		if (os_platform == VER_PLATFORM_WIN32s)
-		{
-			result += L"VER_PLATFORM_WIN32s";
-		}
-		else if (os_platform == VER_PLATFORM_WIN32_WINDOWS)
-		{
-			result += L"VER_PLATFORM_WIN32_WINDOWS";
-		}
-		else if (os_platform == VER_PLATFORM_WIN32_NT)
-		{
-			result += L"VER_PLATFORM_WIN32_NT";
-		}
-		else
-		{
-			result += L"(unknown platform " + std::to_wstring(platform.bPlatform) + L")";
-		}
-
-		result += L", Major Version: " + std::to_wstring(platform.bMajorVersion);
-		result += L", Minor Version: " + std::to_wstring(platform.bMinorVersion);
-		return result;
-	}
-
-	static		std::wstring		ToString(FW_RULE_ORIGIN_TYPE type)
-	{
-		switch (type)
-		{
-		case FW_RULE_ORIGIN_INVALID: return L"FW_RULE_ORIGIN_INVALID";
-		case FW_RULE_ORIGIN_LOCAL: return L"FW_RULE_ORIGIN_LOCAL";
-		case FW_RULE_ORIGIN_GP: return L"FW_RULE_ORIGIN_GP";
-		case FW_RULE_ORIGIN_DYNAMIC: return L"FW_RULE_ORIGIN_DYNAMIC";
-		case FW_RULE_ORIGIN_AUTOGEN: return L"FW_RULE_ORIGIN_AUTOGEN";
-		case FW_RULE_ORIGIN_HARDCODED: return L"FW_RULE_ORIGIN_HARDCODED";
-		case FW_RULE_ORIGIN_MDM: return L"FW_RULE_ORIGIN_MDM";
-			// Hyper-V rule origins for host translated rules
-		case FW_RULE_ORIGIN_HOST_LOCAL: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_LOCAL)";
-		case FW_RULE_ORIGIN_HOST_GP: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_GP)";
-		case FW_RULE_ORIGIN_HOST_DYNAMIC: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_DYNAMIC)";
-		case FW_RULE_ORIGIN_HOST_MDM: return L"HyperV-Firewall (FW_RULE_ORIGIN_HOST_MDM)";
-		default:
-			return L"(unknown FW_RULE_ORIGIN_TYPE " + std::to_wstring(type) + L")";
-		}
-	}
-
-	static		std::wstring		ToString(FW_RULE_FLAG flag)
-	{
-		if (flag == FW_RULE_FLAGS_NONE)
-		{
-			return L"FW_RULE_FLAGS_NONE";
-		}
-
-		std::wstring result;
-		if (flag & FW_RULE_FLAGS_ACTIVE)
-		{
-			result += L"FW_RULE_FLAGS_ACTIVE | ";
-		}
-		if (flag & FW_RULE_FLAGS_AUTHENTICATE)
-		{
-			result += L"FW_RULE_FLAGS_AUTHENTICATE | ";
-		}
-		if (flag & FW_RULE_FLAGS_AUTHENTICATE_WITH_ENCRYPTION)
-		{
-			result += L"FW_RULE_FLAGS_AUTHENTICATE_WITH_ENCRYPTION | ";
-		}
-		if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE)
-		{
-			result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE | ";
-		}
-		if (flag & FW_RULE_FLAGS_LOOSE_SOURCE_MAPPED)
-		{
-			result += L"FW_RULE_FLAGS_LOOSE_SOURCE_MAPPED | ";
-		}
-		static_assert(FW_RULE_FLAGS_AUTOGENERATE_CONNECTION_SECURITY_RULE == FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION);
-		if (flag & FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION)
-		{
-			result += L"FW_RULE_FLAGS_AUTH_WITH_NO_ENCAPSULATION + FW_RULE_FLAGS_AUTOGENERATE_CONNECTION_SECURITY_RULE | ";
-		}
-		if (flag & FW_RULE_FLAGS_AUTH_WITH_ENC_NEGOTIATE)
-		{
-			result += L"FW_RULE_FLAGS_AUTH_WITH_ENC_NEGOTIATE | ";
-		}
-		if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_APP)
-		{
-			result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_APP | ";
-		}
-		if (flag & FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_USER)
-		{
-			result += L"FW_RULE_FLAGS_ROUTEABLE_ADDRS_TRAVERSE_DEFER_USER | ";
-		}
-		if (flag & FW_RULE_FLAGS_AUTHENTICATE_BYPASS_OUTBOUND)
-		{
-			result += L"FW_RULE_FLAGS_AUTHENTICATE_BYPASS_OUTBOUND | ";
-		}
-		if (flag & FW_RULE_FLAGS_ALLOW_PROFILE_CROSSING)
-		{
-			result += L"FW_RULE_FLAGS_ALLOW_PROFILE_CROSSING | ";
-		}
-		if (flag & FW_RULE_FLAGS_LOCAL_ONLY_MAPPED)
-		{
-			result += L"FW_RULE_FLAGS_LOCAL_ONLY_MAPPED | ";
-		}
-		if (flag & FW_RULE_FLAGS_LUA_CONDITIONAL_ACE)
-		{
-			result += L"FW_RULE_FLAGS_LUA_CONDITIONAL_ACE | ";
-		}
-		if (flag & FW_RULE_FLAGS_BIND_TO_INTERFACE)
-		{
-			result += L"FW_RULE_FLAGS_BIND_TO_INTERFACE | ";
-		}
-
-		if (!result.empty())
-		{
-			// remove trailing " | "
-			result.erase(result.size() - 3);
-		}
-		return result;
-	}
-
-	static		std::wstring		ToString(FW_RULE_FLAGS2 flag)
-	{
-		if (flag == FW_RULE_FLAGS2_NONE)
-		{
-			return L"FW_RULE_FLAGS2_NONE";
-		}
-
-		std::wstring result;
-
-		if (flag & FW_RULE_FLAGS2_SYSTEMOS_ONLY)
-		{
-			result += L"FW_RULE_FLAGS2_SYSTEMOS_ONLY | ";
-		}
-		if (flag & FW_RULE_FLAGS2_GAMEOS_ONLY)
-		{
-			result += L"FW_RULE_FLAGS2_GAMEOS_ONLY | ";
-		}
-		if (flag & FW_RULE_FLAGS2_DEVMODE)
-		{
-			result += L"FW_RULE_FLAGS2_DEVMODE | ";
-		}
-		if (flag & FW_RULE_FLAGS2_EMPTY_REMOTENAME)
-		{
-			result += L"FW_RULE_FLAGS2_EMPTY_REMOTENAME | ";
-		}
-		if (flag & FW_RULE_FLAGS2_NOT_REMOTENAME)
-		{
-			result += L"FW_RULE_FLAGS2_NOT_REMOTENAME | ";
-		}
-		if (flag & FW_RULE_FLAGS2_CALLOUT_AND_AUDIT)
-		{
-			result += L"FW_RULE_FLAGS2_CALLOUT_AND_AUDIT | ";
-		}
-		if (flag & FW_RULE_FLAGS2_APP_LOOPBACK)
-		{
-			result += L"FW_RULE_FLAGS2_APP_LOOPBACK | ";
-		}
-		if (flag & FW_RULE_FLAGS2_INDIRECT_NAME_RESOLVED)
-		{
-			result += L"FW_RULE_FLAGS2_INDIRECT_NAME_RESOLVED | ";
-		}
-		if (flag & FW_RULE_FLAGS2_INDIRECT_DESCRIPTION_RESOLVED)
-		{
-			result += L"FW_RULE_FLAGS2_INDIRECT_DESCRIPTION_RESOLVED | ";
-		}
-		if (flag & FW_RULE_FLAGS2_DELAY_ENFORCE)
-		{
-			result += L"FW_RULE_FLAGS2_DELAY_ENFORCE | ";
-		}
-		if (flag & FW_RULE_FLAGS2_AVOID_NETID)
-		{
-			result += L"FW_RULE_FLAGS2_AVOID_NETID | ";
-		}
-		if (flag & FW_RULE_FLAGS2_LOOPBACK)
-		{
-			result += L"FW_RULE_FLAGS2_LOOPBACK | ";
-		}
-		if (flag & FW_RULE_FLAGS2_EDP)
-		{
-			result += L"FW_RULE_FLAGS2_EDP | ";
-		}
-		if (flag & FW_RULE_FLAGS2_TENANT_RESTRICTIONS_HIGH_WEIGHT)
-		{
-			result += L"FW_RULE_FLAGS2_TENANT_RESTRICTIONS_HIGH_WEIGHT | ";
-		}
-
-		if (!result.empty())
-		{
-			// remove trailing " | "
-			result.erase(result.size() - 3);
-		}
-		return result;
-	}
-
-	static std::wstring ExpandString(const std::wstring& original_filename)
-	{
-		// resolve any environment variables in the string, then verify it exists
-		std::wstring expanded_string;
-		expanded_string.resize(original_filename.size() + 10, L' ');
-
-		for (;;)
-		{
-			const auto expanded_size = ExpandEnvironmentStringsW(original_filename.c_str(), expanded_string.data(), static_cast<DWORD>(expanded_string.size()));
-			if (expanded_size == 0)
-			{
-				const auto gle = GetLastError();
-				if (VerboseOutputEnabled())
-				{
-					std::printf("Failed to ExpandEnvironmentStrings(%ls) (0x%lx)", original_filename.c_str(), gle);
-				}
-				expanded_string = {};
-				break;
-			}
-
-			if (expanded_size <= expanded_string.size())
-			{
-				// the string was expanded, and it fits in the buffer
-				expanded_string.resize(expanded_size - 1); // trim the null terminator
-				break;
-			}
-
-			expanded_string.resize(expanded_size, L' '); // the buffer was not big enough, resize it and try again
-		}
-
-		return expanded_string;
-	}
-
-	static bool IsRuleAnAppxRule(const std::wstring& rule_name)
-	{
-		// 16 == length of '@{' (2) + length of 'ms-resource://' (14)
-		constexpr size_t minRuleNameLength = 16;
-		if (rule_name.length() < minRuleNameLength)
-		{
-			return false;
-		}
-		if (rule_name[0] != L'@' || rule_name[1] != '{')
-		{
-			return false;
-		}
-
-		// now search for ms-resource://  --- this is case-sensitive, but that seems correct for APPX rules
-		constexpr auto* appxResourceStringId = L"ms-resource://";
-		return rule_name.find(appxResourceStringId) != std::wstring::npos;
-	}
-
-	static void ProcessForStringResource(std::wstring& string_value)
-	{
-		if (!string_value.starts_with(L"@"))
-		{
-			return;
-		}
-
-		if (IsRuleAnAppxRule(string_value))
-		{
-			return;
-		}
-
-		const auto comma = string_value.find(L',');
-		if (comma == std::wstring::npos)
-		{
-			return;
-		}
-
-		const auto file_name = string_value.substr(1, comma - 1);
-		auto string_index = string_value.substr(comma + 1);
-
-		const auto expanded_file_name = ExpandString(file_name);
-		if (expanded_file_name.empty())
-		{
-			if (VerboseOutputEnabled())
-			{
-				std::printf("Failed to expand the file name '%ls'\n", file_name.c_str());
-			}
-			return;
-		}
-
-		const wil::unique_hmodule file_name_hmod{ LoadLibraryExW(expanded_file_name.c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE) };
-		if (!file_name_hmod)
+		const auto expanded_size = ExpandEnvironmentStringsW(
+		    original_filename.c_str(),
+		    expanded_string.data(),
+		    static_cast<DWORD>(expanded_string.size()));
+		if (expanded_size == 0)
 		{
 			const auto gle = GetLastError();
 			if (VerboseOutputEnabled())
 			{
-				std::printf("Failed to LoadLibraryExW(%ls) (0x%lx)\n", expanded_file_name.c_str(), gle);
+				std::printf("Failed to ExpandEnvironmentStrings(%ls) (0x%lx)", original_filename.c_str(), gle);
 			}
-			return;
+			expanded_string = {};
+			break;
 		}
 
-		uint32_t converted_value = 0;
-		const auto conversion_error = wil::ResultFromException([&] {
-			// strip the leading '-' from the string index if it exists
-			if (string_index.starts_with(L'-'))
-			{
-				string_index = string_index.substr(1, string_index.size() - 1);
-			}
-			converted_value = std::stoul(string_index);
-			});
-		if (FAILED(conversion_error))
+		if (expanded_size <= expanded_string.size())
 		{
-			if (VerboseOutputEnabled())
-			{
-				std::printf("Failed to convert string index '%ls' to a number: 0x%lx\n", string_index.c_str(), conversion_error);  // NOLINT(clang-diagnostic-format)
-			}
-			return;
+			// the string was expanded, and it fits in the buffer
+			expanded_string.resize(expanded_size - 1); // trim the null terminator
+			break;
 		}
 
-		// try to load the string resource
-		PCWSTR raw_pointer_to_resource{ nullptr };
-		const auto conversion_size = LoadStringW(
-			file_name_hmod.get(),
-			converted_value,
-			reinterpret_cast<LPWSTR>(&raw_pointer_to_resource),
-			0);
-		if (conversion_size == 0)
-		{
-			const auto gle = GetLastError();
-			if (VerboseOutputEnabled())
-			{
-				std::printf("Failed to LoadStringW(%ls, %u) (0x%lx)\n", expanded_file_name.c_str(), converted_value, gle);
-			}
-			return;
-		}
-
-		std::wstring string_resource{ raw_pointer_to_resource, raw_pointer_to_resource + conversion_size };
-		string_value.swap(string_resource);
+		expanded_string.resize(expanded_size, L' '); // the buffer was not big enough, resize it and try again
 	}
+
+	return expanded_string;
+}
+
+static bool
+IsRuleAnAppxRule(const std::wstring& rule_name)
+{
+	// 16 == length of '@{' (2) + length of 'ms-resource://' (14)
+	constexpr size_t minRuleNameLength = 16;
+	if (rule_name.length() < minRuleNameLength)
+	{
+		return false;
+	}
+	if (rule_name[0] != L'@' || rule_name[1] != '{')
+	{
+		return false;
+	}
+
+	// now search for ms-resource://  --- this is case-sensitive, but that seems correct for APPX rules
+	constexpr auto* appxResourceStringId = L"ms-resource://";
+	return rule_name.find(appxResourceStringId) != std::wstring::npos;
+}
+
+static void
+ProcessForStringResource(std::wstring& string_value)
+{
+	if (!string_value.starts_with(L"@"))
+	{
+		return;
+	}
+
+	if (IsRuleAnAppxRule(string_value))
+	{
+		return;
+	}
+
+	const auto comma = string_value.find(L',');
+	if (comma == std::wstring::npos)
+	{
+		return;
+	}
+
+	const auto file_name = string_value.substr(1, comma - 1);
+	auto string_index = string_value.substr(comma + 1);
+
+	const auto expanded_file_name = ExpandString(file_name);
+	if (expanded_file_name.empty())
+	{
+		if (VerboseOutputEnabled())
+		{
+			std::printf("Failed to expand the file name '%ls'\n", file_name.c_str());
+		}
+		return;
+	}
+
+	const wil::unique_hmodule file_name_hmod{
+	    LoadLibraryExW(expanded_file_name.c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE)};
+	if (!file_name_hmod)
+	{
+		const auto gle = GetLastError();
+		if (VerboseOutputEnabled())
+		{
+			std::printf("Failed to LoadLibraryExW(%ls) (0x%lx)\n", expanded_file_name.c_str(), gle);
+		}
+		return;
+	}
+
+	uint32_t converted_value = 0;
+	const auto conversion_error = wil::ResultFromException(
+	    [&]
+	    {
+		    // strip the leading '-' from the string index if it exists
+		    if (string_index.starts_with(L'-'))
+		    {
+			    string_index = string_index.substr(1, string_index.size() - 1);
+		    }
+		    converted_value = std::stoul(string_index);
+	    });
+	if (FAILED(conversion_error))
+	{
+		if (VerboseOutputEnabled())
+		{
+			std::printf(
+			    "Failed to convert string index '%ls' to a number: 0x%lx\n",
+			    string_index.c_str(),
+			    conversion_error); // NOLINT(clang-diagnostic-format)
+		}
+		return;
+	}
+
+	// try to load the string resource
+	PCWSTR raw_pointer_to_resource{nullptr};
+	const auto conversion_size =
+	    LoadStringW(file_name_hmod.get(), converted_value, reinterpret_cast<LPWSTR>(&raw_pointer_to_resource), 0);
+	if (conversion_size == 0)
+	{
+		const auto gle = GetLastError();
+		if (VerboseOutputEnabled())
+		{
+			std::printf("Failed to LoadStringW(%ls, %u) (0x%lx)\n", expanded_file_name.c_str(), converted_value, gle);
+		}
+		return;
+	}
+
+	std::wstring string_resource{raw_pointer_to_resource, raw_pointer_to_resource + conversion_size};
+	string_value.swap(string_resource);
+}
 } // namespace details
 
 NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion)
@@ -522,7 +561,7 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 
 	if (requested_rule_version < FW_BINARY_VERSION_31 || fwRule->wSchemaVersion < FW_BINARY_VERSION_31)
 	{
-		AppendValue(GUID{}); // FW_RULE::providerContextKey
+		AppendValue(GUID{});  // FW_RULE::providerContextKey
 		AppendValue(DWORD{}); // FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST::dwNumIds
 	}
 	else
@@ -534,7 +573,7 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 
 	if (requested_rule_version < FW_BINARY_VERSION_33 || fwRule->wSchemaVersion < FW_BINARY_VERSION_33)
 	{
-		AppendValue(PCWSTR{ nullptr });
+		AppendValue(PCWSTR{nullptr});
 	}
 	else
 	{
@@ -547,7 +586,8 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 	}
 }
 
-std::wstring NormalizedFirewallRule::PrintRule() const
+std::wstring
+NormalizedFirewallRule::PrintRule() const
 {
 	if (!fw_rule)
 	{
@@ -568,10 +608,8 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 	result += !fw_rule->wszDescription ? L"(null)" : fw_rule->wszDescription;
 	result += L"\n";
 
-	result += L"Schema Version: "
-		+ std::to_wstring(details::MajorVersionFromSchemaVersion(fw_rule->wSchemaVersion))
-		+ L"." + std::to_wstring(details::MinorVersionFromSchemaVersion(fw_rule->wSchemaVersion))
-		+ L"\n";
+	result += L"Schema Version: " + std::to_wstring(details::MajorVersionFromSchemaVersion(fw_rule->wSchemaVersion)) +
+	          L"." + std::to_wstring(details::MinorVersionFromSchemaVersion(fw_rule->wSchemaVersion)) + L"\n";
 	result += L"Profiles: 0x" + std::to_wstring(fw_rule->dwProfiles) + L"\n";
 	result += L"Direction: " + details::ToString(fw_rule->Direction) + L"\n";
 	result += L"IP Protocol: " + details::ToString(static_cast<NET_FW_IP_PROTOCOL>(fw_rule->wIpProtocol)) + L"\n";
@@ -639,7 +677,7 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 			for (DWORD i = 0; i < fw_rule->V4TypeCodeList.dwNumEntries; ++i)
 			{
 				result += std::to_wstring(fw_rule->V4TypeCodeList.pEntries[i].bType) + L":" +
-					std::to_wstring(fw_rule->V4TypeCodeList.pEntries[i].wCode);
+				          std::to_wstring(fw_rule->V4TypeCodeList.pEntries[i].wCode);
 				if (i < fw_rule->V4TypeCodeList.dwNumEntries - 1)
 				{
 					result += L", ";
@@ -658,7 +696,7 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 			for (DWORD i = 0; i < fw_rule->V6TypeCodeList.dwNumEntries; ++i)
 			{
 				result += std::to_wstring(fw_rule->V6TypeCodeList.pEntries[i].bType) + L":" +
-					std::to_wstring(fw_rule->V6TypeCodeList.pEntries[i].wCode);
+				          std::to_wstring(fw_rule->V6TypeCodeList.pEntries[i].wCode);
 				if (i < fw_rule->V6TypeCodeList.dwNumEntries - 1)
 				{
 					result += L", ";
@@ -676,52 +714,64 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 
 	if (fw_rule->LocalAddresses.dwV4AddressKeywords > 0)
 	{
-		result += L"Local Address V4 Keywords: 0x" + std::to_wstring(fw_rule->LocalAddresses.dwV4AddressKeywords) + L"\n";
+		result +=
+		    L"Local Address V4 Keywords: 0x" + std::to_wstring(fw_rule->LocalAddresses.dwV4AddressKeywords) + L"\n";
 	}
 	if (fw_rule->LocalAddresses.dwV6AddressKeywords > 0)
 	{
-		result += L"Local Address V6 Keywords: 0x" + std::to_wstring(fw_rule->LocalAddresses.dwV6AddressKeywords) + L"\n";
+		result +=
+		    L"Local Address V6 Keywords: 0x" + std::to_wstring(fw_rule->LocalAddresses.dwV6AddressKeywords) + L"\n";
 	}
 	if (fw_rule->LocalAddresses.V4SubNets.dwNumEntries > 0)
 	{
-		result += L"Local Address : V4 Subnets: " + std::to_wstring(fw_rule->LocalAddresses.V4SubNets.dwNumEntries) + L" entries\n";
+		result += L"Local Address : V4 Subnets: " + std::to_wstring(fw_rule->LocalAddresses.V4SubNets.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->LocalAddresses.V6SubNets.dwNumEntries > 0)
 	{
-		result += L"Local Address : V6 Subnets: " + std::to_wstring(fw_rule->LocalAddresses.V6SubNets.dwNumEntries) + L" entries\n";
+		result += L"Local Address : V6 Subnets: " + std::to_wstring(fw_rule->LocalAddresses.V6SubNets.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->LocalAddresses.V4Ranges.dwNumEntries > 0)
 	{
-		result += L"Local Address : V4 Ranges: " + std::to_wstring(fw_rule->LocalAddresses.V4Ranges.dwNumEntries) + L" entries\n";
+		result += L"Local Address : V4 Ranges: " + std::to_wstring(fw_rule->LocalAddresses.V4Ranges.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->LocalAddresses.V6Ranges.dwNumEntries > 0)
 	{
-		result += L"Local Address : V6 Ranges: " + std::to_wstring(fw_rule->LocalAddresses.V6Ranges.dwNumEntries) + L" entries\n";
+		result += L"Local Address : V6 Ranges: " + std::to_wstring(fw_rule->LocalAddresses.V6Ranges.dwNumEntries) +
+		          L" entries\n";
 	}
 
 	if (fw_rule->RemoteAddresses.dwV4AddressKeywords > 0)
 	{
-		result += L"Remote Address V4 Keywords: 0x" + std::to_wstring(fw_rule->RemoteAddresses.dwV4AddressKeywords) + L"\n";
+		result +=
+		    L"Remote Address V4 Keywords: 0x" + std::to_wstring(fw_rule->RemoteAddresses.dwV4AddressKeywords) + L"\n";
 	}
 	if (fw_rule->RemoteAddresses.dwV6AddressKeywords > 0)
 	{
-		result += L"Remote Address V6 Keywords: 0x" + std::to_wstring(fw_rule->RemoteAddresses.dwV6AddressKeywords) + L"\n";
+		result +=
+		    L"Remote Address V6 Keywords: 0x" + std::to_wstring(fw_rule->RemoteAddresses.dwV6AddressKeywords) + L"\n";
 	}
 	if (fw_rule->RemoteAddresses.V4SubNets.dwNumEntries > 0)
 	{
-		result += L"Remote Address : V4 Subnets: " + std::to_wstring(fw_rule->RemoteAddresses.V4SubNets.dwNumEntries) + L" entries\n";
+		result += L"Remote Address : V4 Subnets: " + std::to_wstring(fw_rule->RemoteAddresses.V4SubNets.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->RemoteAddresses.V6SubNets.dwNumEntries > 0)
 	{
-		result += L"Remote Address : V6 Subnets: " + std::to_wstring(fw_rule->RemoteAddresses.V6SubNets.dwNumEntries) + L" entries\n";
+		result += L"Remote Address : V6 Subnets: " + std::to_wstring(fw_rule->RemoteAddresses.V6SubNets.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->RemoteAddresses.V4Ranges.dwNumEntries > 0)
 	{
-		result += L"Remote Address : V4 Ranges: " + std::to_wstring(fw_rule->RemoteAddresses.V4Ranges.dwNumEntries) + L" entries\n";
+		result += L"Remote Address : V4 Ranges: " + std::to_wstring(fw_rule->RemoteAddresses.V4Ranges.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->RemoteAddresses.V6Ranges.dwNumEntries > 0)
 	{
-		result += L"Remote Address : V6 Ranges: " + std::to_wstring(fw_rule->RemoteAddresses.V6Ranges.dwNumEntries) + L" entries\n";
+		result += L"Remote Address : V6 Ranges: " + std::to_wstring(fw_rule->RemoteAddresses.V6Ranges.dwNumEntries) +
+		          L" entries\n";
 	}
 	if (fw_rule->LocalInterfaceIds.dwNumLUIDs > 0)
 	{
@@ -744,15 +794,18 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 	}
 
 	result += L"Action: " + details::ToString(fw_rule->Action) + L"\n";
-	result += L"Flags: " + details::ToString(static_cast<FW_RULE_FLAG>(fw_rule->wFlags)) + L" (0x" + std::to_wstring(fw_rule->wFlags) + L")\n";
+	result += L"Flags: " + details::ToString(static_cast<FW_RULE_FLAG>(fw_rule->wFlags)) + L" (0x" +
+	          std::to_wstring(fw_rule->wFlags) + L")\n";
 	if (fw_rule->wFlags2 > 0)
 	{
-		result += L"Flags2: " + details::ToString(static_cast<FW_RULE_FLAGS2>(fw_rule->wFlags2)) + L" (0x" + std::to_wstring(fw_rule->wFlags2) + L")\n";
+		result += L"Flags2: " + details::ToString(static_cast<FW_RULE_FLAGS2>(fw_rule->wFlags2)) + L" (0x" +
+		          std::to_wstring(fw_rule->wFlags2) + L")\n";
 	}
 
 	if (fw_rule->wszRemoteMachineAuthorizationList)
 	{
-		result += std::wstring(L"Remote Machine Authorization List : ") + fw_rule->wszRemoteMachineAuthorizationList + L"\n";
+		result +=
+		    std::wstring(L"Remote Machine Authorization List : ") + fw_rule->wszRemoteMachineAuthorizationList + L"\n";
 	}
 
 	if (fw_rule->wszRemoteUserAuthorizationList)
@@ -772,7 +825,8 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 
 	if (fw_rule->PlatformValidityList.dwNumEntries > 0)
 	{
-		result += L"Platform Validity List: " + std::to_wstring(fw_rule->PlatformValidityList.dwNumEntries) + L" entries\n";
+		result +=
+		    L"Platform Validity List: " + std::to_wstring(fw_rule->PlatformValidityList.dwNumEntries) + L" entries\n";
 		for (uint32_t count = 0; count < fw_rule->PlatformValidityList.dwNumEntries; ++count)
 		{
 			result += L"  - " + details::ToString(fw_rule->PlatformValidityList.pPlatforms[count]) + L"\n";
@@ -822,7 +876,8 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 		result += L"Network Names: ";
 		for (DWORD i = 0; i < fw_rule->OnNetworkNames.dwNumEntries; ++i)
 		{
-			result += fw_rule->OnNetworkNames.wszNames[i] ? std::wstring(fw_rule->OnNetworkNames.wszNames[i]) : L"(null)";
+			result +=
+			    fw_rule->OnNetworkNames.wszNames[i] ? std::wstring(fw_rule->OnNetworkNames.wszNames[i]) : L"(null)";
 			if (i < fw_rule->OnNetworkNames.dwNumEntries - 1)
 			{
 				result += L", ";
@@ -841,7 +896,9 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 		result += L"Remote Out Server Names: ";
 		for (DWORD i = 0; i < fw_rule->RemoteOutServerNames.dwNumEntries; ++i)
 		{
-			result += fw_rule->RemoteOutServerNames.wszNames[i] ? std::wstring(fw_rule->RemoteOutServerNames.wszNames[i]) : L"(null)";
+			result += fw_rule->RemoteOutServerNames.wszNames[i]
+			              ? std::wstring(fw_rule->RemoteOutServerNames.wszNames[i])
+			              : L"(null)";
 			if (i < fw_rule->RemoteOutServerNames.dwNumEntries - 1)
 			{
 				result += L", ";
@@ -895,28 +952,31 @@ std::wstring NormalizedFirewallRule::PrintRule() const
 	return result;
 }
 
-bool NormalizedFirewallRule::RuleTargetsLocalUser() const
+bool
+NormalizedFirewallRule::RuleTargetsLocalUser() const
 {
 	return fw_rule->wszLocalUserAuthorizationList && *fw_rule->wszLocalUserAuthorizationList != L'\0';
 }
 
-bool NormalizedFirewallRule::RuleTargetsNtService() const
+bool
+NormalizedFirewallRule::RuleTargetsNtService() const
 {
 	return fw_rule->wszLocalService != nullptr && fw_rule->wszLocalService[0] != L'\0';
 }
 
-bool NormalizedFirewallRule::RuleTargetsLocalNonSystemApplication() const
+bool
+NormalizedFirewallRule::RuleTargetsLocalNonSystemApplication() const
 {
 	if (fw_rule->wszLocalApplication)
 	{
 		return !RuleTargetsLocalSystemApplication();
 	}
-	return
-		(fw_rule->wszPackageFamilyName && *fw_rule->wszPackageFamilyName != L'\0') ||
-		(fw_rule->wszPackageId && *fw_rule->wszPackageId != L'\0');
+	return (fw_rule->wszPackageFamilyName && *fw_rule->wszPackageFamilyName != L'\0') ||
+	       (fw_rule->wszPackageId && *fw_rule->wszPackageId != L'\0');
 }
 
-bool NormalizedFirewallRule::RuleTargetsLocalSystemApplication() const
+bool
+NormalizedFirewallRule::RuleTargetsLocalSystemApplication() const
 {
 	if (fw_rule->wszLocalApplication && fw_rule->wszLocalApplication[0] != L'\0')
 	{
@@ -925,7 +985,8 @@ bool NormalizedFirewallRule::RuleTargetsLocalSystemApplication() const
 	return false;
 }
 
-bool NormalizedFirewallRule::RuleTargetsLocalAppxRuleApplication() const
+bool
+NormalizedFirewallRule::RuleTargetsLocalAppxRuleApplication() const
 {
 	if (fw_rule->wszLocalApplication && fw_rule->wszLocalApplication[0] != L'\0')
 	{
@@ -934,7 +995,8 @@ bool NormalizedFirewallRule::RuleTargetsLocalAppxRuleApplication() const
 	return false;
 }
 
-void NormalizedFirewallRule::CheckIfLocalApplicationExists()
+void
+NormalizedFirewallRule::CheckIfLocalApplicationExists()
 {
 	if (!RuleTargetsLocalSystemApplication())
 	{
@@ -946,7 +1008,7 @@ void NormalizedFirewallRule::CheckIfLocalApplicationExists()
 		return;
 	}
 
-	const std::wstring original_filename{ fw_rule->wszLocalApplication };
+	const std::wstring original_filename{fw_rule->wszLocalApplication};
 	const auto expanded_string = details::ExpandString(original_filename);
 	if (expanded_string.empty())
 	{
@@ -956,13 +1018,8 @@ void NormalizedFirewallRule::CheckIfLocalApplicationExists()
 
 	// now check if the file exists
 	WIN32_FIND_DATA find_data{};
-	HANDLE found_file = FindFirstFileExW(
-		expanded_string.c_str(),
-		FindExInfoBasic,
-		&find_data,
-		FindExSearchNameMatch,
-		nullptr,
-		0);
+	HANDLE found_file =
+	    FindFirstFileExW(expanded_string.c_str(), FindExInfoBasic, &find_data, FindExSearchNameMatch, nullptr, 0);
 	if (found_file == INVALID_HANDLE_VALUE)
 	{
 		const auto gle = GetLastError();
@@ -979,7 +1036,8 @@ void NormalizedFirewallRule::CheckIfLocalApplicationExists()
 	}
 }
 
-void NormalizedFirewallRule::ProcessLocalUserSid()
+void
+NormalizedFirewallRule::ProcessLocalUserSid()
 {
 	if (!RuleTargetsLocalUser())
 	{
@@ -1001,15 +1059,29 @@ void NormalizedFirewallRule::ProcessLocalUserSid()
 
 	DWORD localUserOwnerNameSize = 0;
 	DWORD cchReferencedDomainName = 0;
-	SID_NAME_USE sid_name_use{ SidTypeUnknown };
-	if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
+	SID_NAME_USE sid_name_use{SidTypeUnknown};
+	if (!LookupAccountSidW(
+	        nullptr,
+	        localUserOwnerSid.get(),
+	        local_user_owner_name.data(),
+	        &localUserOwnerNameSize,
+	        local_user_domain_name.data(),
+	        &cchReferencedDomainName,
+	        &sid_name_use))
 	{
 		if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
 		{
 			local_user_owner_name.resize(localUserOwnerNameSize);
 			local_user_domain_name.resize(cchReferencedDomainName);
 
-			if (!LookupAccountSidW(nullptr, localUserOwnerSid.get(), local_user_owner_name.data(), &localUserOwnerNameSize, local_user_domain_name.data(), &cchReferencedDomainName, &sid_name_use))
+			if (!LookupAccountSidW(
+			        nullptr,
+			        localUserOwnerSid.get(),
+			        local_user_owner_name.data(),
+			        &localUserOwnerNameSize,
+			        local_user_domain_name.data(),
+			        &cchReferencedDomainName,
+			        &sid_name_use))
 			{
 				const auto gle = GetLastError();
 				if (DebugOutputEnabled())
@@ -1026,11 +1098,18 @@ void NormalizedFirewallRule::ProcessLocalUserSid()
 			{
 				if (local_user_domain_name.empty())
 				{
-					std::printf("Successfully converted LocalUserOwner SID %ls to %ls\n", fw_rule->wszLocalUserOwner, local_user_owner_name.c_str());
+					std::printf(
+					    "Successfully converted LocalUserOwner SID %ls to %ls\n",
+					    fw_rule->wszLocalUserOwner,
+					    local_user_owner_name.c_str());
 				}
 				else
 				{
-					std::printf("Successfully converted LocalUserOwner SID %ls to %ls\\%ls\n", fw_rule->wszLocalUserOwner, local_user_domain_name.c_str(), local_user_owner_name.c_str());
+					std::printf(
+					    "Successfully converted LocalUserOwner SID %ls to %ls\\%ls\n",
+					    fw_rule->wszLocalUserOwner,
+					    local_user_domain_name.c_str(),
+					    local_user_owner_name.c_str());
 				}
 			}
 		}
@@ -1051,7 +1130,8 @@ void NormalizedFirewallRule::ProcessLocalUserSid()
 	}
 }
 
-void NormalizedFirewallRule::AppendValue(const GUID& guid)
+void
+NormalizedFirewallRule::AppendValue(const GUID& guid)
 {
 	AppendValue(guid.Data1);
 	AppendValue(guid.Data2);
@@ -1064,7 +1144,8 @@ void NormalizedFirewallRule::AppendValue(const GUID& guid)
 }
 
 // sort the port range so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 {
 	const auto* ports = list.pPorts;
 	const auto ports_count = list.dwNumEntries;
@@ -1080,13 +1161,16 @@ void NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 	{
 		AppendValue(ports_count);
 		std::vector sorted_ports(ports, ports + ports_count);
-		std::ranges::sort(sorted_ports, [](const FW_PORT_RANGE& a, const FW_PORT_RANGE& b) {
-			if (a.wBegin != b.wBegin)
-			{
-				return a.wBegin < b.wBegin;
-			}
-			return a.wEnd < b.wEnd;
-			});
+		std::ranges::sort(
+		    sorted_ports,
+		    [](const FW_PORT_RANGE& a, const FW_PORT_RANGE& b)
+		    {
+			    if (a.wBegin != b.wBegin)
+			    {
+				    return a.wBegin < b.wBegin;
+			    }
+			    return a.wEnd < b.wEnd;
+		    });
 		for (const auto& port : sorted_ports)
 		{
 			AppendValue(port.wBegin);
@@ -1096,7 +1180,8 @@ void NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 }
 
 // sort the ICMP range list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 {
 	const auto* icmp_list = list.pEntries;
 	const auto icmp_count = list.dwNumEntries;
@@ -1112,13 +1197,16 @@ void NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 	{
 		AppendValue(icmp_count);
 		std::vector sorted_icmp(icmp_list, icmp_list + icmp_count);
-		std::ranges::sort(sorted_icmp, [](const FW_ICMP_TYPE_CODE& a, const FW_ICMP_TYPE_CODE& b) {
-			if (a.bType != b.bType)
-			{
-				return a.bType < b.bType;
-			}
-			return a.wCode < b.wCode;
-			});
+		std::ranges::sort(
+		    sorted_icmp,
+		    [](const FW_ICMP_TYPE_CODE& a, const FW_ICMP_TYPE_CODE& b)
+		    {
+			    if (a.bType != b.bType)
+			    {
+				    return a.bType < b.bType;
+			    }
+			    return a.wCode < b.wCode;
+		    });
 		for (const auto& icmp : sorted_icmp)
 		{
 			AppendValue(icmp.bType);
@@ -1128,7 +1216,8 @@ void NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 }
 
 // sort the IP range list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 {
 	const auto* subnets = list.pSubNets;
 	const auto subnet_count = list.dwNumEntries;
@@ -1144,13 +1233,16 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 	{
 		AppendValue(subnet_count);
 		std::vector sorted_subnets(subnets, subnets + subnet_count);
-		std::ranges::sort(sorted_subnets, [](const FW_IPV4_SUBNET& a, const FW_IPV4_SUBNET& b) {
-			if (a.dwAddress != b.dwAddress)
-			{
-				return a.dwAddress < b.dwAddress;
-			}
-			return a.dwSubNetMask < b.dwSubNetMask;
-			});
+		std::ranges::sort(
+		    sorted_subnets,
+		    [](const FW_IPV4_SUBNET& a, const FW_IPV4_SUBNET& b)
+		    {
+			    if (a.dwAddress != b.dwAddress)
+			    {
+				    return a.dwAddress < b.dwAddress;
+			    }
+			    return a.dwSubNetMask < b.dwSubNetMask;
+		    });
 		for (const auto& subnet : sorted_subnets)
 		{
 			AppendValue(subnet.dwAddress);
@@ -1160,7 +1252,8 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 }
 
 // sort the IP range list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
 {
 	const auto* subnets = list.pSubNets;
 	const auto subnet_count = list.dwNumEntries;
@@ -1176,14 +1269,17 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
 	{
 		AppendValue(subnet_count);
 		std::vector sorted_subnets(subnets, subnets + subnet_count);
-		std::ranges::sort(sorted_subnets, [](const FW_IPV6_SUBNET& a, const FW_IPV6_SUBNET& b) {
-			const auto cmp = std::memcmp(a.Address, b.Address, sizeof(a.Address));
-			if (cmp != 0)
-			{
-				return cmp < 0;
-			}
-			return a.dwNumPrefixBits < b.dwNumPrefixBits;
-			});
+		std::ranges::sort(
+		    sorted_subnets,
+		    [](const FW_IPV6_SUBNET& a, const FW_IPV6_SUBNET& b)
+		    {
+			    const auto cmp = std::memcmp(a.Address, b.Address, sizeof(a.Address));
+			    if (cmp != 0)
+			    {
+				    return cmp < 0;
+			    }
+			    return a.dwNumPrefixBits < b.dwNumPrefixBits;
+		    });
 		for (const auto& subnet : sorted_subnets)
 		{
 			// append as 2 64-bit integers
@@ -1199,7 +1295,8 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
 }
 
 // sort the IP range list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
 {
 	const auto* ranges = list.pRanges;
 	const auto range_count = list.dwNumEntries;
@@ -1215,13 +1312,16 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
 	{
 		AppendValue(range_count);
 		std::vector sorted_ranges(ranges, ranges + range_count);
-		std::ranges::sort(sorted_ranges, [](const FW_IPV4_ADDRESS_RANGE& a, const FW_IPV4_ADDRESS_RANGE& b) {
-			if (a.dwBegin != b.dwBegin)
-			{
-				return a.dwBegin < b.dwBegin;
-			}
-			return a.dwEnd < b.dwEnd;
-			});
+		std::ranges::sort(
+		    sorted_ranges,
+		    [](const FW_IPV4_ADDRESS_RANGE& a, const FW_IPV4_ADDRESS_RANGE& b)
+		    {
+			    if (a.dwBegin != b.dwBegin)
+			    {
+				    return a.dwBegin < b.dwBegin;
+			    }
+			    return a.dwEnd < b.dwEnd;
+		    });
 		for (const auto& range : sorted_ranges)
 		{
 			AppendValue(range.dwBegin);
@@ -1230,7 +1330,8 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
 	}
 }
 
-void NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
 {
 	const auto* ranges = list.pRanges;
 	const auto range_count = list.dwNumEntries;
@@ -1246,14 +1347,17 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
 	{
 		AppendValue(range_count);
 		std::vector sorted_ranges(ranges, ranges + range_count);
-		std::ranges::sort(sorted_ranges, [](const FW_IPV6_ADDRESS_RANGE& a, const FW_IPV6_ADDRESS_RANGE& b) {
-			const auto cmp = std::memcmp(a.Begin, b.Begin, sizeof(a.Begin));
-			if (cmp != 0)
-			{
-				return cmp < 0;
-			}
-			return std::memcmp(a.End, b.End, sizeof(a.End)) < 0;
-			});
+		std::ranges::sort(
+		    sorted_ranges,
+		    [](const FW_IPV6_ADDRESS_RANGE& a, const FW_IPV6_ADDRESS_RANGE& b)
+		    {
+			    const auto cmp = std::memcmp(a.Begin, b.Begin, sizeof(a.Begin));
+			    if (cmp != 0)
+			    {
+				    return cmp < 0;
+			    }
+			    return std::memcmp(a.End, b.End, sizeof(a.End)) < 0;
+		    });
 		for (const auto& range : sorted_ranges)
 		{
 			// append as 2 64-bit integers
@@ -1261,21 +1365,24 @@ void NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
 			const BYTE* begin_buffer = range.Begin;
 			const uint64_t* first_begin_integer = reinterpret_cast<const uint64_t*>(begin_buffer);
 			AppendValue(*first_begin_integer);
-			const uint64_t* second_begin_integer = reinterpret_cast<const uint64_t*>(begin_buffer + sizeof(first_begin_integer));
+			const uint64_t* second_begin_integer =
+			    reinterpret_cast<const uint64_t*>(begin_buffer + sizeof(first_begin_integer));
 			AppendValue(*second_begin_integer);
 			// append as 2 64-bit integers
 			static_assert(sizeof(range.End) == 2 * sizeof(uint64_t));
 			const BYTE* end_buffer = range.End;
 			const uint64_t* first_end_integer = reinterpret_cast<const uint64_t*>(end_buffer);
 			AppendValue(*first_end_integer);
-			const uint64_t* second_end_integer = reinterpret_cast<const uint64_t*>(end_buffer + sizeof(first_end_integer));
+			const uint64_t* second_end_integer =
+			    reinterpret_cast<const uint64_t*>(end_buffer + sizeof(first_end_integer));
 			AppendValue(*second_end_integer);
 		}
 	}
 }
 
 // sort the interface LUIDs so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_luids)
+void
+NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_luids)
 {
 	const auto* luids = interface_luids.pLUIDs;
 	const auto luids_count = interface_luids.dwNumLUIDs;
@@ -1291,9 +1398,12 @@ void NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_lui
 	{
 		AppendValue(luids_count);
 		std::vector sorted_luids(luids, luids + luids_count);
-		std::ranges::sort(sorted_luids, [](const GUID& a, const GUID& b) {
-			return memcmp(&a, &b, sizeof(GUID)) < 0;
-			});
+		std::ranges::sort(
+		    sorted_luids,
+		    [](const GUID& a, const GUID& b)
+		    {
+			    return memcmp(&a, &b, sizeof(GUID)) < 0;
+		    });
 		for (const auto& luid : sorted_luids)
 		{
 			AppendValue(luid);
@@ -1302,7 +1412,8 @@ void NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_lui
 }
 
 // sort the platform list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 {
 	const auto* platforms = list.pPlatforms;
 	const auto platform_count = list.dwNumEntries;
@@ -1318,21 +1429,24 @@ void NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 	{
 		AppendValue(platform_count);
 		std::vector sorted_platforms(platforms, platforms + platform_count);
-		std::ranges::sort(sorted_platforms, [](const FW_OS_PLATFORM& a, const FW_OS_PLATFORM& b) {
-			if (a.bPlatform != b.bPlatform)
-			{
-				return a.bPlatform < b.bPlatform;
-			}
-			if (a.bMajorVersion != b.bMajorVersion)
-			{
-				return a.bMajorVersion < b.bMajorVersion;
-			}
-			if (a.bMinorVersion != b.bMinorVersion)
-			{
-				return a.bMinorVersion < b.bMinorVersion;
-			}
-			return a.Reserved < b.Reserved;
-			});
+		std::ranges::sort(
+		    sorted_platforms,
+		    [](const FW_OS_PLATFORM& a, const FW_OS_PLATFORM& b)
+		    {
+			    if (a.bPlatform != b.bPlatform)
+			    {
+				    return a.bPlatform < b.bPlatform;
+			    }
+			    if (a.bMajorVersion != b.bMajorVersion)
+			    {
+				    return a.bMajorVersion < b.bMajorVersion;
+			    }
+			    if (a.bMinorVersion != b.bMinorVersion)
+			    {
+				    return a.bMinorVersion < b.bMinorVersion;
+			    }
+			    return a.Reserved < b.Reserved;
+		    });
 		for (const auto& platform : sorted_platforms)
 		{
 			AppendValue(platform.bPlatform);
@@ -1346,7 +1460,8 @@ void NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 // ReSharper disable once CppParameterMayBeConstPtrOrRef
 // cannot be a const pointer, as the pointer value in the rule is not const
 // sort the object metadata list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_OBJECT_METADATA* pMetadata)
+void
+NormalizedFirewallRule::AppendValue(const FW_OBJECT_METADATA* pMetadata)
 {
 	if (!pMetadata)
 	{
@@ -1380,7 +1495,8 @@ void NormalizedFirewallRule::AppendValue(const FW_OBJECT_METADATA* pMetadata)
 }
 
 // sort the network names list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
+void
+NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
 {
 	const auto* names = network_names.wszNames;
 	const auto names_count = network_names.dwNumEntries;
@@ -1397,9 +1513,12 @@ void NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
 	{
 		AppendValue(names_count);
 		std::vector sorted_names(names, names + names_count);
-		std::ranges::sort(sorted_names, [](const LPWSTR& a, const LPWSTR& b) {
-			return NormalizedString::StringCompare(a, b) < 0;
-			});
+		std::ranges::sort(
+		    sorted_names,
+		    [](const LPWSTR& a, const LPWSTR& b)
+		    {
+			    return NormalizedString::StringCompare(a, b) < 0;
+		    });
 		for (const auto& name : sorted_names)
 		{
 			AppendValue(name);
@@ -1408,7 +1527,8 @@ void NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
 }
 
 // sort the dynamic keyword list so we can find duplicates even if they are in different order
-void NormalizedFirewallRule::AppendValue(const FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST& list)
+void
+NormalizedFirewallRule::AppendValue(const FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST& list)
 {
 	const auto* ids = list.ids;
 	const auto ids_count = list.dwNumIds;

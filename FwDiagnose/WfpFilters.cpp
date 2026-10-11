@@ -21,18 +21,19 @@ static std::vector<FilterDetails> g_all_filters;
 * 
 static std::wstring FwpmConditionFieldToString(const GUID& fieldKey) noexcept;
 */
-const std::vector<FilterDetails>& ReadWfpFilters() noexcept
+const std::vector<FilterDetails>&
+ReadWfpFilters() noexcept
 {
 	return g_all_filters;
 }
 
-void WriteWfpFilters() noexcept
+void
+WriteWfpFilters() noexcept
 {
-	std::printf(
-		"\n"
-		"**************************************************************************************\n"
-		"                                     WFP Filters                                      \n"
-		"**************************************************************************************\n");
+	std::printf("\n"
+	            "**************************************************************************************\n"
+	            "                                     WFP Filters                                      \n"
+	            "**************************************************************************************\n");
 	size_t filter_count = 0;
 	size_t disabled_count = 0;
 	size_t persistent_count = 0;
@@ -70,7 +71,8 @@ void WriteWfpFilters() noexcept
 	}
 }
 
-void LoadWfpFilters() noexcept
+void
+LoadWfpFilters() noexcept
 try
 {
 	g_all_filters.clear();
@@ -87,10 +89,10 @@ try
 		THROW_WIN32(fwpm_error);
 	}
 	const auto close_enum_handle = wil::scope_exit(
-		[&]
-		{
-			FwpmFilterDestroyEnumHandle0(engine_handle, enum_handle);
-		});
+	    [&]
+	    {
+		    FwpmFilterDestroyEnumHandle0(engine_handle, enum_handle);
+	    });
 
 	for (;;)
 	{
@@ -107,57 +109,55 @@ try
 			THROW_WIN32(fwpm_error);
 		}
 		const auto free_filter_entries = wil::scope_exit(
-			[&]
-			{
-				FwpmFreeMemory0(reinterpret_cast<void**>(&entries));
-			});
+		    [&]
+		    {
+			    FwpmFreeMemory0(reinterpret_cast<void**>(&entries));
+		    });
 
 		for (UINT32 i = 0; i < numEntriesReturned; ++i)
 		{
 			const auto* current_fwpm_filter = entries[i];
-			g_all_filters.push_back(
-				FilterDetails{
-					.filterKey = current_fwpm_filter->filterKey,
-					.filterId = current_fwpm_filter->filterId,
-					.layerKey = current_fwpm_filter->layerKey,
-					.subLayerKey = current_fwpm_filter->subLayerKey,
-					.name = current_fwpm_filter->displayData.name ? NormalizedString::Create(current_fwpm_filter->displayData.name) : NormalizedString::Create(L""),
-					.description = current_fwpm_filter->displayData.description ? current_fwpm_filter->displayData.description : L"",
-					.flags = current_fwpm_filter->flags,
-					.weight =
-						current_fwpm_filter->weight.type == FWP_UINT64 ? *current_fwpm_filter->weight.uint64
-						:
-						current_fwpm_filter->weight.type == FWP_UINT32 ? current_fwpm_filter->weight.uint32
-						:
-						current_fwpm_filter->weight.type == FWP_UINT16 ? current_fwpm_filter->weight.uint16
-						:
-						current_fwpm_filter->weight.type == FWP_UINT8 ? current_fwpm_filter->weight.uint8
-						:
-						0,
-					.effectiveWeight =
-						current_fwpm_filter->effectiveWeight.type == FWP_UINT64 ? *current_fwpm_filter->effectiveWeight.uint64
-						:
-						current_fwpm_filter->effectiveWeight.type == FWP_UINT32 ? current_fwpm_filter->effectiveWeight.uint32
-						:
-						current_fwpm_filter->effectiveWeight.type == FWP_UINT16 ? current_fwpm_filter->effectiveWeight.uint16
-						:
-						current_fwpm_filter->effectiveWeight.type == FWP_UINT8 ? current_fwpm_filter->effectiveWeight.uint8
-						:
-						0,
-					.providerKey = current_fwpm_filter->providerKey ? std::optional(*current_fwpm_filter->providerKey) : std::nullopt,
-					.providerData =
-						current_fwpm_filter->providerData.data ? std::vector(
-							current_fwpm_filter->providerData.data,
-							current_fwpm_filter->providerData.data + current_fwpm_filter->providerData.size)
-						: std::vector<uint8_t>{},
-					.numFilterConditions = current_fwpm_filter->numFilterConditions,
-					.filterConditions = current_fwpm_filter->filterCondition ?
-						std::vector(
-							current_fwpm_filter->filterCondition,
-							current_fwpm_filter->filterCondition + current_fwpm_filter->numFilterConditions)
-						: std::vector<FWPM_FILTER_CONDITION0>{},
-					.action_type = current_fwpm_filter->action,
-				});
+			g_all_filters.push_back(FilterDetails{
+			    .filterKey = current_fwpm_filter->filterKey,
+			    .filterId = current_fwpm_filter->filterId,
+			    .layerKey = current_fwpm_filter->layerKey,
+			    .subLayerKey = current_fwpm_filter->subLayerKey,
+			    .name = current_fwpm_filter->displayData.name
+			                ? NormalizedString::Create(current_fwpm_filter->displayData.name)
+			                : NormalizedString::Create(L""),
+			    .description =
+			        current_fwpm_filter->displayData.description ? current_fwpm_filter->displayData.description : L"",
+			    .flags = current_fwpm_filter->flags,
+			    .weight = current_fwpm_filter->weight.type == FWP_UINT64   ? *current_fwpm_filter->weight.uint64
+			              : current_fwpm_filter->weight.type == FWP_UINT32 ? current_fwpm_filter->weight.uint32
+			              : current_fwpm_filter->weight.type == FWP_UINT16 ? current_fwpm_filter->weight.uint16
+			              : current_fwpm_filter->weight.type == FWP_UINT8  ? current_fwpm_filter->weight.uint8
+			                                                               : 0,
+			    .effectiveWeight = current_fwpm_filter->effectiveWeight.type == FWP_UINT64
+			                           ? *current_fwpm_filter->effectiveWeight.uint64
+			                       : current_fwpm_filter->effectiveWeight.type == FWP_UINT32
+			                           ? current_fwpm_filter->effectiveWeight.uint32
+			                       : current_fwpm_filter->effectiveWeight.type == FWP_UINT16
+			                           ? current_fwpm_filter->effectiveWeight.uint16
+			                       : current_fwpm_filter->effectiveWeight.type == FWP_UINT8
+			                           ? current_fwpm_filter->effectiveWeight.uint8
+			                           : 0,
+			    .providerKey =
+			        current_fwpm_filter->providerKey ? std::optional(*current_fwpm_filter->providerKey) : std::nullopt,
+			    .providerData = current_fwpm_filter->providerData.data ? std::vector(
+			                                                                 current_fwpm_filter->providerData.data,
+			                                                                 current_fwpm_filter->providerData.data +
+			                                                                     current_fwpm_filter->providerData.size)
+			                                                           : std::vector<uint8_t>{},
+			    .numFilterConditions = current_fwpm_filter->numFilterConditions,
+			    .filterConditions =
+			        current_fwpm_filter->filterCondition
+			            ? std::vector(
+			                  current_fwpm_filter->filterCondition,
+			                  current_fwpm_filter->filterCondition + current_fwpm_filter->numFilterConditions)
+			            : std::vector<FWPM_FILTER_CONDITION0>{},
+			    .action_type = current_fwpm_filter->action,
+			});
 
 			// update sublayer details
 			try
@@ -178,9 +178,9 @@ try
 				if (VerboseOutputEnabled())
 				{
 					std::printf(
-						"   Filter %ls in unknown sublayer %ls\n",
-						current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
-						GuidToString(current_fwpm_filter->subLayerKey).c_str());
+					    "   Filter %ls in unknown sublayer %ls\n",
+					    current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
+					    GuidToString(current_fwpm_filter->subLayerKey).c_str());
 				}
 			}
 
@@ -206,9 +206,10 @@ try
 					{
 
 						std::printf(
-							"   Filter %ls has unknown provider %ls\n",
-							current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
-							GuidToString(*current_fwpm_filter->providerKey).c_str());
+						    "   Filter %ls has unknown provider %ls\n",
+						    current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name
+						                                          : L"(no name)",
+						    GuidToString(*current_fwpm_filter->providerKey).c_str());
 					}
 				}
 			}
@@ -225,7 +226,8 @@ catch (...)
 	std::printf("*** Exception occurred while reading filters (0x%x)\n", wil::ResultFromCaughtException());
 }
 
-void UpdateCalloutsByFilterCounts() noexcept
+void
+UpdateCalloutsByFilterCounts() noexcept
 {
 	// updates which callouts are referenced by filters
 
@@ -240,17 +242,18 @@ void UpdateCalloutsByFilterCounts() noexcept
 	{
 		if (current_fwpm_filter.InvokesCallout())
 		{
-			auto found_callout =
-				std::ranges::find_if(
-					ReadWfpCallouts(),
-					[&](const CalloutDetails& callout) {
-						return callout.callout_key == current_fwpm_filter.action_type.calloutKey;
-					});
+			auto found_callout = std::ranges::find_if(
+			    ReadWfpCallouts(),
+			    [&](const CalloutDetails& callout)
+			    {
+				    return callout.callout_key == current_fwpm_filter.action_type.calloutKey;
+			    });
 			if (found_callout == ReadWfpCallouts().end())
 			{
-				std::printf("  ** WARNING: Filter %ls references a callout that is not present on the system: %ls\n", \
-					current_fwpm_filter.name.value.c_str(),
-					GuidToString(current_fwpm_filter.action_type.calloutKey).c_str());
+				std::printf(
+				    "  ** WARNING: Filter %ls references a callout that is not present on the system: %ls\n",
+				    current_fwpm_filter.name.value.c_str(),
+				    GuidToString(current_fwpm_filter.action_type.calloutKey).c_str());
 			}
 			else
 			{
@@ -262,36 +265,37 @@ void UpdateCalloutsByFilterCounts() noexcept
 				{
 					++found_callout->referenced_by_filter_count_enabled;
 				}
-
 			}
 		}
 	}
 }
 
-const std::vector<FilterDetails>& SortFilterDetailsByFilterId()
+const std::vector<FilterDetails>&
+SortFilterDetailsByFilterId()
 {
 	std::ranges::sort(
-		g_all_filters,
-		[](const FilterDetails& lhs, const FilterDetails& rhs) noexcept
-		{
-			return lhs.filterId < rhs.filterId;
-		});
+	    g_all_filters,
+	    [](const FilterDetails& lhs, const FilterDetails& rhs) noexcept
+	    {
+		    return lhs.filterId < rhs.filterId;
+	    });
 	return g_all_filters;
 }
 
-const FilterDetails& FindFilterByFilterId(UINT64 filter_id)
+const FilterDetails&
+FindFilterByFilterId(UINT64 filter_id)
 {
 	bool retried_when_not_found = false;
 	for (;;)
 	{
 		const auto found_filter = std::lower_bound(
-			g_all_filters.cbegin(),
-			g_all_filters.cend(),
-			filter_id,
-			[](const FilterDetails& filter, const UINT64 id) noexcept
-			{
-				return filter.filterId < id;
-			});
+		    g_all_filters.cbegin(),
+		    g_all_filters.cend(),
+		    filter_id,
+		    [](const FilterDetails& filter, const UINT64 id) noexcept
+		    {
+			    return filter.filterId < id;
+		    });
 		if (found_filter == g_all_filters.cend())
 		{
 			if (retried_when_not_found)
@@ -313,27 +317,29 @@ const FilterDetails& FindFilterByFilterId(UINT64 filter_id)
 	}
 }
 
-const std::vector<FilterDetails>& SortFilterDetailsByName()
+const std::vector<FilterDetails>&
+SortFilterDetailsByName()
 {
 	std::ranges::sort(
-		g_all_filters,
-		[](const FilterDetails& lhs, const FilterDetails& rhs) noexcept
-		{
-			return lhs.name < rhs.name;
-		});
+	    g_all_filters,
+	    [](const FilterDetails& lhs, const FilterDetails& rhs) noexcept
+	    {
+		    return lhs.name < rhs.name;
+	    });
 	return g_all_filters;
 }
 
-size_t CountFiltersByName(const NormalizedString& rule_name)
+size_t
+CountFiltersByName(const NormalizedString& rule_name)
 {
 	const auto lower_bound_iter = std::lower_bound(
-		g_all_filters.cbegin(),
-		g_all_filters.cend(),
-		rule_name,
-		[](const FilterDetails& lhs, const NormalizedString& rhs) noexcept
-		{
-			return lhs.name < rhs;
-		});
+	    g_all_filters.cbegin(),
+	    g_all_filters.cend(),
+	    rule_name,
+	    [](const FilterDetails& lhs, const NormalizedString& rhs) noexcept
+	    {
+		    return lhs.name < rhs;
+	    });
 	if (lower_bound_iter == g_all_filters.cend())
 	{
 		// there can be zero filters when a rule exists that is set to match anything
@@ -341,27 +347,28 @@ size_t CountFiltersByName(const NormalizedString& rule_name)
 	}
 
 	const auto upper_bound_iter = std::upper_bound(
-		lower_bound_iter,
-		g_all_filters.cend(),
-		rule_name,
-		[](const NormalizedString& lhs, const FilterDetails& rhs) noexcept
-		{
-			return lhs < rhs.name;
-		});
+	    lower_bound_iter,
+	    g_all_filters.cend(),
+	    rule_name,
+	    [](const NormalizedString& lhs, const FilterDetails& rhs) noexcept
+	    {
+		    return lhs < rhs.name;
+	    });
 
 	return static_cast<size_t>(std::distance(lower_bound_iter, upper_bound_iter));
 }
 
-size_t CountFilterConditionsByName(const NormalizedString& rule_name)
+size_t
+CountFilterConditionsByName(const NormalizedString& rule_name)
 {
 	const auto lower_bound_iter = std::lower_bound(
-		g_all_filters.cbegin(),
-		g_all_filters.cend(),
-		rule_name,
-		[](const FilterDetails& lhs, const NormalizedString& rhs) noexcept
-		{
-			return lhs.name < rhs;
-		});
+	    g_all_filters.cbegin(),
+	    g_all_filters.cend(),
+	    rule_name,
+	    [](const FilterDetails& lhs, const NormalizedString& rhs) noexcept
+	    {
+		    return lhs.name < rhs;
+	    });
 	if (lower_bound_iter == g_all_filters.cend())
 	{
 		// there can be zero filters when a rule exists that is set to match anything
@@ -369,13 +376,13 @@ size_t CountFilterConditionsByName(const NormalizedString& rule_name)
 	}
 
 	const auto upper_bound_iter = std::upper_bound(
-		lower_bound_iter,
-		g_all_filters.cend(),
-		rule_name,
-		[](const NormalizedString& lhs, const FilterDetails& rhs) noexcept
-		{
-			return lhs < rhs.name;
-		});
+	    lower_bound_iter,
+	    g_all_filters.cend(),
+	    rule_name,
+	    [](const NormalizedString& lhs, const FilterDetails& rhs) noexcept
+	    {
+		    return lhs < rhs.name;
+	    });
 
 	size_t condition_count = 0;
 	for (auto iter = lower_bound_iter; iter != upper_bound_iter; ++iter)

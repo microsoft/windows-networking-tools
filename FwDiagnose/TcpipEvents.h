@@ -3,4 +3,5 @@
 
 #pragma once
 
-void ListenForTcpipEvents();
+void
+ListenForTcpipEvents();

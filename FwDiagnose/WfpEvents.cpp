@@ -19,8 +19,7 @@
 #include <wil/network.h>
 #include <wil/resource.h>
 
-static
-std::wstring
+static std::wstring
 IpProtocolToString(UINT8 protocol)
 {
 	switch (protocol)
@@ -88,8 +87,7 @@ IpProtocolToString(UINT8 protocol)
 	}
 }
 
-static
-std::wstring
+static std::wstring
 DirectionToString(UINT32 direction)
 {
 	switch (direction)
@@ -107,8 +105,7 @@ DirectionToString(UINT32 direction)
 	return L"(unknown FWP_DIRECTION - " + std::to_wstring(direction) + L")";
 }
 
-static
-std::wstring
+static std::wstring
 ProfileToString(UINT32 profile)
 {
 	switch (profile)
@@ -126,8 +123,7 @@ ProfileToString(UINT32 profile)
 	return L"(unknown Profile - " + std::to_wstring(profile) + L")";
 }
 
-static
-std::wstring
+static std::wstring
 ReauthReasonToString(UINT32 reauthReason)
 {
 	if (reauthReason == 0)
@@ -189,51 +185,92 @@ ReauthReasonToString(UINT32 reauthReason)
 
 // leveraged information from https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml
 // and https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml
-static
-std::wstring
+static std::wstring
 PrintIcmpType(UINT8 protocol, UINT16 type)
 {
 	if (protocol == IPPROTO_ICMP)
 	{
 		switch (type)
 		{
-		case 0: return L"Echo Reply (0)";
-		case 3: return L"Destination Unreachable (3)";
-		case 4: return L"Source Quench [Deprecated] (4)";
-		case 5: return L"Redirect (5)";
-		case 6: return L"Alternate Host Address [Deprecated] (6)";
-		case 8: return L"Echo (8)";
-		case 9: return L"Router Advertisement (9)";
-		case 10: return L"Router Solicitation (10)";
-		case 11: return L"Time Exceeded (11)";
-		case 12: return L"Parameter Problem (12)";
-		case 13: return L"Timestamp (13)";
-		case 14: return L"Timestamp Reply (14)";
-		case 15: return L"Information Request [Deprecated] (15)";
-		case 16: return L"Information Reply [Deprecated] (16)";
-		case 17: return L"Address Mask Request [Deprecated] (17)";
-		case 18: return L"Address Mask Reply [Deprecated] (18)";
-		case 19: return L"Reserved (for Security) (19)";
-		case 20: case 21: case 22: case 23: case 24:
-		case 25: case 26: case 27: case 28: case 29:
+		case 0:
+			return L"Echo Reply (0)";
+		case 3:
+			return L"Destination Unreachable (3)";
+		case 4:
+			return L"Source Quench [Deprecated] (4)";
+		case 5:
+			return L"Redirect (5)";
+		case 6:
+			return L"Alternate Host Address [Deprecated] (6)";
+		case 8:
+			return L"Echo (8)";
+		case 9:
+			return L"Router Advertisement (9)";
+		case 10:
+			return L"Router Solicitation (10)";
+		case 11:
+			return L"Time Exceeded (11)";
+		case 12:
+			return L"Parameter Problem (12)";
+		case 13:
+			return L"Timestamp (13)";
+		case 14:
+			return L"Timestamp Reply (14)";
+		case 15:
+			return L"Information Request [Deprecated] (15)";
+		case 16:
+			return L"Information Reply [Deprecated] (16)";
+		case 17:
+			return L"Address Mask Request [Deprecated] (17)";
+		case 18:
+			return L"Address Mask Reply [Deprecated] (18)";
+		case 19:
+			return L"Reserved (for Security) (19)";
+		case 20:
+		case 21:
+		case 22:
+		case 23:
+		case 24:
+		case 25:
+		case 26:
+		case 27:
+		case 28:
+		case 29:
 			return L"Reserved (for Robustness Experiment) (" + std::to_wstring(type) + L")";
-		case 30: return L"Traceroute [Deprecated] (30)";
-		case 31: return L"Datagram Conversion Error [Deprecated] (31)";
-		case 32: return L"Mobile Host Redirect [Deprecated] (32)";
-		case 33: return L"IPv6 Where-Are-You [Deprecated] (33)";
-		case 34: return L"IPv6 I-Am-Here [Deprecated] (34)";
-		case 35: return L"Mobile Registration Request [Deprecated] (35)";
-		case 36: return L"Mobile Registration Reply [Deprecated] (36)";
-		case 37: return L"Domain Name Request [Deprecated] (37)";
-		case 38: return L"Domain Name Reply [Deprecated] (38)";
-		case 39: return L"SKIP [Deprecated] (39)";
-		case 40: return L"Photuris (40)";
-		case 41: return L"ICMP messages utilized by experimental mobility protocols such as Seamoby (41)";
-		case 42: return L"Extended Echo Request (42)";
-		case 43: return L"Extended Echo Reply (43)";
-		case 253: return L"RFC3692-style Experiment 1 (253)";
-		case 254: return L"RFC3692-style Experiment 2 (254)";
-		case 255: return L"Reserved (255)";
+		case 30:
+			return L"Traceroute [Deprecated] (30)";
+		case 31:
+			return L"Datagram Conversion Error [Deprecated] (31)";
+		case 32:
+			return L"Mobile Host Redirect [Deprecated] (32)";
+		case 33:
+			return L"IPv6 Where-Are-You [Deprecated] (33)";
+		case 34:
+			return L"IPv6 I-Am-Here [Deprecated] (34)";
+		case 35:
+			return L"Mobile Registration Request [Deprecated] (35)";
+		case 36:
+			return L"Mobile Registration Reply [Deprecated] (36)";
+		case 37:
+			return L"Domain Name Request [Deprecated] (37)";
+		case 38:
+			return L"Domain Name Reply [Deprecated] (38)";
+		case 39:
+			return L"SKIP [Deprecated] (39)";
+		case 40:
+			return L"Photuris (40)";
+		case 41:
+			return L"ICMP messages utilized by experimental mobility protocols such as Seamoby (41)";
+		case 42:
+			return L"Extended Echo Request (42)";
+		case 43:
+			return L"Extended Echo Reply (43)";
+		case 253:
+			return L"RFC3692-style Experiment 1 (253)";
+		case 254:
+			return L"RFC3692-style Experiment 2 (254)";
+		case 255:
+			return L"Reserved (255)";
 		default:
 			if (type == 1 || type == 2 || type == 7 || type >= 44 && type <= 252)
 			{
@@ -246,53 +283,99 @@ PrintIcmpType(UINT8 protocol, UINT16 type)
 	{
 		switch (type)
 		{
-		case 0: return L"Reserved (0)";
-		case 1: return L"Destination Unreachable (1)";
-		case 2: return L"Packet Too Big (2)";
-		case 3: return L"Time Exceeded (3)";
-		case 4: return L"Parameter Problem (4)";
-		case 100: return L"Private experimentation (100)";
-		case 101: return L"Private experimentation (101)";
-		case 127: return L"Reserved for expansion of ICMPv6 error messages (127)";
-		case 128: return L"Echo Request (128)";
-		case 129: return L"Echo Reply (129)";
-		case 130: return L"Multicast Listener Query (130)";
-		case 131: return L"Multicast Listener Report (131)";
-		case 132: return L"Multicast Listener Done (132)";
-		case 133: return L"Router Solicitation (133)";
-		case 134: return L"Router Advertisement (134)";
-		case 135: return L"Neighbor Solicitation (135)";
-		case 136: return L"Neighbor Advertisement (136)";
-		case 137: return L"Redirect Message (137)";
-		case 138: return L"Router Renumbering (138)";
-		case 139: return L"ICMP Node Information Query (139)";
-		case 140: return L"ICMP Node Information Response (140)";
-		case 141: return L"Inverse Neighbor Discovery Solicitation Message (141)";
-		case 142: return L"Inverse Neighbor Discovery Advertisement Message (142)";
-		case 143: return L"Version 2 Multicast Listener Report (143)";
-		case 144: return L"Home Agent Address Discovery Request Message (144)";
-		case 145: return L"Home Agent Address Discovery Reply Message (145)";
-		case 146: return L"Mobile Prefix Solicitation (146)";
-		case 147: return L"Mobile Prefix Advertisement (147)";
-		case 148: return L"Certification Path Solicitation Message (148)";
-		case 149: return L"Certification Path Advertisement Message (149)";
-		case 150: return L"ICMP messages utilized by experimental mobility protocols such as Seamoby (150)";
-		case 151: return L"Multicast Router Advertisement (151)";
-		case 152: return L"Multicast Router Solicitation (152)";
-		case 153: return L"Multicast Router Termination (153)";
-		case 154: return L"FMIPv6 Messages (154)";
-		case 155: return L"RPL Control Message (155)";
-		case 156: return L"ILNPv6 Locator Update Message (156)";
-		case 157: return L"Duplicate Address Request (157)";
-		case 158: return L"Duplicate Address Confirmation (158)";
-		case 159: return L"MPL Control Message (159)";
-		case 160: return L"Extended Echo Request (160)";
-		case 161: return L"Extended Echo Reply (161)";
-		case 200: return L"Private experimentation (200)";
-		case 201: return L"Private experimentation (201)";
-		case 255: return L"Reserved for expansion of ICMPv6 informational messages (255)";
+		case 0:
+			return L"Reserved (0)";
+		case 1:
+			return L"Destination Unreachable (1)";
+		case 2:
+			return L"Packet Too Big (2)";
+		case 3:
+			return L"Time Exceeded (3)";
+		case 4:
+			return L"Parameter Problem (4)";
+		case 100:
+			return L"Private experimentation (100)";
+		case 101:
+			return L"Private experimentation (101)";
+		case 127:
+			return L"Reserved for expansion of ICMPv6 error messages (127)";
+		case 128:
+			return L"Echo Request (128)";
+		case 129:
+			return L"Echo Reply (129)";
+		case 130:
+			return L"Multicast Listener Query (130)";
+		case 131:
+			return L"Multicast Listener Report (131)";
+		case 132:
+			return L"Multicast Listener Done (132)";
+		case 133:
+			return L"Router Solicitation (133)";
+		case 134:
+			return L"Router Advertisement (134)";
+		case 135:
+			return L"Neighbor Solicitation (135)";
+		case 136:
+			return L"Neighbor Advertisement (136)";
+		case 137:
+			return L"Redirect Message (137)";
+		case 138:
+			return L"Router Renumbering (138)";
+		case 139:
+			return L"ICMP Node Information Query (139)";
+		case 140:
+			return L"ICMP Node Information Response (140)";
+		case 141:
+			return L"Inverse Neighbor Discovery Solicitation Message (141)";
+		case 142:
+			return L"Inverse Neighbor Discovery Advertisement Message (142)";
+		case 143:
+			return L"Version 2 Multicast Listener Report (143)";
+		case 144:
+			return L"Home Agent Address Discovery Request Message (144)";
+		case 145:
+			return L"Home Agent Address Discovery Reply Message (145)";
+		case 146:
+			return L"Mobile Prefix Solicitation (146)";
+		case 147:
+			return L"Mobile Prefix Advertisement (147)";
+		case 148:
+			return L"Certification Path Solicitation Message (148)";
+		case 149:
+			return L"Certification Path Advertisement Message (149)";
+		case 150:
+			return L"ICMP messages utilized by experimental mobility protocols such as Seamoby (150)";
+		case 151:
+			return L"Multicast Router Advertisement (151)";
+		case 152:
+			return L"Multicast Router Solicitation (152)";
+		case 153:
+			return L"Multicast Router Termination (153)";
+		case 154:
+			return L"FMIPv6 Messages (154)";
+		case 155:
+			return L"RPL Control Message (155)";
+		case 156:
+			return L"ILNPv6 Locator Update Message (156)";
+		case 157:
+			return L"Duplicate Address Request (157)";
+		case 158:
+			return L"Duplicate Address Confirmation (158)";
+		case 159:
+			return L"MPL Control Message (159)";
+		case 160:
+			return L"Extended Echo Request (160)";
+		case 161:
+			return L"Extended Echo Reply (161)";
+		case 200:
+			return L"Private experimentation (200)";
+		case 201:
+			return L"Private experimentation (201)";
+		case 255:
+			return L"Reserved for expansion of ICMPv6 informational messages (255)";
 		default:
-			if ((type >= 5 && type <= 99) || (type >= 102 && type <= 126) || (type >= 162 && type <= 199) || (type >= 202 && type <= 254))
+			if ((type >= 5 && type <= 99) || (type >= 102 && type <= 126) || (type >= 162 && type <= 199) ||
+			    (type >= 202 && type <= 254))
 			{
 				return L"Unassigned (" + std::to_wstring(type) + L")";
 			}
@@ -301,8 +384,7 @@ PrintIcmpType(UINT8 protocol, UINT16 type)
 	return L"Unknown ICMPv6 Type (" + std::to_wstring(type) + L")";
 }
 
-static
-std::wstring
+static std::wstring
 PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 {
 	if (protocol == IPPROTO_ICMP)
@@ -313,22 +395,38 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Net Unreachable (0)";
-			case 1: return L"Host Unreachable (1)";
-			case 2: return L"Protocol Unreachable (2)";
-			case 3: return L"Port Unreachable (3)";
-			case 4: return L"Fragmentation Needed and Don't Fragment was Set (4)";
-			case 5: return L"Source Route Failed (5)";
-			case 6: return L"Destination Network Unknown (6)";
-			case 7: return L"Destination Host Unknown (7)";
-			case 8: return L"Source Host Isolated (8)";
-			case 9: return L"Communication with Destination Network is Administratively Prohibited (9)";
-			case 10: return L"Communication with Destination Host is Administratively Prohibited (10)";
-			case 11: return L"Destination Network Unreachable for Type of Service (11)";
-			case 12: return L"Destination Host Unreachable for Type of Service (12)";
-			case 13: return L"Communication Administratively Prohibited (13)";
-			case 14: return L"Host Precedence Violation (14)";
-			case 15: return L"Precedence cutoff in effect (15)";
+			case 0:
+				return L"Net Unreachable (0)";
+			case 1:
+				return L"Host Unreachable (1)";
+			case 2:
+				return L"Protocol Unreachable (2)";
+			case 3:
+				return L"Port Unreachable (3)";
+			case 4:
+				return L"Fragmentation Needed and Don't Fragment was Set (4)";
+			case 5:
+				return L"Source Route Failed (5)";
+			case 6:
+				return L"Destination Network Unknown (6)";
+			case 7:
+				return L"Destination Host Unknown (7)";
+			case 8:
+				return L"Source Host Isolated (8)";
+			case 9:
+				return L"Communication with Destination Network is Administratively Prohibited (9)";
+			case 10:
+				return L"Communication with Destination Host is Administratively Prohibited (10)";
+			case 11:
+				return L"Destination Network Unreachable for Type of Service (11)";
+			case 12:
+				return L"Destination Host Unreachable for Type of Service (12)";
+			case 13:
+				return L"Communication Administratively Prohibited (13)";
+			case 14:
+				return L"Host Precedence Violation (14)";
+			case 15:
+				return L"Precedence cutoff in effect (15)";
 			}
 			break;
 		}
@@ -336,10 +434,14 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Redirect Datagram for the Network (0)";
-			case 1: return L"Redirect Datagram for the Host (1)";
-			case 2: return L"Redirect Datagram for the Type of Service and Network (2)";
-			case 3: return L"Redirect Datagram for the Type of Service and Host (3)";
+			case 0:
+				return L"Redirect Datagram for the Network (0)";
+			case 1:
+				return L"Redirect Datagram for the Host (1)";
+			case 2:
+				return L"Redirect Datagram for the Type of Service and Network (2)";
+			case 3:
+				return L"Redirect Datagram for the Type of Service and Host (3)";
 			}
 			break;
 		}
@@ -347,8 +449,10 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Normal router advertisement (0)";
-			case 16: return L"Does not route common traffic (16)";
+			case 0:
+				return L"Normal router advertisement (0)";
+			case 16:
+				return L"Does not route common traffic (16)";
 			}
 			break;
 		}
@@ -356,8 +460,10 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Time to Live exceeded in Transit (0)";
-			case 1: return L"Fragment Reassembly Time Exceeded (1)";
+			case 0:
+				return L"Time to Live exceeded in Transit (0)";
+			case 1:
+				return L"Fragment Reassembly Time Exceeded (1)";
 			}
 			break;
 		}
@@ -365,9 +471,12 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Pointer indicates the error (0)";
-			case 1: return L"Missing a Required Option (1)";
-			case 2: return L"Bad Length (2)";
+			case 0:
+				return L"Pointer indicates the error (0)";
+			case 1:
+				return L"Missing a Required Option (1)";
+			case 2:
+				return L"Bad Length (2)";
 			}
 			break;
 		}
@@ -375,12 +484,18 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Bad SPI (0)";
-			case 1: return L"Authentication Failed (1)";
-			case 2: return L"Decompression Failed (2)";
-			case 3: return L"Decryption Failed (3)";
-			case 4: return L"Need Authentication (4)";
-			case 5: return L"Need Authorization (5)";
+			case 0:
+				return L"Bad SPI (0)";
+			case 1:
+				return L"Authentication Failed (1)";
+			case 2:
+				return L"Decompression Failed (2)";
+			case 3:
+				return L"Decryption Failed (3)";
+			case 4:
+				return L"Need Authentication (4)";
+			case 5:
+				return L"Need Authorization (5)";
 			}
 			break;
 		}
@@ -388,11 +503,16 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"No Error (0)";
-			case 1: return L"Malformed Query (1)";
-			case 2: return L"No Such Interface (2)";
-			case 3: return L"No Such Table Entry (3)";
-			case 4: return L"Multiple Interfaces Satisfy Query (4)";
+			case 0:
+				return L"No Error (0)";
+			case 1:
+				return L"Malformed Query (1)";
+			case 2:
+				return L"No Such Interface (2)";
+			case 3:
+				return L"No Such Table Entry (3)";
+			case 4:
+				return L"Multiple Interfaces Satisfy Query (4)";
 			}
 			if (code >= 5 && code <= 255)
 			{
@@ -411,16 +531,26 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"No route to destination (0)";
-			case 1: return L"Communication with destination administratively prohibited (1)";
-			case 2: return L"Beyond scope of source address (2)";
-			case 3: return L"Address unreachable (3)";
-			case 4: return L"Port unreachable (4)";
-			case 5: return L"Source address failed ingress/egress policy (5)";
-			case 6: return L"Reject route to destination (6)";
-			case 7: return L"Error in Source Routing Header (7)";
-			case 8: return L"Headers too long (8)";
-			case 9: return L"Error in P-Route (9)";
+			case 0:
+				return L"No route to destination (0)";
+			case 1:
+				return L"Communication with destination administratively prohibited (1)";
+			case 2:
+				return L"Beyond scope of source address (2)";
+			case 3:
+				return L"Address unreachable (3)";
+			case 4:
+				return L"Port unreachable (4)";
+			case 5:
+				return L"Source address failed ingress/egress policy (5)";
+			case 6:
+				return L"Reject route to destination (6)";
+			case 7:
+				return L"Error in Source Routing Header (7)";
+			case 8:
+				return L"Headers too long (8)";
+			case 9:
+				return L"Error in P-Route (9)";
 			}
 			break;
 		}
@@ -428,8 +558,10 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Hop limit exceeded in transit (0)";
-			case 1: return L"Fragment reassembly time exceeded (1)";
+			case 0:
+				return L"Hop limit exceeded in transit (0)";
+			case 1:
+				return L"Fragment reassembly time exceeded (1)";
 			}
 			break;
 		}
@@ -437,17 +569,28 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Erroneous header field encountered (0)";
-			case 1: return L"Unrecognized Next Header type encountered (1)";
-			case 2: return L"Unrecognized IPv6 option encountered (2)";
-			case 3: return L"IPv6 First Fragment has incomplete IPv6 Header Chain (3)";
-			case 4: return L"SR Upper-layer Header Error (4)";
-			case 5: return L"Unrecognized Next Header type encountered by intermediate node (5)";
-			case 6: return L"Extension header too big (6)";
-			case 7: return L"Extension header chain too long (7)";
-			case 8: return L"Too many extension headers (8)";
-			case 9: return L"Too many options in extension header (9)";
-			case 10: return L"Option too big (10)";
+			case 0:
+				return L"Erroneous header field encountered (0)";
+			case 1:
+				return L"Unrecognized Next Header type encountered (1)";
+			case 2:
+				return L"Unrecognized IPv6 option encountered (2)";
+			case 3:
+				return L"IPv6 First Fragment has incomplete IPv6 Header Chain (3)";
+			case 4:
+				return L"SR Upper-layer Header Error (4)";
+			case 5:
+				return L"Unrecognized Next Header type encountered by intermediate node (5)";
+			case 6:
+				return L"Extension header too big (6)";
+			case 7:
+				return L"Extension header chain too long (7)";
+			case 8:
+				return L"Too many extension headers (8)";
+			case 9:
+				return L"Too many options in extension header (9)";
+			case 10:
+				return L"Option too big (10)";
 			}
 			break;
 		}
@@ -455,9 +598,12 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Router Renumbering Command (0)";
-			case 1: return L"Router Renumbering Result (1)";
-			case 255: return L"Sequence Number Reset (255)";
+			case 0:
+				return L"Router Renumbering Command (0)";
+			case 1:
+				return L"Router Renumbering Result (1)";
+			case 255:
+				return L"Sequence Number Reset (255)";
 			}
 			break;
 		}
@@ -465,9 +611,12 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"Data field contains an IPv6 address (0)";
-			case 1: return L"Data field contains a name (1)";
-			case 2: return L"Data field contains an IPv4 address (2)";
+			case 0:
+				return L"Data field contains an IPv6 address (0)";
+			case 1:
+				return L"Data field contains a name (1)";
+			case 2:
+				return L"Data field contains an IPv4 address (2)";
 			}
 			break;
 		}
@@ -475,9 +624,12 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"A successful reply (0)";
-			case 1: return L"The Responder refuses to supply the answer (1)";
-			case 2: return L"The Qtype of the Query is unknown to the Responder (2)";
+			case 0:
+				return L"A successful reply (0)";
+			case 1:
+				return L"The Responder refuses to supply the answer (1)";
+			case 2:
+				return L"The Qtype of the Query is unknown to the Responder (2)";
 			}
 			break;
 		}
@@ -485,11 +637,16 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"DAR message (0)";
-			case 1: return L"EDAR message with 64-bit ROVR field (1)";
-			case 2: return L"EDAR message with 128-bit ROVR field (2)";
-			case 3: return L"EDAR message with 192-bit ROVR field (3)";
-			case 4: return L"EDAR message with 256-bit ROVR field (4)";
+			case 0:
+				return L"DAR message (0)";
+			case 1:
+				return L"EDAR message with 64-bit ROVR field (1)";
+			case 2:
+				return L"EDAR message with 128-bit ROVR field (2)";
+			case 3:
+				return L"EDAR message with 192-bit ROVR field (3)";
+			case 4:
+				return L"EDAR message with 256-bit ROVR field (4)";
 			}
 			if (code >= 5 && code <= 15)
 			{
@@ -501,11 +658,16 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"DAC message (0)";
-			case 1: return L"EDAC message with 64-bit ROVR field (1)";
-			case 2: return L"EDAC message with 128-bit ROVR field (2)";
-			case 3: return L"EDAC message with 192-bit ROVR field (3)";
-			case 4: return L"EDAC message with 256-bit ROVR field (4)";
+			case 0:
+				return L"DAC message (0)";
+			case 1:
+				return L"EDAC message with 64-bit ROVR field (1)";
+			case 2:
+				return L"EDAC message with 128-bit ROVR field (2)";
+			case 3:
+				return L"EDAC message with 192-bit ROVR field (3)";
+			case 4:
+				return L"EDAC message with 256-bit ROVR field (4)";
 			}
 			if (code >= 5 && code <= 15)
 			{
@@ -517,7 +679,8 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"No Error (0)";
+			case 0:
+				return L"No Error (0)";
 			}
 			if (code >= 1 && code <= 255)
 			{
@@ -529,11 +692,16 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		{
 			switch (code)
 			{
-			case 0: return L"No Error (0)";
-			case 1: return L"Malformed Query (1)";
-			case 2: return L"No Such Interface (2)";
-			case 3: return L"No Such Table Entry (3)";
-			case 4: return L"Multiple Interfaces Satisfy Query (4)";
+			case 0:
+				return L"No Error (0)";
+			case 1:
+				return L"Malformed Query (1)";
+			case 2:
+				return L"No Such Interface (2)";
+			case 3:
+				return L"No Such Table Entry (3)";
+			case 4:
+				return L"Multiple Interfaces Satisfy Query (4)";
 			}
 			if (code >= 5 && code <= 255)
 			{
@@ -592,13 +760,9 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 	SYSTEMTIME local_time;
 	FAIL_FAST_IF_WIN32_BOOL_FALSE(SystemTimeToTzSpecificLocalTime(nullptr, &system_time, &local_time));
 
-	result += L"  - TimeStamp: " +
-		std::to_wstring(local_time.wMonth) + L"/" +
-		std::to_wstring(local_time.wDay) + L"/" +
-		std::to_wstring(local_time.wYear) + L"  " +
-		std::to_wstring(local_time.wHour) + L":" +
-		std::to_wstring(local_time.wMinute) + L":" +
-		std::to_wstring(local_time.wSecond) + L"\n";
+	result += L"  - TimeStamp: " + std::to_wstring(local_time.wMonth) + L"/" + std::to_wstring(local_time.wDay) + L"/" +
+	          std::to_wstring(local_time.wYear) + L"  " + std::to_wstring(local_time.wHour) + L":" +
+	          std::to_wstring(local_time.wMinute) + L":" + std::to_wstring(local_time.wSecond) + L"\n";
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REAUTH_REASON_SET)
 	{
@@ -650,7 +814,9 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		}
 		else if (net_event->header.ipVersion == FWP_IP_VERSION_V6)
 		{
-			static_assert(sizeof(local_in6addr.u.Byte) == sizeof(net_event->header.localAddrV6), "localAddrV6 size does not match in6_addr size");
+			static_assert(
+			    sizeof(local_in6addr.u.Byte) == sizeof(net_event->header.localAddrV6),
+			    "localAddrV6 size does not match in6_addr size");
 			memcpy(&local_in6addr.u.Byte, &net_event->header.localAddrV6, sizeof(local_in6addr));
 
 			WCHAR result_buf[47]{}; // documented to be large enough for a IPv6 address string
@@ -663,7 +829,8 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		}
 		else
 		{
-			result += L"(unknown IPVersion for the local address " + std::to_wstring(net_event->header.ipVersion) + L")";
+			result +=
+			    L"(unknown IPVersion for the local address " + std::to_wstring(net_event->header.ipVersion) + L")";
 		}
 
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
@@ -701,22 +868,23 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			WCHAR result_buf[17]{}; // documented to be large enough for a IPv4 address string
 			// the UINT32 is in host-byte order, so must convert it before printing
 			const auto fixed_address = ntohl(net_event->header.remoteAddrV4);
-			FAIL_FAST_IF(nullptr == RtlIpv4AddressToStringW(
-				reinterpret_cast<const in_addr*>(&fixed_address),
-				result_buf));
+			FAIL_FAST_IF(
+			    nullptr == RtlIpv4AddressToStringW(reinterpret_cast<const in_addr*>(&fixed_address), result_buf));
 			result += result_buf;
 		}
 		else if (net_event->header.ipVersion == FWP_IP_VERSION_V6)
 		{
 			WCHAR result_buf[47]{}; // documented to be large enough for a IPv6 address string
-			FAIL_FAST_IF(nullptr == RtlIpv6AddressToStringW(
-				reinterpret_cast<const in6_addr*>(&net_event->header.remoteAddrV6),
-				result_buf));
+			FAIL_FAST_IF(
+			    nullptr == RtlIpv6AddressToStringW(
+			                   reinterpret_cast<const in6_addr*>(&net_event->header.remoteAddrV6),
+			                   result_buf));
 			result += result_buf;
 		}
 		else
 		{
-			result += L"(unknown IPVersion for the remote address " + std::to_wstring(net_event->header.ipVersion) + L")";
+			result +=
+			    L"(unknown IPVersion for the remote address " + std::to_wstring(net_event->header.ipVersion) + L")";
 		}
 
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
@@ -749,33 +917,42 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			if (net_event->header.localPort != 0)
 			{
-				result += L"    ICMP Type (event flag not set): " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
+				result += L"    ICMP Type (event flag not set): " +
+				          PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
 				result += L"\n";
 			}
 		}
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
 		{
-			result += L"    ICMP Code: " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
+			result +=
+			    L"    ICMP Code: " +
+			    PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
 			result += L"\n";
 		}
 		else
 		{
 			if (net_event->header.localPort != 0)
 			{
-				result += L"    ICMP Type (event flag not set): " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
+				result += L"    ICMP Type (event flag not set): " +
+				          PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
 				result += L"\n";
 			}
 		}
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
 		{
-			result += L"    ICMP Code: " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
+			result +=
+			    L"    ICMP Code: " +
+			    PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
 			result += L"\n";
 		}
 		else
 		{
 			if (net_event->header.remotePort != 0)
 			{
-				result += L"    ICMP Code (event flag not set): " + PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
+				result += L"    ICMP Code (event flag not set): " + PrintIcmpCode(
+				                                                        net_event->header.ipProtocol,
+				                                                        net_event->header.localPort,
+				                                                        net_event->header.remotePort);
 				result += L"\n";
 			}
 		}
@@ -787,9 +964,14 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.appId.size > 0 && net_event->header.appId.data)
 		{
 			std::wstring appid_string(
-				reinterpret_cast<const wchar_t*>(net_event->header.appId.data),
-				net_event->header.appId.size / sizeof(wchar_t));
-			std::erase_if(appid_string, [](const auto ch) { return ch == L'\0'; }); // Remove any embedded nulls
+			    reinterpret_cast<const wchar_t*>(net_event->header.appId.data),
+			    net_event->header.appId.size / sizeof(wchar_t));
+			std::erase_if(
+			    appid_string,
+			    [](const auto ch)
+			    {
+				    return ch == L'\0';
+			    }); // Remove any embedded nulls
 
 			result += appid_string;
 		}
@@ -806,7 +988,8 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.userId)
 		{
 			wil::unique_hlocal_string sid_string;
-			if (!ConvertSidToStringSidW(net_event->header.userId, &sid_string)) {
+			if (!ConvertSidToStringSidW(net_event->header.userId, &sid_string))
+			{
 				const auto gle = GetLastError();
 				result += wil::str_printf<std::wstring>(L"Failed to convert UserId SID to string (0x%x)", gle);
 			}
@@ -817,37 +1000,64 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 				std::wstring localUserDomainName;
 				DWORD cchReferencedDomainName = 0;
 				SID_NAME_USE sid_name_use{};
-				if (!LookupAccountSidW(nullptr, net_event->header.userId, localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
+				if (!LookupAccountSidW(
+				        nullptr,
+				        net_event->header.userId,
+				        localUserOwnerName.data(),
+				        &localUserOwnerNameSize,
+				        localUserDomainName.data(),
+				        &cchReferencedDomainName,
+				        &sid_name_use))
 				{
 					if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
 					{
 						localUserOwnerName.resize(localUserOwnerNameSize);
 						localUserDomainName.resize(cchReferencedDomainName);
 
-						if (!LookupAccountSidW(nullptr, net_event->header.userId, localUserOwnerName.data(), &localUserOwnerNameSize, localUserDomainName.data(), &cchReferencedDomainName, &sid_name_use))
+						if (!LookupAccountSidW(
+						        nullptr,
+						        net_event->header.userId,
+						        localUserOwnerName.data(),
+						        &localUserOwnerNameSize,
+						        localUserDomainName.data(),
+						        &cchReferencedDomainName,
+						        &sid_name_use))
 						{
 							const auto gle = GetLastError();
-							result += wil::str_printf<std::wstring>(L"[Failed to LookupAccountSid(%ls) (0x%lx)]", sid_string.get(), gle);
+							result += wil::str_printf<std::wstring>(
+							    L"[Failed to LookupAccountSid(%ls) (0x%lx)]",
+							    sid_string.get(),
+							    gle);
 						}
 						else
 						{
-							std::erase_if(localUserOwnerName, [](const auto ch) { return ch == L'\0'; }); // Remove any embedded nulls
-							std::erase_if(localUserDomainName, [](const auto ch) { return ch == L'\0'; }); // Remove any embedded nulls
+							std::erase_if(
+							    localUserOwnerName,
+							    [](const auto ch)
+							    {
+								    return ch == L'\0';
+							    }); // Remove any embedded nulls
+							std::erase_if(
+							    localUserDomainName,
+							    [](const auto ch)
+							    {
+								    return ch == L'\0';
+							    }); // Remove any embedded nulls
 
 							if (localUserDomainName.empty())
 							{
 								result += wil::str_printf<std::wstring>(
-									L"%ls (%ls)",
-									localUserOwnerName.c_str(),
-									sid_string.get());
+								    L"%ls (%ls)",
+								    localUserOwnerName.c_str(),
+								    sid_string.get());
 							}
 							else
 							{
 								result += wil::str_printf<std::wstring>(
-									L"%ls\\%ls (%ls)",
-									localUserDomainName.c_str(),
-									localUserOwnerName.c_str(),
-									sid_string.get());
+								    L"%ls\\%ls (%ls)",
+								    localUserDomainName.c_str(),
+								    localUserOwnerName.c_str(),
+								    sid_string.get());
 							}
 						}
 					}
@@ -877,7 +1087,8 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.packageSid)
 		{
 			wil::unique_hlocal_string sid_string;
-			if (ConvertSidToStringSid(net_event->header.packageSid, &sid_string)) {
+			if (ConvertSidToStringSid(net_event->header.packageSid, &sid_string))
+			{
 				result += sid_string.get();
 				if (sid_string.get() == std::wstring(L"S-1-0-0"))
 				{
@@ -919,9 +1130,14 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.effectiveName.size > 0 && net_event->header.effectiveName.data)
 		{
 			std::wstring effective_name_string(
-				reinterpret_cast<const wchar_t*>(net_event->header.effectiveName.data),
-				net_event->header.effectiveName.size / sizeof(wchar_t));
-			std::erase_if(effective_name_string, [](const auto ch) { return ch == L'\0'; }); // Remove any embedded nulls
+			    reinterpret_cast<const wchar_t*>(net_event->header.effectiveName.data),
+			    net_event->header.effectiveName.size / sizeof(wchar_t));
+			std::erase_if(
+			    effective_name_string,
+			    [](const auto ch)
+			    {
+				    return ch == L'\0';
+			    }); // Remove any embedded nulls
 
 			result += L"    EffectiveName: " + effective_name_string + L"\n";
 		}
@@ -934,7 +1150,8 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 	return result;
 }
 
-std::wstring PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE2* event)
+std::wstring
+PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE2* event)
 {
 	std::wstring result;
 
@@ -975,7 +1192,8 @@ std::wstring PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE
 		{
 			if (event->localPrincipalGroupSids[i])
 			{
-				result += L"      LocalPrincipalGroupSid[" + std::to_wstring(i) + L"]: " + std::wstring(event->localPrincipalGroupSids[i]) + L"\n";
+				result += L"      LocalPrincipalGroupSid[" + std::to_wstring(i) + L"]: " +
+				          std::wstring(event->localPrincipalGroupSids[i]) + L"\n";
 			}
 		}
 	}
@@ -987,7 +1205,8 @@ std::wstring PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE
 		{
 			if (event->remotePrincipalGroupSids[i])
 			{
-				result += L"      RemotePrincipalGroupSid[" + std::to_wstring(i) + L"]: " + std::wstring(event->remotePrincipalGroupSids[i]) + L"\n";
+				result += L"      RemotePrincipalGroupSid[" + std::to_wstring(i) + L"]: " +
+				          std::wstring(event->remotePrincipalGroupSids[i]) + L"\n";
 			}
 		}
 	}
@@ -1002,7 +1221,8 @@ std::wstring PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE
 	return result;
 }
 
-std::wstring PrintNetEventIkeExtQmFailure(const FWPM_NET_EVENT_IKEEXT_QM_FAILURE1* event)
+std::wstring
+PrintNetEventIkeExtQmFailure(const FWPM_NET_EVENT_IKEEXT_QM_FAILURE1* event)
 {
 	std::wstring result;
 
@@ -1023,7 +1243,8 @@ std::wstring PrintNetEventIkeExtQmFailure(const FWPM_NET_EVENT_IKEEXT_QM_FAILURE
 	return result;
 }
 
-std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE1* event)
+std::wstring
+PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE1* event)
 {
 	std::wstring result;
 
@@ -1063,7 +1284,8 @@ std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE
 		{
 			if (event->localPrincipalGroupSids[i])
 			{
-				result += L"      LocalPrincipalGroupSid[" + std::to_wstring(i) + L"]: " + std::wstring(event->localPrincipalGroupSids[i]) + L"\n";
+				result += L"      LocalPrincipalGroupSid[" + std::to_wstring(i) + L"]: " +
+				          std::wstring(event->localPrincipalGroupSids[i]) + L"\n";
 			}
 		}
 	}
@@ -1075,7 +1297,8 @@ std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE
 		{
 			if (event->remotePrincipalGroupSids[i])
 			{
-				result += L"      RemotePrincipalGroupSid[" + std::to_wstring(i) + L"]: " + std::wstring(event->remotePrincipalGroupSids[i]) + L"\n";
+				result += L"      RemotePrincipalGroupSid[" + std::to_wstring(i) + L"]: " +
+				          std::wstring(event->remotePrincipalGroupSids[i]) + L"\n";
 			}
 		}
 	}
@@ -1085,7 +1308,8 @@ std::wstring PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE
 	return result;
 }
 
-std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2* event)
+std::wstring
+PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2* event)
 {
 	std::wstring result;
 
@@ -1101,7 +1325,6 @@ std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2* even
 	if (event->originalProfile == event->currentProfile)
 	{
 		result += L"    Profile: " + ProfileToString(event->currentProfile) + L"\n";
-
 	}
 	else
 	{
@@ -1139,7 +1362,8 @@ std::wstring PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2* even
 	return result;
 }
 
-std::wstring PrintNetEventIpSecKernelDrop(const FWPM_NET_EVENT_IPSEC_KERNEL_DROP0* event)
+std::wstring
+PrintNetEventIpSecKernelDrop(const FWPM_NET_EVENT_IPSEC_KERNEL_DROP0* event)
 {
 	std::wstring result;
 
@@ -1152,7 +1376,8 @@ std::wstring PrintNetEventIpSecKernelDrop(const FWPM_NET_EVENT_IPSEC_KERNEL_DROP
 	return result;
 }
 
-std::wstring PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
+std::wstring
+PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
 {
 	std::wstring result;
 
@@ -1212,7 +1437,8 @@ std::wstring PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* ev
 	return result;
 }
 
-std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALLOW0* event)
+std::wstring
+PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALLOW0* event)
 {
 	std::wstring result;
 
@@ -1227,7 +1453,6 @@ std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALLOW0* ev
 	if (event->originalProfile == event->currentProfile)
 	{
 		result += L"    Profile: " + ProfileToString(event->currentProfile) + L"\n";
-
 	}
 	else
 	{
@@ -1244,7 +1469,8 @@ std::wstring PrintNetEventClassifyAllow(const FWPM_NET_EVENT_CLASSIFY_ALLOW0* ev
 	return result;
 }
 
-std::wstring PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_DROP0* event)
+std::wstring
+PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_DROP0* event)
 {
 	std::wstring result;
 
@@ -1276,7 +1502,8 @@ std::wstring PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_DROP0* 
 	return result;
 }
 
-std::wstring PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY_ALLOW0* event)
+std::wstring
+PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY_ALLOW0* event)
 {
 	std::wstring result;
 
@@ -1308,7 +1535,8 @@ std::wstring PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY_ALLOW0
 	return result;
 }
 
-std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0* event)
+std::wstring
+PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0* event)
 {
 	std::wstring result;
 
@@ -1318,7 +1546,10 @@ std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC
 		WCHAR buf[4];
 		swprintf_s(buf, L"%02x", event->localMacAddr.byteArray6[i]);
 		result += buf;
-		if (i < 5) result += L":";
+		if (i < 5)
+		{
+			result += L":";
+		}
 	}
 	result += L"\n";
 
@@ -1328,7 +1559,10 @@ std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC
 		WCHAR buf[4];
 		swprintf_s(buf, L"%02x", event->remoteMacAddr.byteArray6[i]);
 		result += buf;
-		if (i < 5) result += L":";
+		if (i < 5)
+		{
+			result += L":";
+		}
 	}
 	result += L"\n";
 
@@ -1351,7 +1585,6 @@ std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC
 	if (event->originalProfile == event->currentProfile)
 	{
 		result += L"    Profile: " + ProfileToString(event->currentProfile) + L"\n";
-
 	}
 	else
 	{
@@ -1389,7 +1622,8 @@ std::wstring PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC
 	return result;
 }
 
-std::wstring PrintNetEventLpmPacketArrival(const FWPM_NET_EVENT_LPM_PACKET_ARRIVAL0* event)
+std::wstring
+PrintNetEventLpmPacketArrival(const FWPM_NET_EVENT_LPM_PACKET_ARRIVAL0* event)
 {
 	std::wstring result;
 
@@ -1398,12 +1632,14 @@ std::wstring PrintNetEventLpmPacketArrival(const FWPM_NET_EVENT_LPM_PACKET_ARRIV
 	return result;
 }
 
-void ListenForWfpNetEvents()
+void
+ListenForWfpNetEvents()
 {
 	// verify has admin access
 	if (!HasFirewallAdminAccess())
 	{
-		std::printf("  Administrative privileges required - try running from an elevated Administrator command prompt.\n");
+		std::printf(
+		    "  Administrative privileges required - try running from an elevated Administrator command prompt.\n");
 		THROW_WIN32(ERROR_ACCESS_DENIED);
 	}
 
@@ -1415,73 +1651,69 @@ void ListenForWfpNetEvents()
 
 	HANDLE eventsHandle{};
 	const auto fwpm_subscription_error = FwpmNetEventSubscribe4(
-		GetFwpmEngineHandle(),
-		&subscription_info,
-		[](void*, const FWPM_NET_EVENT5* event)
-		{
-			try
-			{
-				std::printf(
-					"\n** NetEvent received **\n"
-					"%ls"
-					"%ls"
-					"%ls",
-					PrintNetEventType(event).c_str(),
-					PrintNetEventHeader(event).c_str(),
-					PrintNetEventDetailedStruct(event).c_str());
+	    GetFwpmEngineHandle(),
+	    &subscription_info,
+	    [](void*, const FWPM_NET_EVENT5* event)
+	    {
+		    try
+		    {
+			    std::printf(
+			        "\n** NetEvent received **\n"
+			        "%ls"
+			        "%ls"
+			        "%ls",
+			        PrintNetEventType(event).c_str(),
+			        PrintNetEventHeader(event).c_str(),
+			        PrintNetEventDetailedStruct(event).c_str());
 
-				if (event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP)
-				{
-					std::printf("   * Classify Drop Event\n");
-					const auto& found_filter = FindFilterByFilterId(event->classifyDrop->filterId);
-					std::printf(
-						"     * Filter name: %ls\n"
-						"     * Filter description: %ls\n",
-						found_filter.name.value.c_str(),
-						found_filter.description.c_str());
+			    if (event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP)
+			    {
+				    std::printf("   * Classify Drop Event\n");
+				    const auto& found_filter = FindFilterByFilterId(event->classifyDrop->filterId);
+				    std::printf(
+				        "     * Filter name: %ls\n"
+				        "     * Filter description: %ls\n",
+				        found_filter.name.value.c_str(),
+				        found_filter.description.c_str());
 
-					if (found_filter.InvokesCallout())
-					{
-						std::printf(
-							"     * Filter invokes callout: %ls\n",
-							PrintCallout(found_filter.action_type.calloutKey).
-							c_str());
-					}
+				    if (found_filter.InvokesCallout())
+				    {
+					    std::printf(
+					        "     * Filter invokes callout: %ls\n",
+					        PrintCallout(found_filter.action_type.calloutKey).c_str());
+				    }
 
-					const auto& found_sublayer = FindSublayer(found_filter.subLayerKey);
-					std::printf(
-						"     * Filter layer: %hs\n"
-						"     * Filter sublayer: %ls\n",
-						FwpmLayerToString(found_filter.layerKey).c_str(),
-						SublayerToSimpleString(found_sublayer).c_str());
-				}
-			}
-			catch (const std::exception& ex)
-			{
-				std::printf(
-					"\n*** An error occurred processing a NetEvent: %hs\n",
-					ex.what());
-			}
-		},
-		nullptr, // null context
-		&eventsHandle);
+				    const auto& found_sublayer = FindSublayer(found_filter.subLayerKey);
+				    std::printf(
+				        "     * Filter layer: %hs\n"
+				        "     * Filter sublayer: %ls\n",
+				        FwpmLayerToString(found_filter.layerKey).c_str(),
+				        SublayerToSimpleString(found_sublayer).c_str());
+			    }
+		    }
+		    catch (const std::exception& ex)
+		    {
+			    std::printf("\n*** An error occurred processing a NetEvent: %hs\n", ex.what());
+		    }
+	    },
+	    nullptr, // null context
+	    &eventsHandle);
 	THROW_IF_WIN32_ERROR_MSG(fwpm_subscription_error, "FwpmNetEventSubscribe4");
 
-	std::printf(
-		"\n"
-		"**************************************************************************************\n"
-		"                            Subscribed to WFP NetEvents                               \n"
-		"                      ( press Ctrl-C to stop processing events )                      \n"
-		"**************************************************************************************\n");
+	std::printf("\n"
+	            "**************************************************************************************\n"
+	            "                            Subscribed to WFP NetEvents                               \n"
+	            "                      ( press Ctrl-C to stop processing events )                      \n"
+	            "**************************************************************************************\n");
 
 	static const wil::unique_event ctrl_event(wil::EventOptions::ManualReset);
 	SetConsoleCtrlHandler(
-		[](DWORD) -> BOOL
-		{
-			ctrl_event.SetEvent();
-			return TRUE;
-		},
-		TRUE);
+	    [](DWORD) -> BOOL
+	    {
+		    ctrl_event.SetEvent();
+		    return TRUE;
+	    },
+	    TRUE);
 	(void)ctrl_event.wait();
 
 	const auto fwpm_unsubscribe_error = FwpmNetEventUnsubscribe0(GetFwpmEngineHandle(), eventsHandle);
