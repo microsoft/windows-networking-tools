@@ -922,21 +922,32 @@ struct InboundRuleGroup
 	static void
 	swap_rule_counts(const NormalizedFirewallRule& lhs_rule_details, InboundRuleGroup& lhs, InboundRuleGroup& rhs)
 	{
-		if (lhs_rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW_BYPASS)
+		switch (lhs_rule_details.fw_rule->Action)
 		{
+		case FW_RULE_ACTION_ALLOW_BYPASS:
 			--lhs.allow_bypass_rule_count;
 			++rhs.allow_bypass_rule_count;
-		}
-		if (lhs_rule_details.fw_rule->Action == FW_RULE_ACTION_BLOCK)
-		{
+			break;
+
+		case FW_RULE_ACTION_BLOCK:
 			--lhs.block_rule_count;
 			++rhs.block_rule_count;
-		}
-		else
-		{
-			WI_ASSERT(lhs_rule_details.fw_rule->Action == FW_RULE_ACTION_ALLOW);
-			--lhs.allow_rule_count;
+			break;
+
+		default:
+			if (lhs_rule_details.fw_rule->Action != FW_RULE_ACTION_ALLOW)
+			{
+				// this should never happen, but if it does, count it as an allow rule
+				// this is consistent with how add_rule() counts any other action as an allow rule
+				std::printf(
+				    "  ** Unexpected firewall rule Action - counting it as an allow rule. Rule details:\n%ls\n",
+				    lhs_rule_details.PrintRule().c_str());
+			}
+
+			// add_rule counts any other action as an allow rule, so these counts must stay consistent with it
+		    --lhs.allow_rule_count;
 			++rhs.allow_rule_count;
+			break;
 		}
 
 		if (lhs_rule_details.is_rule_enabled)
