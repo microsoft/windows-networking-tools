@@ -75,6 +75,8 @@ struct NormalizedFirewallRule
 
   private:
 	void
+	ReportListWithNoEntries(PCSTR list_description) const;
+	void
 	CheckIfLocalApplicationExists();
 	void
 	ProcessLocalUserSid();

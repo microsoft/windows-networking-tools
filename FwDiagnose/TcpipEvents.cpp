@@ -552,7 +552,11 @@ ListenForTcpipEvents()
 				wil::network::socket_address local_sockaddr;
 				if (FAILED(ResetCompleteAddressNothrow(local_sockaddr, local_address.c_str())))
 				{
-					DebugBreak();
+					std::printf(
+					    "\n** TcpipTransportPacketDrops **\n"
+					    "       <Failed to parse 'LocalSockAddr' from event record: %ls>\n",
+					    local_address.c_str());
+					return;
 				}
 				if (local_sockaddr.address_type() == NlatBroadcast || local_sockaddr.address_type() == NlatMulticast)
 				{
@@ -562,11 +566,6 @@ ListenForTcpipEvents()
 				}
 				if (local_sockaddr.port() == 0)
 				{
-					const auto formatted_address = local_sockaddr.format_complete_address();
-					if (local_address != formatted_address)
-					{
-						DebugBreak();
-					}
 					// ignore drops to port 0 - this is generally local broadcast traffic
 					// TODO: consider logging with -verbose
 					return;

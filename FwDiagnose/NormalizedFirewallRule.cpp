@@ -1064,6 +1064,18 @@ NormalizedFirewallRule::RuleTargetsLocalAppxRuleApplication() const
 }
 
 void
+NormalizedFirewallRule::ReportListWithNoEntries(PCSTR list_description) const
+{
+	// the full rule cannot be printed here, as PrintRule reads the same list
+	std::printf(
+	    "  ** Firewall rule has a %hs with an entry count > 0 but no entries - treating it as empty. Rule Name: %ls, "
+	    "RuleId: %ls\n",
+	    list_description,
+	    rule_name.value.c_str(),
+	    rule_id.c_str());
+}
+
+void
 NormalizedFirewallRule::CheckIfLocalApplicationExists()
 {
 	if (!fw_rule->wszLocalApplication || fw_rule->wszLocalApplication[0] == L'\0')
@@ -1268,7 +1280,7 @@ NormalizedFirewallRule::AppendValue(const FW_PORT_RANGE_LIST& list)
 	{
 		if (ports_count != 0 && !ports)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("port list");
 		}
 		AppendValue(0);
 	}
@@ -1304,7 +1316,7 @@ NormalizedFirewallRule::AppendValue(const FW_ICMP_TYPE_CODE_LIST& list)
 	{
 		if (icmp_count != 0 && !icmp_list)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("ICMP type and code list");
 		}
 		AppendValue(0);
 	}
@@ -1340,7 +1352,7 @@ NormalizedFirewallRule::AppendValue(const FW_IPV4_SUBNET_LIST& list)
 	{
 		if (subnet_count != 0 && !subnets)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("IPv4 subnet list");
 		}
 		AppendValue(0);
 	}
@@ -1376,7 +1388,7 @@ NormalizedFirewallRule::AppendValue(const FW_IPV6_SUBNET_LIST& list)
 	{
 		if (subnet_count != 0 && !subnets)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("IPv6 subnet list");
 		}
 		AppendValue(0);
 	}
@@ -1419,7 +1431,7 @@ NormalizedFirewallRule::AppendValue(const FW_IPV4_RANGE_LIST& list)
 	{
 		if (range_count != 0 && !ranges)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("IPv4 range list");
 		}
 		AppendValue(0);
 	}
@@ -1454,7 +1466,7 @@ NormalizedFirewallRule::AppendValue(const FW_IPV6_RANGE_LIST& list)
 	{
 		if (range_count != 0 && !ranges)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("IPv6 range list");
 		}
 		AppendValue(0);
 	}
@@ -1505,7 +1517,7 @@ NormalizedFirewallRule::AppendValue(const FW_INTERFACE_LUIDS& interface_luids)
 	{
 		if (luids_count != 0 && !luids)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("interface LUID list");
 		}
 		AppendValue(0);
 	}
@@ -1536,7 +1548,7 @@ NormalizedFirewallRule::AppendValue(const FW_OS_PLATFORM_LIST& list)
 	{
 		if (platform_count != 0 && !platforms)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("OS platform list");
 		}
 		AppendValue(0);
 	}
@@ -1593,7 +1605,7 @@ NormalizedFirewallRule::AppendValue(const FW_OBJECT_METADATA* pMetadata)
 	{
 		if (enforcement_states_count != 0 && !enforcement_states)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("metadata enforcement state list");
 		}
 		AppendValue(0);
 	}
@@ -1620,7 +1632,7 @@ NormalizedFirewallRule::AppendValue(const FW_NETWORK_NAMES& network_names)
 	{
 		if (names_count != 0 && !names)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("network name list");
 		}
 		AppendValue(0);
 	}
@@ -1651,7 +1663,7 @@ NormalizedFirewallRule::AppendValue(const FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID
 	{
 		if (ids_count != 0 && !ids)
 		{
-			DebugBreak();
+			ReportListWithNoEntries("dynamic keyword address ID list");
 		}
 
 		AppendValue(0); // for the count

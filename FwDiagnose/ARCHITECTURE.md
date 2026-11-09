@@ -161,7 +161,7 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 
 | Issue | Location |
 |---|---|
-| `DebugBreak()` in shipping paths; without a debugger the process crashes, and a C++ `try` does not catch it. | `FindPackageSid`, `FindPackageFamilyName`, `ListenForTcpipEvents`, `NormalizedString::StringCompare` |
+| `DebugBreak()` in the shared ETW record parser; without a debugger the process crashes, and a C++ `try` does not catch it. | `ctl\ctEtwRecord.hpp` |
 | Debug output `<<-->>` left in inbound analysis. | `AnalyzeInboundRules` |
 | `wszPackageFamilyName` read without the requested-version guard. | `RuleTargetsLocalNonSystemApplication`, `AnalyzeFirewallRulesReferencingAppPackages` |
 | `is_rule_deleted` is set only by the last cleanup phase, so the checks for it in earlier phases never fire. | `Delete*Rules` |

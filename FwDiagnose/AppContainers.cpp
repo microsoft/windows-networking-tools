@@ -119,7 +119,8 @@ FindPackageSid(PCWSTR package_sid) noexcept
 		}
 		if (package.full_name_sid == package_sid)
 		{
-			DebugBreak();
+			WI_ASSERT(false);
+			return {package.full_name_sid, AppContainerName::SID};
 		}
 	}
 	return {{}, AppContainerName::None};
@@ -138,7 +139,8 @@ FindPackageFamilyName(const NormalizedString& package_family_name) noexcept
 		}
 		if (package.full_name == package_family_name)
 		{
-			DebugBreak();
+			WI_ASSERT(false);
+			return {package.full_name.value, AppContainerName::FullName};
 		}
 	}
 	return {{}, AppContainerName::None};

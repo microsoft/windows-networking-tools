@@ -106,8 +106,8 @@ struct NormalizedString
 		case CSTR_GREATER_THAN:
 			return 1;
 		default:
-			DebugBreak();
-			return 1; // should never reach here
+			WI_ASSERT(false);
+			return 1; // CompareStringOrdinal failed - report the strings as not equal
 		}
 	}
 
