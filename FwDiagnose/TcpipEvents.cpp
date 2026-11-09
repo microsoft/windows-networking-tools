@@ -15,6 +15,8 @@
 
 #include "WilNetworkLocal.h"
 
+// ReSharper disable StringLiteralTypo
+// ReSharper disable IdentifierTypo
 static std::wstring
 IpProtocolToString(UINT8 protocol)
 {
@@ -96,91 +98,91 @@ IpProtocolToString(int protocol)
 // also listen for TCPIP ETW events for packet drops and failed connections
 enum IpDiscardReason
 {
-	//
-	// Receive path discard reasons.
-	//
-	IpDiscardBadSourceAddress = 1,
-	IpDiscardNotLocallyDestined,
-	IpDiscardProtocolUnreachable,
-	IpDiscardPortUnreachable,
-	IpDiscardBadLength,
-	IpDiscardMalformedHeader,
-	IpDiscardNoRoute,
-	IpDiscardBeyondScope,
-	IpDiscardInspectionDrop, // Blocked by firewall, ICMP should not be sent.
-	IpDiscardTooManyDecapsulations,
-	IpDiscardAdministrativelyProhibited, // Blocked, ICMP should be sent.
-	IpDiscardBadChecksum,
-	IpDiscardFirstFragmentIncomplete,
-	IpDiscardHeaderNotContiguous,
-	IpDiscardHeaderNotAligned,
+    //
+    // Receive path discard reasons.
+    //
+    IpDiscardBadSourceAddress = 1,
+    IpDiscardNotLocallyDestined = 2,
+    IpDiscardProtocolUnreachable = 3,
+    IpDiscardPortUnreachable = 4,
+    IpDiscardBadLength = 5,
+    IpDiscardMalformedHeader = 6,
+    IpDiscardNoRoute = 7,
+    IpDiscardBeyondScope = 8,
+    IpDiscardInspectionDrop = 9, // Blocked by firewall, ICMP should not be sent.
+    IpDiscardTooManyDecapsulations = 10,
+    IpDiscardAdministrativelyProhibited = 11, // Blocked, ICMP should be sent.
+    IpDiscardBadChecksum = 12,
+    IpDiscardFirstFragmentIncomplete = 13,
+    IpDiscardHeaderNotContiguous = 14,
+    IpDiscardHeaderNotAligned = 15,
 
-	IpDiscardReceivePathMax = 127,
+    IpDiscardReceivePathMax = 127,
 
-	//
-	// Forward path discard reasons.
-	//
-	IpDiscardHopLimitExceeded,
-	IpDiscardAddressUnreachable,
-	IpDiscardRscPacket,
-	IpDiscardSourceViolation,
-	IpDiscardForwardPathMax = 255,
+    //
+    // Forward path discard reasons.
+    //
+    IpDiscardHopLimitExceeded = 128,
+    IpDiscardAddressUnreachable = 129,
+    IpDiscardRscPacket = 130,
+    IpDiscardSourceViolation = 131,
+    IpDiscardForwardPathMax = 255,
 
-	//
-	// Internally used discard reasons.
-	//
-	IpDiscardArbitrationUnhandled,
-	IpDiscardInspectionAbsorb, // WFP took ownership of the packet.
+    //
+    // Internally used discard reasons.
+    //
+    IpDiscardArbitrationUnhandled = 256,
+    IpDiscardInspectionAbsorb = 257, // WFP took ownership of the packet.
 
-	//
-	// Send path discard reasons not covered above.
-	//
-	IpDiscardDontFragmentMtuExceeded,
-	IpDiscardBufferLengthExceeded,
-	IpDiscardAddressResolutionTimeout,
-	IpDiscardAddressResolutionFailure,
-	IpDiscardIpsecFailure,
-	IpDiscardExtensionHeadersFailure,
-	IpDiscardAllocationFailure,
+    //
+    // Send path discard reasons not covered above.
+    //
+    IpDiscardDontFragmentMtuExceeded = 258,
+    IpDiscardBufferLengthExceeded = 259,
+    IpDiscardAddressResolutionTimeout = 260,
+    IpDiscardAddressResolutionFailure = 261,
+    IpDiscardIpsecFailure = 262,
+    IpDiscardExtensionHeadersFailure = 263,
+    IpDiscardAllocationFailure = 264,
 
-	//
-	// Discard reasons common to all paths.
-	//
-	IpDiscardIpsnpiClientDrop,
+    //
+    // Discard reasons common to all paths.
+    //
+    IpDiscardIpsnpiClientDrop = 265,
 
-	IpDiscardUnsupportedOffload,
-	IpDiscardRoutingFailure,
-	IpDiscardAncillaryDataFailure,
-	IpDiscardRawDataFailure,
-	IpDiscardSessionStateFailure,
+    IpDiscardUnsupportedOffload = 266,
+    IpDiscardRoutingFailure = 267,
+    IpDiscardAncillaryDataFailure = 268,
+    IpDiscardRawDataFailure = 269,
+    IpDiscardSessionStateFailure = 270,
 
-	IpDiscardIpsnpiAllocationFailure,
-	IpDiscardIpsnpiModifiedButNotForwarded,
-	IpDiscardIpsnpiNoNextHop,
-	IpDiscardIpsnpiNoCompartment,
-	IpDiscardIpsnpiNoInterface,
-	IpDiscardIpsnpiNoSubInterface,
-	IpDiscardIpsnpiInterfaceDisabled,
-	IpDiscardIpsnpiSegmentationFailed,
-	IpDiscardIpsnpiNoEthernetHeader,
-	IpDiscardIpsnpiUnexpectedFragment,
-	IpDiscardIpsnpiUnsupportedInterfaceType,
-	IpDiscardIpsnpiInvalidLsoInfo,
-	IpDiscardIpsnpiInvalidUsoInfo,
+    IpDiscardIpsnpiAllocationFailure = 271,
+    IpDiscardIpsnpiModifiedButNotForwarded = 272,
+    IpDiscardIpsnpiNoNextHop = 273,
+    IpDiscardIpsnpiNoCompartment = 274,
+    IpDiscardIpsnpiNoInterface = 275,
+    IpDiscardIpsnpiNoSubInterface = 276,
+    IpDiscardIpsnpiInterfaceDisabled = 277,
+    IpDiscardIpsnpiSegmentationFailed = 278,
+    IpDiscardIpsnpiNoEthernetHeader = 279,
+    IpDiscardIpsnpiUnexpectedFragment = 280,
+    IpDiscardIpsnpiUnsupportedInterfaceType = 281,
+    IpDiscardIpsnpiInvalidLsoInfo = 282,
+    IpDiscardIpsnpiInvalidUsoInfo = 283,
 
-	IpDiscardInternalError,
-	IpDiscardAdministrativelyConfigured,
-	IpDiscardBadOption,
-	IpDiscardLoopbackDisallowed,
-	IpDiscardSmallerScope,
-	IpDiscardQueueFull,
-	IpDiscardInterfaceDisabled,
-	IpDiscardNlClientDiscard,
+    IpDiscardInternalError = 284,
+    IpDiscardAdministrativelyConfigured = 285,
+    IpDiscardBadOption = 286,
+    IpDiscardLoopbackDisallowed = 287,
+    IpDiscardSmallerScope = 288,
+    IpDiscardQueueFull = 289,
+    IpDiscardInterfaceDisabled = 290,
+    IpDiscardNlClientDiscard = 291,
 
-	IpDiscardIpsnpiUroSegmentSizeExceedsMtu,
-	IpDiscardSwUsoFailure,
+    IpDiscardIpsnpiUroSegmentSizeExceedsMtu = 292,
+    IpDiscardSwUsoFailure = 293,
 
-	IpDiscardMax
+    IpDiscardMax = 294
 };
 
 enum InetDiscardReason
@@ -219,7 +221,7 @@ enum InetDiscardReason
 	InetDiscardSynAttack = 31,
 	InetDiscardAcceptInspection = 32,
 	InetDiscardAcceptRedirection = 33,
-	InetDiscardReasonMaxEnumValue
+	InetDiscardReasonMaxEnumValue = 34
 };
 
 enum FlDiscardReason
@@ -240,7 +242,7 @@ enum FlDiscardReason
 	FlDiscardNoClientInterface = 14,
 	FlDiscardTooManyNetBuffers = 15,
 	FlDiscardFlsnpiClientDrop = 16,
-	FlDiscardMax
+	FlDiscardMax = 17
 };
 
 static PCSTR
@@ -494,6 +496,8 @@ FramingDiscardReasonToString(FlDiscardReason reason) noexcept
 		return "<unknown FlDiscardReason>";
 	}
 }
+// ReSharper restore IdentifierTypo
+// ReSharper restore StringLiteralTypo
 
 void
 ListenForTcpipEvents()
@@ -814,6 +818,7 @@ ListenForTcpipEvents()
 				        .value_or(std::wstring(L"<etw-field-not-set>"))
 				        .c_str(),
 				    FramingDiscardReasonToString(static_cast<FlDiscardReason>(std::stoi(reason_string.value()))));
+				break;
 			}
 
 			case TcpSecurityRateLimit:
