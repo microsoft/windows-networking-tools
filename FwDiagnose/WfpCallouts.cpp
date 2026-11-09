@@ -957,6 +957,7 @@ RestoreDeletedFilters() noexcept
 	}
 
 	uint32_t failed_filters_restored = 0;
+	HRESULT first_restore_error = S_OK;
 
 	auto* const engine_handle = GetFwpmEngineHandle();
 	for (auto& [filter, filter_sd] : g_deletedWfpFilters)
@@ -966,6 +967,11 @@ RestoreDeletedFilters() noexcept
 			const auto fwpm_error = AddDeletedFilter(engine_handle, filter, filter_sd);
 			if (fwpm_error != ERROR_SUCCESS)
 			{
+				if (SUCCEEDED(first_restore_error))
+				{
+					first_restore_error = HRESULT_FROM_WIN32(fwpm_error);
+				}
+
 				// Fwpm* functions can return both Win32 errors and HRESULT values
 				// investigate these specific error cases
 				if (static_cast<HRESULT>(fwpm_error) == FWP_E_PROVIDER_CONTEXT_NOT_FOUND)
@@ -1123,6 +1129,7 @@ RestoreDeletedFilters() noexcept
 
 	if (failed_filters_restored > 0)
 	{
+		RecordOperationFailure(first_restore_error);
 		std::printf(
 		    "\n*** There were some filters for callout drivers that failed to be restored.\n"
 		    "    The callout drivers likely prevented others from manipulating their filters.\n"
@@ -1213,7 +1220,7 @@ try
 		    [[maybe_unused]] const auto lock = g_deletedWfpFiltersLock.lock();
 		    std::printf("\n * Restoring filters to callout drivers...\n");
 		    RestoreDeletedFilters();
-		    TerminateProcess(GetCurrentProcess(), 0);
+		    TerminateProcess(GetCurrentProcess(), static_cast<UINT>(FirstOperationFailure()));
 		    return TRUE;
 	    },
 	    TRUE));
@@ -1439,13 +1446,14 @@ try
 
 	// we must terminate process in this path - as the thread we created might still be waiting for user input
 	// and this causes the CRT to break on process exit since the thread is still running and waiting on user input
-	TerminateProcess(GetCurrentProcess(), 0);
+	TerminateProcess(GetCurrentProcess(), static_cast<UINT>(FirstOperationFailure()));
 }
 catch (...)
 {
 	std::printf(
 	    "*** Exception occurred while temporarily removing WFP filters for 3rd party callouts (0x%x)\n",
 	    wil::ResultFromCaughtException());
+	RecordOperationFailure(wil::ResultFromCaughtException());
 
 	// RestoreDeletedFilters empties the list, so the console control handler has nothing left to restore after this
 	[[maybe_unused]] const auto lock = g_deletedWfpFiltersLock.lock();

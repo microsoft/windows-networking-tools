@@ -382,7 +382,7 @@ InitializeProfileJsonReport(PCWSTR path, const std::vector<PCWSTR>& arguments)
 }
 
 void
-FinishProfileJsonReport(int exitCode)
+FinishProfileJsonReport(int exitCode, ReportRunOutcome outcome)
 {
 	if (!ProfileJsonReportEnabled())
 	{
@@ -392,7 +392,7 @@ FinishProfileJsonReport(int exitCode)
 	auto run = g_jsonReport.GetNamedObject(L"run");
 	run.SetNamedValue(L"finishedAt", String(Timestamp()));
 	run.SetNamedValue(L"exitCode", JsonValue::CreateNumberValue(exitCode));
-	run.SetNamedValue(L"status", String(exitCode == 0 ? L"partial" : L"failed"));
+	run.SetNamedValue(L"status", String(outcome == ReportRunOutcome::RanToEnd ? L"partial" : L"failed"));
 
 	const auto bytes = winrt::to_string(PrettifyJson(g_jsonReport) + L"\n");
 	size_t offset = 0;

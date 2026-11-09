@@ -42,7 +42,7 @@ After changing the setting, the tool prints each profile's configuration.
 
 - Only one form of each option is allowed per run. You cannot pass two profiles, as in `-enable-shields-up:public -enable-shields-up:private`; run the tool twice.
 - **Do not combine enable and disable.** The parser accepts it, the target profiles are merged, and disable wins. `-enable-shields-up:public -disable-shields-up:private` disables Shields Up on both profiles.
-- A failed change is printed for that profile, but the process still exits `0`.
+- A failed change is printed for that profile, and the process exits with that error.
 
 ### App packages
 
@@ -99,7 +99,7 @@ If restoration fails, the tool prints a recommendation to reboot. See [Known iss
 
 - It may appear only with `-analyze-rules`, `-clean-rules`, Shields Up commands, and `-verbose`, and needs at least one of the first three. Anything else fails before any work is done.
 - The path is the next argument and cannot begin with `-`. `-json` may appear only once.
-- It exports only firewall-profile configuration and per-store rule status. Every report has `run.status` of `partial` on success or `failed` on a nonzero exit, and a `json_export_incomplete` warning. `completed` is not yet produced at run level.
+- It exports only firewall-profile configuration and per-store rule status. Every report has a `json_export_incomplete` warning, and `run.status` is `partial` if the run reached the end, even with a nonzero exit code, or `failed` if it stopped early. `completed` is not yet produced at run level.
 - The file is created and truncated at startup, held open exclusively, and written only at the end. If the process dies, the file is empty.
 - `-jsonl` appears in the plan but is not implemented.
 
@@ -138,7 +138,7 @@ Run elevated. The code enforces this unevenly:
 | `-analyze-wfp`, `-wfp-events` | Explicit check; fails with `ERROR_ACCESS_DENIED` and a message. |
 | `-clean-rules` | Store open is denied; a message is printed. |
 | `-analyze-rules`, `-analyze-inbound-rules`, `-analyze-app-package-rules` | A store that is denied is reported as not analyzed, and the remaining stores are still loaded. |
-| Shields Up | Printed per profile; exit `0`. |
+| Shields Up | Printed per profile, and the exit code is the error. |
 | `-remove-callouts`, `-tcpip-events` | No explicit check; the underlying API calls fail. |
 | `-list-app-packages` | Uses `PackageManager.FindPackages()` for all users. A failure is printed to stderr and the list is empty. |
 
@@ -148,13 +148,13 @@ Every run other than the early-exit commands also starts an ETW session to get c
 
 | Code | Meaning |
 |---|---|
-| `0` | Ran to the end. **Does not mean every operation succeeded**; many failures are printed and not propagated. |
+| `0` | Ran to the end with no recorded failures. WFP and IP load failures and unreadable firewall profile properties are printed but do not change the exit code. |
 | `E_INVALIDARG` (`0x80070057`) | No arguments, conflicting shields options, a missing `-driver` value, or an invalid `-json` usage. |
 | `ERROR_BAD_ARGUMENTS` (160) | Unrecognized argument. |
 | `ERROR_INTERNAL_ERROR` (1359) | The restore event could not be opened, or an unexpected `std::exception`. |
-| Other | The `HRESULT` from an uncaught WIL error. |
+| Other | The `HRESULT` from an uncaught WIL error, or the first failure recorded during the run: a Shields Up change, a rule deletion, a filter restoration, or a firewall store or app-package load that an analysis depended on. The run continues after a recorded failure. |
 
-`-remove-callouts` exits through `TerminateProcess(..., 0)` after restoring, so it reports `0` even if restoration failed.
+Declining a prompt in `-clean-rules` or `-remove-callouts` is not a failure. A `-clean-rules` run returns an error if any single deletion failed, even if others succeeded.
 
 ## Examples
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 #include <algorithm>
+#include <atomic>
 #include <numeric>
 #include <thread>
 #include <vector>
@@ -24,6 +25,27 @@
 #include "AppContainers.h"
 #include "IpProperties.h"
 #include "ProfileJsonReport.h"
+
+// set when an exception ended the run, rather than a failure that was reported and recorded
+static bool g_runStoppedByException = false;
+
+// atomic because filters can be restored from the console control handler's thread
+static std::atomic<HRESULT> g_firstOperationFailure{S_OK};
+void
+RecordOperationFailure(HRESULT error) noexcept
+{
+	if (FAILED(error))
+	{
+		HRESULT expected = S_OK;
+		g_firstOperationFailure.compare_exchange_strong(expected, error);
+	}
+}
+
+HRESULT
+FirstOperationFailure() noexcept
+{
+	return g_firstOperationFailure.load();
+}
 
 // manually turn on debug output for lower-level debugging
 static bool g_debugOutputEnabled = false;
@@ -613,7 +635,8 @@ try
 		args.erase(removed_args.cbegin(), args.end());
 		LoadAllAppPackages();
 		PrintAllAppPackages();
-		return 0;
+		RecordOperationFailure(GetAppPackagesLoadResult());
+		return FirstOperationFailure();
 	}
 
 	if (std::ranges::find_if(
@@ -633,7 +656,7 @@ try
 		LoadAllAppPackages();
 		LoadFirewallRules();
 		AnalyzeFirewallRulesReferencingAppPackages();
-		return 0;
+		return FirstOperationFailure();
 	}
 
 	if (!args.empty())
@@ -665,7 +688,7 @@ try
 	{
 		wfp_thread.join();
 		TemporarilyRemoveWfpCalloutFilters();
-		return 0;
+		return FirstOperationFailure();
 	}
 
 	auto firewall_thread = std::thread{[]
@@ -719,7 +742,7 @@ try
 		ListenForTcpipEvents();
 	}
 
-	return 0;
+	return FirstOperationFailure();
 }
 catch (const wil::ResultException& ex)
 {
@@ -728,12 +751,14 @@ catch (const wil::ResultException& ex)
 	    ex.GetErrorCode(),
 	    ex.what()); // NOLINT(clang-diagnostic-format)
 	RecordProfileJsonFailure(nullptr, ex.GetErrorCode(), ex.what());
+	g_runStoppedByException = true;
 	return ex.GetErrorCode();
 }
 catch (const std::exception& ex)
 {
 	std::printf("\n*** An error occurred: %hs\n", ex.what());
 	RecordProfileJsonFailure(nullptr, HRESULT_FROM_WIN32(ERROR_INTERNAL_ERROR), ex.what());
+	g_runStoppedByException = true;
 	return ERROR_INTERNAL_ERROR;
 }
 
@@ -767,7 +792,12 @@ try
 		std::printf("  NOTE: JSON export currently includes firewall profiles and rule-status analysis only.\n");
 	}
 	const auto exitCode = RunFwDiagnose(static_cast<int>(arguments.size()), arguments.data());
-	FinishProfileJsonReport(exitCode);
+
+	// the exit code only matches the first recorded failure if the run continued to the end
+	const auto outcome = !g_runStoppedByException && exitCode == FirstOperationFailure()
+	                         ? ReportRunOutcome::RanToEnd
+	                         : ReportRunOutcome::StoppedEarly;
+	FinishProfileJsonReport(exitCode, outcome);
 	return exitCode;
 }
 catch (const wil::ResultException& ex)

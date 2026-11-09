@@ -58,12 +58,19 @@ struct FirewallProfileData
 	std::vector<FirewallProfileDiagnostic> diagnostics;
 };
 
+// RanToEnd can still have a nonzero exit code: a failure that was reported did not stop the rest of the run
+enum class ReportRunOutcome : uint8_t
+{
+	RanToEnd,
+	StoppedEarly
+};
+
 bool
 ProfileJsonReportEnabled() noexcept;
 void
 InitializeProfileJsonReport(PCWSTR path, const std::vector<PCWSTR>& arguments);
 void
-FinishProfileJsonReport(int exitCode);
+FinishProfileJsonReport(int exitCode, ReportRunOutcome outcome);
 void
 WriteFirewallProfileJson(const FirewallProfileData& profile, PCWSTR command);
 void

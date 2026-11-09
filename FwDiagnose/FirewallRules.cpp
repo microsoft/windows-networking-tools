@@ -136,6 +136,7 @@ PrintStoreLoadFailure(const FirewallPolicyObjects& policy) noexcept
 	    "  * Could not load the rules from the %hs store (0x%lx) - it was not analyzed\n",
 	    policy.store_type_string,
 	    policy.load_result);
+	RecordOperationFailure(policy.load_result);
 }
 
 namespace details
@@ -1618,6 +1619,7 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 				    "        Failed to delete one of the duplicate firewall rules (0x%lx) - RuleId %ls\n",
 				    HRESULT_FROM_WIN32(deleteRuleError),
 				    rule.fw_rule->wszRuleId);
+				RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
 			}
 			else
 			{
@@ -1745,6 +1747,7 @@ CheckForMissingAppPackage(
 		std::printf(
 		    "  * Skipping the app-package analysis: installed packages could not be loaded (0x%lx)\n",
 		    packages_load_result);
+		RecordOperationFailure(packages_load_result);
 		return;
 	}
 
@@ -1891,6 +1894,7 @@ DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Nor
 		if (deleteRuleError != ERROR_SUCCESS)
 		{
 			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
+			RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
 		}
 		else
 		{
@@ -2258,6 +2262,7 @@ DeleteUnresolvedUserAccountRules(
 		if (deleteRuleError != ERROR_SUCCESS)
 		{
 			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
+			RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
 		}
 		else
 		{
@@ -2896,6 +2901,7 @@ SetShieldsUp(const std::vector<NET_FW_PROFILE_TYPE2>& profiles, bool enabled)
 			    " ** Failed to set BlockAllInboundTraffic for profile %hs from INetFwPolicy2 (0x%lx) **\n",
 			    PrintFirewallProfileBitmask(profile).c_str(),
 			    hr);
+			RecordOperationFailure(hr);
 		}
 	}
 }
@@ -3028,6 +3034,7 @@ catch (const std::exception& ex)
 {
 	std::printf("An unexpected error occurred while processing firewall policies: %s\n", ex.what());
 	RecordProfileJsonFailure(command, wil::ResultFromCaughtException(), ex.what());
+	RecordOperationFailure(wil::ResultFromCaughtException());
 }
 
 void
@@ -3167,10 +3174,12 @@ ProcessFirewallRules()
 		catch (const wil::ResultException& ex)
 		{
 			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
+			RecordOperationFailure(ex.GetErrorCode());
 		}
 		catch (const std::exception& ex)
 		{
 			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
+			RecordOperationFailure(wil::ResultFromCaughtException());
 		}
 	}
 }
@@ -3223,10 +3232,12 @@ ProcessInboundRules()
 		catch (const wil::ResultException& ex)
 		{
 			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
+			RecordOperationFailure(ex.GetErrorCode());
 		}
 		catch (const std::exception& ex)
 		{
 			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
+			RecordOperationFailure(wil::ResultFromCaughtException());
 		}
 	}
 }

@@ -3,6 +3,8 @@
 
 #include "..\ProfileJsonReport.cpp"
 
+#include <fstream>
+#include <iterator>
 #include <stdexcept>
 
 void
@@ -318,7 +320,25 @@ try
 		            .GetNamedNumber(L"code") == static_cast<uint32_t>(E_ACCESSDENIED),
 		    "RSOP access denial diagnostic lost.");
 	}
-	FinishProfileJsonReport(0);
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+
+	const auto readRunStatus = [&]()
+	{
+		std::ifstream file(outputPath, std::ios::binary);
+		const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+		return std::wstring(
+		    JsonObject::Parse(winrt::to_hstring(text)).GetNamedObject(L"run").GetNamedString(L"status"));
+	};
+	Check(readRunStatus() == L"partial", "Successful run not reported as partial.");
+
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules"});
+	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::RanToEnd);
+	Check(readRunStatus() == L"partial", "A recorded failure that did not stop the run was reported as failed.");
+
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules"});
+	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::StoppedEarly);
+	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
+
 	std::printf("Profile and rule-status JSON tests passed.\n");
 	return 0;
 }

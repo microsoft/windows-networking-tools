@@ -40,6 +40,12 @@ RemoveCalloutDriverName() noexcept;
 PCWSTR
 GetNamedEventForRestoringFilters() noexcept;
 
+// Records a failure that was reported but did not stop the run. The first one recorded becomes the process exit code.
+void
+RecordOperationFailure(HRESULT error) noexcept;
+HRESULT
+FirstOperationFailure() noexcept;
+
 inline std::wstring
 GuidToString(const GUID& guid)
 {
