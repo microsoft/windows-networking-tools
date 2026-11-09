@@ -41,7 +41,7 @@ Prompts accept `y` (delete this one), `n` (keep it), `s` (skip the rest of this 
 After changing the setting, the tool prints each profile's configuration.
 
 - Only one form of each option is allowed per run. You cannot pass two profiles, as in `-enable-shields-up:public -enable-shields-up:private`; run the tool twice.
-- **Do not combine enable and disable.** The parser accepts it, the target profiles are merged, and disable wins. `-enable-shields-up:public -disable-shields-up:private` disables Shields Up on both profiles.
+- Enable and disable cannot be combined in one run, even for different profiles. The combination is an error and nothing is changed. Run the tool twice.
 - A failed change is printed for that profile, and the process exits with that error.
 
 ### App packages

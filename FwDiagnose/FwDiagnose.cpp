@@ -570,6 +570,13 @@ try
 		g_enableShieldsUpEnabled = true;
 	}
 
+	if (g_enableShieldsUpEnabled && g_disableShieldsEnabled)
+	{
+		std::printf("-enable-shields-up and -disable-shields-up cannot be specified together\n");
+		PrintUsage();
+		return E_INVALIDARG;
+	}
+
 	if (std::ranges::find_if(
 	        args,
 	        [&](const auto* lhs)
