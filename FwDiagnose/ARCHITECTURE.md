@@ -156,7 +156,6 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 
 | Issue | Location | Effect |
 |---|---|---|
-| Filter lookup accepts a near match | `FindFilterByFilterId` | `lower_bound` is not followed by an equality check, so a drop from a filter newer than the snapshot can be attributed to the next-higher filter ID. |
 | Framing drops fall through | `ListenForTcpipEvents` | The `TcpipFramingPacketDrops` case has no `break`, so each framing event also prints a "Failed to read 'SynAttacksDetected'" message. |
 | Allow-bypass counts corrupt | `InboundRuleGroup::swap_rule_counts` | A missing `else` makes bypass rules also decrement `allow_rule_count`, which underflows. |
 | Prompts loop forever at end of input | `PromptForDeletion` | `getline` failure is not checked. Redirected or closed stdin spins indefinitely. |

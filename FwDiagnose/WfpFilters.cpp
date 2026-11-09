@@ -300,7 +300,8 @@ FindFilterByFilterId(UINT64 filter_id)
 		    {
 			    return filter.filterId < id;
 		    });
-		if (found_filter == g_all_filters.cend())
+		// lower_bound returns the next-higher filter when this ID is not in the list
+		if (found_filter == g_all_filters.cend() || found_filter->filterId != filter_id)
 		{
 			if (retried_when_not_found)
 			{
