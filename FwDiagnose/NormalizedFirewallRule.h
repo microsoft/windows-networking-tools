@@ -10,6 +10,10 @@
 #include "NormalizedString.h"
 #include "WfpCounters.h"
 
+// true for a 32-bit process on 64-bit Windows, where the paths it sees differ from the paths rules refer to
+bool
+RunningUnderWow64() noexcept;
+
 struct NormalizedFirewallRule
 {
 	NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion);

@@ -18,6 +18,8 @@ Option names are case-insensitive and use a single leading `-`. With no argument
 
 `-clean-rules` deletes in this order within each store: rules with missing applications, rules with unresolved SIDs or no local profile, then duplicates.
 
+On 64-bit Windows, the 32-bit build skips the check for missing application files and says so, because redirection would make existing files look missing. Use the 64-bit build for that check.
+
 Prompts accept `y` (delete this one), `n` (keep it), `s` (skip the rest of this category in this store), and `a` (delete the rest of this category in this store without asking). For duplicates, `y` deletes all but one. If the duplicates have different names, a second prompt asks which name to keep.
 
 `-analyze-inbound-rules` details:

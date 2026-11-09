@@ -1642,6 +1642,13 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 static void
 CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
 {
+	if (RunningUnderWow64())
+	{
+		std::printf(
+		    "  * Skipping the check for missing application files: this 32-bit build cannot see the same paths "
+		    "as the Firewall on 64-bit Windows - use the 64-bit build\n");
+	}
+
 	size_t count_of_rules_with_local_application = 0;
 	size_t count_of_rules_with_per_user_variable = 0;
 

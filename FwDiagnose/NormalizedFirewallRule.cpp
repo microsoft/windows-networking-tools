@@ -496,6 +496,17 @@ ContainsServiceProfileEnvironmentVariable(const std::wstring& path)
 }
 } // namespace details
 
+bool
+RunningUnderWow64() noexcept
+{
+	static const bool running_under_wow64 = []() noexcept
+	{
+		BOOL is_wow64 = FALSE;
+		return IsWow64Process(GetCurrentProcess(), &is_wow64) && is_wow64;
+	}();
+	return running_under_wow64;
+}
+
 NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion)
 {
 	fw_rule = fwRule;
@@ -1082,6 +1093,11 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 	{
 		// this expands differently for this process than for the Firewall service, so the file cannot be checked here
 		local_application_uses_service_profile_variable = true;
+		return;
+	}
+	if (RunningUnderWow64())
+	{
+		// file system and environment redirection would make existing files look like they do not exist
 		return;
 	}
 
