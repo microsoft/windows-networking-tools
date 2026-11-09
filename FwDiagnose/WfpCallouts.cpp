@@ -301,10 +301,11 @@ SortCalloutsByFilterCounts()
 void
 WriteWfpCallouts() noexcept
 {
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "                                     WFP Callouts                                     \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "                                     WFP Callouts                                     \n"
+	    "**************************************************************************************\n");
 	std::printf(
 	    "  * Total callouts: %zu\n"
 	    "  * Total 3rd party callouts: %zd\n",
@@ -384,16 +385,18 @@ try
 		for (UINT32 i = 0; i < numEntriesReturned; ++i)
 		{
 			const auto* current_fwpm_filter = entries[i];
-			g_all_callouts.push_back(CalloutDetails{
-			    .callout_key = current_fwpm_filter->calloutKey,
-			    .applicable_layer = current_fwpm_filter->applicableLayer,
-			    .callout_id = current_fwpm_filter->calloutId,
-			    .layer = FwpmLayerToString(current_fwpm_filter->applicableLayer),
-			    .name = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
-			    .description = current_fwpm_filter->displayData.description
-			                       ? current_fwpm_filter->displayData.description
-			                       : L"(no description)",
-			});
+			g_all_callouts.push_back(
+			    CalloutDetails{
+			        .callout_key = current_fwpm_filter->calloutKey,
+			        .applicable_layer = current_fwpm_filter->applicableLayer,
+			        .callout_id = current_fwpm_filter->calloutId,
+			        .layer = FwpmLayerToString(current_fwpm_filter->applicableLayer),
+			        .name =
+			            current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"(no name)",
+			        .description = current_fwpm_filter->displayData.description
+			                           ? current_fwpm_filter->displayData.description
+			                           : L"(no description)",
+			    });
 		}
 
 		if (numEntriesReturned < entries_quested)
@@ -1067,10 +1070,11 @@ RestoreDeletedFilters() noexcept
 
 	if (failed_filters_restored > 0)
 	{
-		std::printf("\n*** There were some filters for callout drivers that failed to be restored.\n"
-		            "    The callout drivers likely prevented others from manipulating their filters.\n"
-		            "\n"
-		            "*** IT IS HIGHLY RECOMMENDED TO REBOOT AS SOON AS POSSIBLE ***\n");
+		std::printf(
+		    "\n*** There were some filters for callout drivers that failed to be restored.\n"
+		    "    The callout drivers likely prevented others from manipulating their filters.\n"
+		    "\n"
+		    "*** IT IS HIGHLY RECOMMENDED TO REBOOT AS SOON AS POSSIBLE ***\n");
 	}
 }
 
@@ -1078,10 +1082,11 @@ void
 TemporarilyRemoveWfpCalloutFilters()
 try
 {
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "               Temporarily Remove Filters for 3rd Party WFP Callouts                  \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "               Temporarily Remove Filters for 3rd Party WFP Callouts                  \n"
+	    "**************************************************************************************\n");
 	const auto& specific_callout_driver = RemoveCalloutDriverName();
 	const auto normalized_specific_callout_driver = NormalizedString::Create(specific_callout_driver);
 
@@ -1291,8 +1296,9 @@ try
 					if (verify_filter_get_error == 0)
 					{
 						FwpmFreeMemory(reinterpret_cast<void**>(&verify_deleted_filter));
-						std::printf("         - found the filter after FwpmFilterDeleteByKey succeeded -- cannot "
-						            "delete the filter (it likely applied security privileges to its filter)\n");
+						std::printf(
+						    "         - found the filter after FwpmFilterDeleteByKey succeeded -- cannot "
+						    "delete the filter (it likely applied security privileges to its filter)\n");
 						continue;
 					}
 

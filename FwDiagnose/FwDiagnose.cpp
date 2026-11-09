@@ -735,7 +735,8 @@ catch (const std::exception& ex)
 	return ERROR_INTERNAL_ERROR;
 }
 
-int __cdecl wmain(int argc, wchar_t* argv[])
+int __cdecl
+wmain(int argc, wchar_t* argv[])
 try
 {
 	const auto coInit = wil::CoInitializeEx();

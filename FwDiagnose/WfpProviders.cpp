@@ -140,10 +140,11 @@ ReadWfpProviders() noexcept
 void
 WriteWfpProviders() noexcept
 {
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "                                     WFP Providers                                    \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "                                     WFP Providers                                    \n"
+	    "**************************************************************************************\n");
 	std::printf(
 	    "  * Total Providers: %zu\n"
 	    "  * Total 3rd party providers: %zd\n",
@@ -213,12 +214,13 @@ try
 		for (UINT32 i = 0; i < numEntriesReturned; ++i)
 		{
 			const auto* current_fwpm_filter = entries[i];
-			g_all_providers.push_back(ProviderDetails{
-			    .providerKey = current_fwpm_filter->providerKey,
-			    .displayName = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"",
-			    .serviceName = current_fwpm_filter->serviceName ? current_fwpm_filter->serviceName : L"",
-			    .is_third_party_provider = std::ranges::find(BuiltInProviders, current_fwpm_filter->providerKey) ==
-			                               std::end(BuiltInProviders)});
+			g_all_providers.push_back(
+			    ProviderDetails{
+			        .providerKey = current_fwpm_filter->providerKey,
+			        .displayName = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"",
+			        .serviceName = current_fwpm_filter->serviceName ? current_fwpm_filter->serviceName : L"",
+			        .is_third_party_provider = std::ranges::find(BuiltInProviders, current_fwpm_filter->providerKey) ==
+			                                   std::end(BuiltInProviders)});
 		}
 
 		if (numEntriesReturned < entries_quested)

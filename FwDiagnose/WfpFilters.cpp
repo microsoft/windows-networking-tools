@@ -30,10 +30,11 @@ ReadWfpFilters() noexcept
 void
 WriteWfpFilters() noexcept
 {
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "                                     WFP Filters                                      \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "                                     WFP Filters                                      \n"
+	    "**************************************************************************************\n");
 	size_t filter_count = 0;
 	size_t disabled_count = 0;
 	size_t persistent_count = 0;
@@ -117,47 +118,50 @@ try
 		for (UINT32 i = 0; i < numEntriesReturned; ++i)
 		{
 			const auto* current_fwpm_filter = entries[i];
-			g_all_filters.push_back(FilterDetails{
-			    .filterKey = current_fwpm_filter->filterKey,
-			    .filterId = current_fwpm_filter->filterId,
-			    .layerKey = current_fwpm_filter->layerKey,
-			    .subLayerKey = current_fwpm_filter->subLayerKey,
-			    .name = current_fwpm_filter->displayData.name
-			                ? NormalizedString::Create(current_fwpm_filter->displayData.name)
-			                : NormalizedString::Create(L""),
-			    .description =
-			        current_fwpm_filter->displayData.description ? current_fwpm_filter->displayData.description : L"",
-			    .flags = current_fwpm_filter->flags,
-			    .weight = current_fwpm_filter->weight.type == FWP_UINT64   ? *current_fwpm_filter->weight.uint64
-			              : current_fwpm_filter->weight.type == FWP_UINT32 ? current_fwpm_filter->weight.uint32
-			              : current_fwpm_filter->weight.type == FWP_UINT16 ? current_fwpm_filter->weight.uint16
-			              : current_fwpm_filter->weight.type == FWP_UINT8  ? current_fwpm_filter->weight.uint8
-			                                                               : 0,
-			    .effectiveWeight = current_fwpm_filter->effectiveWeight.type == FWP_UINT64
-			                           ? *current_fwpm_filter->effectiveWeight.uint64
-			                       : current_fwpm_filter->effectiveWeight.type == FWP_UINT32
-			                           ? current_fwpm_filter->effectiveWeight.uint32
-			                       : current_fwpm_filter->effectiveWeight.type == FWP_UINT16
-			                           ? current_fwpm_filter->effectiveWeight.uint16
-			                       : current_fwpm_filter->effectiveWeight.type == FWP_UINT8
-			                           ? current_fwpm_filter->effectiveWeight.uint8
-			                           : 0,
-			    .providerKey =
-			        current_fwpm_filter->providerKey ? std::optional(*current_fwpm_filter->providerKey) : std::nullopt,
-			    .providerData = current_fwpm_filter->providerData.data ? std::vector(
-			                                                                 current_fwpm_filter->providerData.data,
-			                                                                 current_fwpm_filter->providerData.data +
-			                                                                     current_fwpm_filter->providerData.size)
-			                                                           : std::vector<uint8_t>{},
-			    .numFilterConditions = current_fwpm_filter->numFilterConditions,
-			    .filterConditions =
-			        current_fwpm_filter->filterCondition
-			            ? std::vector(
-			                  current_fwpm_filter->filterCondition,
-			                  current_fwpm_filter->filterCondition + current_fwpm_filter->numFilterConditions)
-			            : std::vector<FWPM_FILTER_CONDITION0>{},
-			    .action_type = current_fwpm_filter->action,
-			});
+			g_all_filters.push_back(
+			    FilterDetails{
+			        .filterKey = current_fwpm_filter->filterKey,
+			        .filterId = current_fwpm_filter->filterId,
+			        .layerKey = current_fwpm_filter->layerKey,
+			        .subLayerKey = current_fwpm_filter->subLayerKey,
+			        .name = current_fwpm_filter->displayData.name
+			                    ? NormalizedString::Create(current_fwpm_filter->displayData.name)
+			                    : NormalizedString::Create(L""),
+			        .description = current_fwpm_filter->displayData.description
+			                           ? current_fwpm_filter->displayData.description
+			                           : L"",
+			        .flags = current_fwpm_filter->flags,
+			        .weight = current_fwpm_filter->weight.type == FWP_UINT64   ? *current_fwpm_filter->weight.uint64
+			                  : current_fwpm_filter->weight.type == FWP_UINT32 ? current_fwpm_filter->weight.uint32
+			                  : current_fwpm_filter->weight.type == FWP_UINT16 ? current_fwpm_filter->weight.uint16
+			                  : current_fwpm_filter->weight.type == FWP_UINT8  ? current_fwpm_filter->weight.uint8
+			                                                                   : 0,
+			        .effectiveWeight = current_fwpm_filter->effectiveWeight.type == FWP_UINT64
+			                               ? *current_fwpm_filter->effectiveWeight.uint64
+			                           : current_fwpm_filter->effectiveWeight.type == FWP_UINT32
+			                               ? current_fwpm_filter->effectiveWeight.uint32
+			                           : current_fwpm_filter->effectiveWeight.type == FWP_UINT16
+			                               ? current_fwpm_filter->effectiveWeight.uint16
+			                           : current_fwpm_filter->effectiveWeight.type == FWP_UINT8
+			                               ? current_fwpm_filter->effectiveWeight.uint8
+			                               : 0,
+			        .providerKey = current_fwpm_filter->providerKey ? std::optional(*current_fwpm_filter->providerKey)
+			                                                        : std::nullopt,
+			        .providerData =
+			            current_fwpm_filter->providerData.data
+			                ? std::vector(
+			                      current_fwpm_filter->providerData.data,
+			                      current_fwpm_filter->providerData.data + current_fwpm_filter->providerData.size)
+			                : std::vector<uint8_t>{},
+			        .numFilterConditions = current_fwpm_filter->numFilterConditions,
+			        .filterConditions =
+			            current_fwpm_filter->filterCondition
+			                ? std::vector(
+			                      current_fwpm_filter->filterCondition,
+			                      current_fwpm_filter->filterCondition + current_fwpm_filter->numFilterConditions)
+			                : std::vector<FWPM_FILTER_CONDITION0>{},
+			        .action_type = current_fwpm_filter->action,
+			    });
 
 			// update sublayer details
 			try

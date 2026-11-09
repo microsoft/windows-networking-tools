@@ -275,10 +275,11 @@ ReadWfpSubLayers() noexcept
 void
 WriteWfpSubLayers() noexcept
 {
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "                                     WFP Sublayers                                    \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "                                     WFP Sublayers                                    \n"
+	    "**************************************************************************************\n");
 	std::printf(
 	    "  * Total sublayers: %zu\n"
 	    "  * Total 3rd party sublayers: %zd\n",
@@ -350,14 +351,16 @@ try
 		for (UINT32 i = 0; i < numEntriesReturned; ++i)
 		{
 			const auto* current_fwpm_filter = entries[i];
-			g_all_sublayers.push_back(SubLayerDetails{
-			    .subLayerKey = current_fwpm_filter->subLayerKey,
-			    .displayName = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"",
-			    .description =
-			        current_fwpm_filter->displayData.description ? current_fwpm_filter->displayData.description : L"",
-			    .weight = current_fwpm_filter->weight,
-			    .is_third_party_sublayer = std::ranges::find(BuiltInSublayers, current_fwpm_filter->subLayerKey) ==
-			                               std::end(BuiltInSublayers)});
+			g_all_sublayers.push_back(
+			    SubLayerDetails{
+			        .subLayerKey = current_fwpm_filter->subLayerKey,
+			        .displayName = current_fwpm_filter->displayData.name ? current_fwpm_filter->displayData.name : L"",
+			        .description = current_fwpm_filter->displayData.description
+			                           ? current_fwpm_filter->displayData.description
+			                           : L"",
+			        .weight = current_fwpm_filter->weight,
+			        .is_third_party_sublayer = std::ranges::find(BuiltInSublayers, current_fwpm_filter->subLayerKey) ==
+			                                   std::end(BuiltInSublayers)});
 		}
 
 		if (numEntriesReturned < entries_quested)

@@ -76,7 +76,7 @@ Rule memory from `FWEnumFirewallRules` is intentionally never freed. `Normalized
 
 Each `FirewallPolicyObjects` holds its store handle, which stays open until the process exits. `-clean-rules` deletes rules through the handle of the store being cleaned. RSOP and static Windows Service Hardening deny read/write access even to Administrators, so they are always opened read-only and only reported on.
 
-A rule's application file is checked only when the result is meaningful: `System` and packaged apps are skipped, and only "file not found" or "path not found" counts as missing. A path using a per-user variable such as `%LOCALAPPDATA%` is treated as broken without a file lookup, because the Firewall service (`mpssvc`) resolves rule paths as LocalService rather than as the user. A path using `%USERPROFILE%`, `%APPDATA%`, `%TEMP%`, or `%TMP%` resolves within that account's profile, which may be deliberate, so it is reported as a warning and is never a deletion candidate.
+A rule's application file is checked only when the result is meaningful: `System` and packaged apps are skipped, and only "file not found" or "path not found" counts as missing. A path using a per-user variable such as `%HOMEPATH%` is treated as broken without a file lookup, because the Firewall service (`mpssvc`) resolves rule paths as LocalService rather than as the user. A path using `%USERPROFILE%`, `%APPDATA%`, `%LOCALAPPDATA%`, `%TEMP%`, or `%TMP%` resolves within that account's profile, which may be deliberate, so it is reported as a warning and is never a deletion candidate.
 
 ### Rule normalization and comparison
 

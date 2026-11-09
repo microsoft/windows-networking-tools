@@ -1680,8 +1680,9 @@ CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_ru
 		if (!warning_strings.empty())
 		{
 			std::printf(
-			    "   - WARNING: count of rules with an application exe using %%USERPROFILE%%, %%APPDATA%%, %%TEMP%%, or "
-			    "%%TMP%% (resolves within the profile of the Firewall service account): %zu\n",
+			    "   - WARNING: count of rules with an application exe using %%USERPROFILE%%, %%APPDATA%%, "
+			    "%%LOCALAPPDATA%%, "
+			    "%%TEMP%%, or %%TMP%% (resolves within the profile of the Firewall service account): %zu\n",
 			    warning_strings.size());
 			for (const auto& warning_string : warning_strings)
 			{

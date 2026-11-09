@@ -1700,11 +1700,12 @@ ListenForWfpNetEvents()
 	    &eventsHandle);
 	THROW_IF_WIN32_ERROR_MSG(fwpm_subscription_error, "FwpmNetEventSubscribe4");
 
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "                            Subscribed to WFP NetEvents                               \n"
-	            "                      ( press Ctrl-C to stop processing events )                      \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "                            Subscribed to WFP NetEvents                               \n"
+	    "                      ( press Ctrl-C to stop processing events )                      \n"
+	    "**************************************************************************************\n");
 
 	static const wil::unique_event ctrl_event(wil::EventOptions::ManualReset);
 	SetConsoleCtrlHandler(

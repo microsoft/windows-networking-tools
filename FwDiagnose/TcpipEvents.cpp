@@ -521,24 +521,27 @@ ListenForTcpipEvents()
 				const auto protocol_string = event_message.readEventProperty(L"IPTransportProtocol");
 				if (!protocol_string.has_value())
 				{
-					std::printf("\n** TcpipTransportPacketDrops **\n"
-					            "       <Failed to read 'IPTransportProtocol' from event record>\n");
+					std::printf(
+					    "\n** TcpipTransportPacketDrops **\n"
+					    "       <Failed to read 'IPTransportProtocol' from event record>\n");
 					return;
 				}
 
 				const auto reason_string = event_message.readEventProperty(L"Reason");
 				if (!reason_string.has_value())
 				{
-					std::printf("\n** TcpipTransportPacketDrops **\n"
-					            "       <Failed to read 'Reason' from event record>\n");
+					std::printf(
+					    "\n** TcpipTransportPacketDrops **\n"
+					    "       <Failed to read 'Reason' from event record>\n");
 					return;
 				}
 
 				const auto local_address_string = event_message.readEventProperty(L"LocalSockAddr");
 				if (!local_address_string)
 				{
-					std::printf("\n** TcpipTransportPacketDrops **\n"
-					            "       <Failed to read 'LocalSockAddr' from event record>\n");
+					std::printf(
+					    "\n** TcpipTransportPacketDrops **\n"
+					    "       <Failed to read 'LocalSockAddr' from event record>\n");
 					return;
 				}
 				const auto& local_address = local_address_string.value();
@@ -644,8 +647,9 @@ ListenForTcpipEvents()
 				const auto protocol_string = event_message.readEventProperty(L"IPTransportProtocol");
 				if (!protocol_string.has_value())
 				{
-					std::printf("\n** TcpipNetworkPacketDrops **\n"
-					            "       <Failed to read 'IPTransportProtocol' from event record>\n");
+					std::printf(
+					    "\n** TcpipNetworkPacketDrops **\n"
+					    "       <Failed to read 'IPTransportProtocol' from event record>\n");
 					return;
 				}
 
@@ -659,24 +663,27 @@ ListenForTcpipEvents()
 				const auto address_family_string = event_message.readEventProperty(L"AddressFamily");
 				if (!address_family_string.has_value())
 				{
-					std::printf("\n** TcpipNetworkPacketDrops **\n"
-					            "       <Failed to read 'AddressFamily' from event record>\n");
+					std::printf(
+					    "\n** TcpipNetworkPacketDrops **\n"
+					    "       <Failed to read 'AddressFamily' from event record>\n");
 					return;
 				}
 
 				const auto reason_string = event_message.readEventProperty(L"Reason");
 				if (!reason_string.has_value())
 				{
-					std::printf("\n** TcpipNetworkPacketDrops **\n"
-					            "       <Failed to read 'Reason' from event record>\n");
+					std::printf(
+					    "\n** TcpipNetworkPacketDrops **\n"
+					    "       <Failed to read 'Reason' from event record>\n");
 					return;
 				}
 
 				const auto direction_string = event_message.readEventProperty(L"PathDirection");
 				if (!direction_string.has_value())
 				{
-					std::printf("\n** TcpipNetworkPacketDrops **\n"
-					            "       <Failed to read 'PathDirection' from event record>\n");
+					std::printf(
+					    "\n** TcpipNetworkPacketDrops **\n"
+					    "       <Failed to read 'PathDirection' from event record>\n");
 					return;
 				}
 
@@ -739,16 +746,18 @@ ListenForTcpipEvents()
 				const auto path_direction = event_message.readEventProperty(L"PathDirection");
 				if (!path_direction.has_value())
 				{
-					std::printf("\n** TcpipFramingPacketDrops **\n"
-					            "       <Failed to read 'PathDirection' from event record>\n");
+					std::printf(
+					    "\n** TcpipFramingPacketDrops **\n"
+					    "       <Failed to read 'PathDirection' from event record>\n");
 					return;
 				}
 
 				const auto address_family_string = event_message.readEventProperty(L"AddressFamily");
 				if (!address_family_string.has_value())
 				{
-					std::printf("\n** TcpipFramingPacketDrops **\n"
-					            "       <Failed to read 'AddressFamily' from event record>\n");
+					std::printf(
+					    "\n** TcpipFramingPacketDrops **\n"
+					    "       <Failed to read 'AddressFamily' from event record>\n");
 					return;
 				}
 				auto address_family = address_family_string.value();
@@ -764,8 +773,9 @@ ListenForTcpipEvents()
 				const auto direction_string = event_message.readEventProperty(L"PathDirection");
 				if (!direction_string.has_value())
 				{
-					std::printf("\n** TcpipFramingPacketDrops **\n"
-					            "       <Failed to read 'PathDirection' from event record>\n");
+					std::printf(
+					    "\n** TcpipFramingPacketDrops **\n"
+					    "       <Failed to read 'PathDirection' from event record>\n");
 					return;
 				}
 				std::wstring direction = direction_string.value();
@@ -781,8 +791,9 @@ ListenForTcpipEvents()
 				const auto reason_string = event_message.readEventProperty(L"Reason");
 				if (!reason_string.has_value())
 				{
-					std::printf("\n** TcpipFramingPacketDrops **\n"
-					            "       <Failed to read 'Reason' from event record>\n");
+					std::printf(
+					    "\n** TcpipFramingPacketDrops **\n"
+					    "       <Failed to read 'Reason' from event record>\n");
 					return;
 				}
 				if (reason_string.value() == L"3")
@@ -820,44 +831,50 @@ ListenForTcpipEvents()
 				const auto SynAttacksDetected = event_message.readEventProperty(L"SynAttacksDetected");
 				if (!SynAttacksDetected.has_value())
 				{
-					std::printf("\n** TcpipSecurityEvent **\n"
-					            "       <Failed to read 'SynAttacksDetected' from event record>\n");
+					std::printf(
+					    "\n** TcpipSecurityEvent **\n"
+					    "       <Failed to read 'SynAttacksDetected' from event record>\n");
 					return;
 				}
 				const auto ReassemblyLimitViolations = event_message.readEventProperty(L"ReassemblyLimitViolations");
 				if (!ReassemblyLimitViolations.has_value())
 				{
-					std::printf("\n** TcpipSecurityEvent **\n"
-					            "       <Failed to read 'ReassemblyLimitViolations' from event record>\n");
+					std::printf(
+					    "\n** TcpipSecurityEvent **\n"
+					    "       <Failed to read 'ReassemblyLimitViolations' from event record>\n");
 					return;
 				}
 				const auto ConnectionRateLimitBacklog = event_message.readEventProperty(L"ConnectionRateLimitBacklog");
 				if (!ConnectionRateLimitBacklog.has_value())
 				{
-					std::printf("\n** TcpipSecurityEvent **\n"
-					            "       <Failed to read 'ConnectionRateLimitBacklog' from event record>\n");
+					std::printf(
+					    "\n** TcpipSecurityEvent **\n"
+					    "       <Failed to read 'ConnectionRateLimitBacklog' from event record>\n");
 					return;
 				}
 				const auto ConnectionRateLimitViolations =
 				    event_message.readEventProperty(L"ConnectionRateLimitViolations");
 				if (!ConnectionRateLimitViolations.has_value())
 				{
-					std::printf("\n** TcpipSecurityEvent **\n"
-					            "       <Failed to read 'ConnectionRateLimitViolations' from event record>\n");
+					std::printf(
+					    "\n** TcpipSecurityEvent **\n"
+					    "       <Failed to read 'ConnectionRateLimitViolations' from event record>\n");
 					return;
 				}
 				const auto LandAttackSegmentsDropped = event_message.readEventProperty(L"LandAttackSegmentsDropped");
 				if (!LandAttackSegmentsDropped.has_value())
 				{
-					std::printf("\n** TcpipSecurityEvent **\n"
-					            "       <Failed to read 'LandAttackSegmentsDropped' from event record>\n");
+					std::printf(
+					    "\n** TcpipSecurityEvent **\n"
+					    "       <Failed to read 'LandAttackSegmentsDropped' from event record>\n");
 					return;
 				}
 				const auto ConnectionRateLimitDepth = event_message.readEventProperty(L"ConnectionRateLimitDepth");
 				if (!ConnectionRateLimitDepth.has_value())
 				{
-					std::printf("\n** TcpipSecurityEvent **\n"
-					            "       <Failed to read 'ConnectionRateLimitDepth' from event record>\n");
+					std::printf(
+					    "\n** TcpipSecurityEvent **\n"
+					    "       <Failed to read 'ConnectionRateLimitDepth' from event record>\n");
 					return;
 				}
 
@@ -895,11 +912,12 @@ ListenForTcpipEvents()
 	    tcpipTraceLoggingProvider,
 	    {TcpipTransportPacketDrops, TcpipNetworkPacketDropEventId, TcpipFramingPacketDrops}));
 
-	std::printf("\n"
-	            "**************************************************************************************\n"
-	            "                         Subscribed to TCPIP ETW events                              \n"
-	            "                      ( press Ctrl-C to stop processing events )                      \n"
-	            "**************************************************************************************\n");
+	std::printf(
+	    "\n"
+	    "**************************************************************************************\n"
+	    "                         Subscribed to TCPIP ETW events                              \n"
+	    "                      ( press Ctrl-C to stop processing events )                      \n"
+	    "**************************************************************************************\n");
 
 	static const wil::unique_event ctrl_event(wil::EventOptions::ManualReset);
 	SetConsoleCtrlHandler(

@@ -473,7 +473,7 @@ ContainsEnvironmentVariable(const std::wstring& path, std::span<const std::wstri
 static bool
 ContainsPerUserEnvironmentVariable(const std::wstring& path)
 {
-	constexpr std::wstring_view per_user_variables[]{L"%LOCALAPPDATA%", L"%HOMEPATH%", L"%USERNAME%", L"%ONEDRIVE%"};
+	constexpr std::wstring_view per_user_variables[]{L"%HOMEPATH%", L"%USERNAME%", L"%ONEDRIVE%"};
 	return ContainsEnvironmentVariable(path, per_user_variables);
 }
 
@@ -482,7 +482,8 @@ ContainsPerUserEnvironmentVariable(const std::wstring& path)
 static bool
 ContainsServiceProfileEnvironmentVariable(const std::wstring& path)
 {
-	constexpr std::wstring_view service_profile_variables[]{L"%USERPROFILE%", L"%APPDATA%", L"%TEMP%", L"%TMP%"};
+	constexpr std::wstring_view
+	    service_profile_variables[]{L"%USERPROFILE%", L"%APPDATA%", L"%LOCALAPPDATA%", L"%TEMP%", L"%TMP%"};
 	return ContainsEnvironmentVariable(path, service_profile_variables);
 }
 } // namespace details

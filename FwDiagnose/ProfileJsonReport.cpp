@@ -35,14 +35,15 @@ Timestamp()
 {
 	SYSTEMTIME time{};
 	GetSystemTime(&time);
-	return std::format(L"{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-	                   time.wYear,
-	                   time.wMonth,
-	                   time.wDay,
-	                   time.wHour,
-	                   time.wMinute,
-	                   time.wSecond,
-	                   time.wMilliseconds);
+	return std::format(
+	    L"{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+	    time.wYear,
+	    time.wMonth,
+	    time.wDay,
+	    time.wHour,
+	    time.wMinute,
+	    time.wSecond,
+	    time.wMilliseconds);
 }
 
 // Windows::Data::Json::JsonObject is a refcounted object - not a deep copy
@@ -172,8 +173,9 @@ ReturnJsonResultObject(PCWSTR command)
 	pending.SetNamedValue(L"code", String(L"json_export_incomplete"));
 	pending.SetNamedValue(
 	    L"message",
-	    String(L"Firewall-profile configuration and rule-status analysis are exported. Other console output for this "
-	           L"command is not yet exported."));
+	    String(
+	        L"Firewall-profile configuration and rule-status analysis are exported. "
+	        L"Other console output for this command is not yet exported."));
 
 	JsonArray diagnostics;
 	diagnostics.Append(pending);
@@ -336,8 +338,8 @@ InitializeProfileJsonReport(PCWSTR path, const std::vector<PCWSTR>& arguments)
 		{
 			command = L"clean_rules";
 		}
-		else if (IsShieldsCommand(argument, L"-enable-shields-up") ||
-		         IsShieldsCommand(argument, L"-disable-shields-up"))
+		else if (
+		    IsShieldsCommand(argument, L"-enable-shields-up") || IsShieldsCommand(argument, L"-disable-shields-up"))
 		{
 			command = L"shields_up_change";
 		}
@@ -397,8 +399,9 @@ FinishProfileJsonReport(int exitCode)
 	{
 		const auto length = static_cast<DWORD>((std::min)(bytes.size() - offset, static_cast<size_t>(MAXDWORD)));
 		DWORD written{};
-		THROW_LAST_ERROR_IF_MSG(!WriteFile(g_output.get(), bytes.data() + offset, length, &written, nullptr),
-		                        "Failed to write JSON output.");
+		THROW_LAST_ERROR_IF_MSG(
+		    !WriteFile(g_output.get(), bytes.data() + offset, length, &written, nullptr),
+		    "Failed to write JSON output.");
 		THROW_HR_IF_MSG(E_UNEXPECTED, written == 0, "JSON output write made no progress.");
 		offset += written;
 	}
@@ -439,15 +442,25 @@ WriteFirewallProfileJson(const FirewallProfileData& profile, PCWSTR command)
 	output.SetNamedValue(L"policyStore", String(L"ActiveStore"));
 
 	output.SetNamedValue(L"enabled", ReturnJsonCodedValueObject(profile.enabled, PolicyValueKind::Boolean));
-	output.SetNamedValue(L"defaultInboundAction", ReturnJsonCodedValueObject(profile.defaultInboundAction, PolicyValueKind::Action));
-	output.SetNamedValue(L"defaultOutboundAction", ReturnJsonCodedValueObject(profile.defaultOutboundAction, PolicyValueKind::Action));
-	output.SetNamedValue(L"allowInboundRules", ReturnJsonCodedValueObject(profile.allowInboundRules, PolicyValueKind::Boolean));
-	output.SetNamedValue(L"allowLocalFirewallRules",
-	                     ReturnJsonCodedValueObject(profile.allowLocalFirewallRules, PolicyValueKind::Boolean));
+	output.SetNamedValue(
+	    L"defaultInboundAction",
+	    ReturnJsonCodedValueObject(profile.defaultInboundAction, PolicyValueKind::Action));
+	output.SetNamedValue(
+	    L"defaultOutboundAction",
+	    ReturnJsonCodedValueObject(profile.defaultOutboundAction, PolicyValueKind::Action));
+	output.SetNamedValue(
+	    L"allowInboundRules",
+	    ReturnJsonCodedValueObject(profile.allowInboundRules, PolicyValueKind::Boolean));
+	output.SetNamedValue(
+	    L"allowLocalFirewallRules",
+	    ReturnJsonCodedValueObject(profile.allowLocalFirewallRules, PolicyValueKind::Boolean));
 	output.SetNamedValue(L"allowUserApps", ReturnJsonCodedValueObject(profile.allowUserApps, PolicyValueKind::Boolean));
-	output.SetNamedValue(L"allowUserPorts", ReturnJsonCodedValueObject(profile.allowUserPorts, PolicyValueKind::Boolean));
-	output.SetNamedValue(L"allowUnicastResponseToMulticast",
-	                     ReturnJsonCodedValueObject(profile.allowUnicastResponseToMulticast, PolicyValueKind::Boolean));
+	output.SetNamedValue(
+	    L"allowUserPorts",
+	    ReturnJsonCodedValueObject(profile.allowUserPorts, PolicyValueKind::Boolean));
+	output.SetNamedValue(
+	    L"allowUnicastResponseToMulticast",
+	    ReturnJsonCodedValueObject(profile.allowUnicastResponseToMulticast, PolicyValueKind::Boolean));
 
 	const auto& aliases = profile.disabledInterfaceAliases;
 	JsonArray aliasArray;
@@ -458,22 +471,26 @@ WriteFirewallProfileJson(const FirewallProfileData& profile, PCWSTR command)
 			aliasArray.Append(String(alias));
 		}
 	}
-	output.SetNamedValue(L"disabledInterfaceAliases",
-	                     aliases.has_value() ? IJsonValue(aliasArray) : IJsonValue(JsonValue::CreateNullValue()));
+	output.SetNamedValue(
+	    L"disabledInterfaceAliases",
+	    aliases.has_value() ? IJsonValue(aliasArray) : IJsonValue(JsonValue::CreateNullValue()));
 
 	const auto& shields_up = profile.blockAllInboundTraffic;
 	JsonObject shieldsValue;
 	shieldsValue.SetNamedValue(L"friendlyName", String(L"Shields-Up"));
-	shieldsValue.SetNamedValue(L"value",
-	                           shields_up.has_value() ? JsonValue::CreateBooleanValue(*shields_up)
-	                                                  : JsonValue::CreateNullValue());
+	shieldsValue.SetNamedValue(
+	    L"value",
+	    shields_up.has_value() ? JsonValue::CreateBooleanValue(*shields_up) : JsonValue::CreateNullValue());
 	output.SetNamedValue(L"blockAllInboundTraffic", shieldsValue);
 
 	JsonArray diagnostics;
 	for (const auto& recorded : profile.diagnostics)
 	{
-		auto diagnostic =
-		    ReturnJsonDiagnosticObject(recorded.property.c_str(), recorded.operation.c_str(), recorded.error, recorded.message);
+		auto diagnostic = ReturnJsonDiagnosticObject(
+		    recorded.property.c_str(),
+		    recorded.operation.c_str(),
+		    recorded.error,
+		    recorded.message);
 
 		if (recorded.unknownValue.has_value())
 		{
@@ -511,7 +528,11 @@ RecordProfileJsonFailure(PCWSTR command, HRESULT error, PCSTR message)
 		return;
 	}
 
-	auto diagnostic = ReturnJsonDiagnosticObject(L"firewallProfiles", L"collect_firewall_profiles", error, winrt::to_hstring(message));
+	auto diagnostic = ReturnJsonDiagnosticObject(
+	    L"firewallProfiles",
+	    L"collect_firewall_profiles",
+	    error,
+	    winrt::to_hstring(message));
 	diagnostic.SetNamedValue(L"code", String(L"firewall_profile_collection_failed"));
 
 	if (command)
@@ -528,11 +549,12 @@ RecordProfileJsonFailure(PCWSTR command, HRESULT error, PCSTR message)
 }
 
 void
-WriteFirewallRuleStatusJson(const FirewallPolicyObjects& policy,
-                            size_t noErrorCount,
-                            const RuleStatusCategories& categories,
-                            PCWSTR command,
-                            RuleStatusAnalysis analysisMode)
+WriteFirewallRuleStatusJson(
+    const FirewallPolicyObjects& policy,
+    size_t noErrorCount,
+    const RuleStatusCategories& categories,
+    PCWSTR command,
+    RuleStatusAnalysis analysisMode)
 {
 	if (!ProfileJsonReportEnabled())
 	{
@@ -582,23 +604,25 @@ WriteFirewallRuleStatusJson(const FirewallPolicyObjects& policy,
 
 	JsonArray diagnostics;
 	store.SetNamedValue(L"diagnostics", diagnostics);
-	
-    if (policy.store_type == FW_STORE_TYPE_GP_RSOP && policy.load_result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+
+	if (policy.store_type == FW_STORE_TYPE_GP_RSOP && policy.load_result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
 	{
 		store.SetNamedValue(L"status", String(L"not_present"));
 		store.Remove(L"diagnostics");
 	}
 	else if (FAILED(policy.load_result))
 	{
-		store.SetNamedValue(L"status",
-		                    String(policy.load_result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) ? L"not_present"
-		                           : policy.load_result == E_PENDING                              ? L"not_collected"
-		                                                                                          : L"failed"));
-		auto diagnostic =
-		    ReturnJsonDiagnosticObject(L"rules",
-		               L"load_firewall_rules",
-		               policy.load_result,
-		               L"Rules were not successfully collected for this store; no status analysis is available.");
+		store.SetNamedValue(
+		    L"status",
+		    String(
+		        policy.load_result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) ? L"not_present"
+		        : policy.load_result == E_PENDING                              ? L"not_collected"
+		                                                                       : L"failed"));
+		auto diagnostic = ReturnJsonDiagnosticObject(
+		    L"rules",
+		    L"load_firewall_rules",
+		    policy.load_result,
+		    L"Rules were not successfully collected for this store; no status analysis is available.");
 		diagnostic.SetNamedValue(L"code", String(L"firewall_store_collection_unavailable"));
 		diagnostic.GetNamedObject(L"subject").SetNamedValue(L"store", String(storeName));
 		diagnostics.Append(diagnostic);
@@ -619,20 +643,23 @@ WriteFirewallRuleStatusJson(const FirewallPolicyObjects& policy,
 		{
 			JsonObject analysis;
 			const auto errorRuleCount = policy.normalizedRules.size() - noErrorCount;
-			analysis.SetNamedValue(L"totalRuleCount",
-			                       JsonValue::CreateNumberValue(static_cast<double>(policy.normalizedRules.size())));
-			analysis.SetNamedValue(L"errorRuleCount",
-			                       JsonValue::CreateNumberValue(static_cast<double>(errorRuleCount)));
-			
+			analysis.SetNamedValue(
+			    L"totalRuleCount",
+			    JsonValue::CreateNumberValue(static_cast<double>(policy.normalizedRules.size())));
+			analysis.SetNamedValue(
+			    L"errorRuleCount",
+			    JsonValue::CreateNumberValue(static_cast<double>(errorRuleCount)));
+
 			const auto verbose = g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose");
-			
-		    JsonArray outputCategories;
-			for (const auto* entry : {&categories.partiallyIgnored,
-			                          &categories.ignored,
-			                          &categories.parsingError,
-			                          &categories.semanticError,
-			                          &categories.runtimeError,
-			                          &categories.unknown})
+
+			JsonArray outputCategories;
+			for (const auto* entry :
+			     {&categories.partiallyIgnored,
+			      &categories.ignored,
+			      &categories.parsingError,
+			      &categories.semanticError,
+			      &categories.runtimeError,
+			      &categories.unknown})
 			{
 				const auto& rules = entry->rules;
 				if (rules.empty())
@@ -649,12 +676,12 @@ WriteFirewallRuleStatusJson(const FirewallPolicyObjects& policy,
 					for (const auto* rule : rules)
 					{
 						JsonObject detail;
-						detail.SetNamedValue(L"ruleId",
-						                     rule->fw_rule->wszRuleId ? String(rule->fw_rule->wszRuleId)
-						                                              : JsonValue::CreateNullValue());
-						detail.SetNamedValue(L"name",
-						                     rule->fw_rule->wszName ? String(rule->fw_rule->wszName)
-						                                            : JsonValue::CreateNullValue());
+						detail.SetNamedValue(
+						    L"ruleId",
+						    rule->fw_rule->wszRuleId ? String(rule->fw_rule->wszRuleId) : JsonValue::CreateNullValue());
+						detail.SetNamedValue(
+						    L"name",
+						    rule->fw_rule->wszName ? String(rule->fw_rule->wszName) : JsonValue::CreateNullValue());
 						JsonObject status;
 						status.SetNamedValue(L"code", JsonValue::CreateNumberValue(rule->fw_rule->Status));
 						status.SetNamedValue(L"state", String(entry->name));
