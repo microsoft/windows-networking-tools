@@ -16,6 +16,13 @@
 #include "NormalizedString.h"
 
 static std::vector<AppContainerPackage> g_app_packages;
+static HRESULT g_app_packages_load_result{E_PENDING};
+
+HRESULT
+GetAppPackagesLoadResult() noexcept
+{
+	return g_app_packages_load_result;
+}
 
 static const std::vector<AppContainerPackage>&
 ReadAllAppPackages() noexcept
@@ -60,14 +67,18 @@ try
 
 		g_app_packages.emplace_back(std::move(app_package));
 	}
+
+	g_app_packages_load_result = S_OK;
 }
 catch (const winrt::hresult_error& ex)
 {
+	g_app_packages_load_result = ex.code().value;
 	std::wcerr << L"Failed to load app packages: " << ex.message().c_str() << L" (0x" << std::hex << ex.code() << L")"
 	           << std::endl;
 }
 catch (const std::exception& ex)
 {
+	g_app_packages_load_result = wil::ResultFromCaughtException();
 	std::cerr << "Failed to load app packages: " << ex.what() << std::endl;
 }
 

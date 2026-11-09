@@ -47,7 +47,7 @@ wmain
   FinishProfileJsonReport
 ```
 
-The loader functions are `noexcept` or catch at their boundary, and print failures. Their results are not checked by `RunFwDiagnose`, so a failed load usually looks like an empty collection to later stages. Worker threads make WinRT and COM calls using the process-wide multithreaded apartment created in `wmain`.
+The loader functions are `noexcept` or catch at their boundary, and print failures. Firewall stores and app packages record their load result, and the analyses report a failure rather than treating the data as empty. A failed WFP or IP load still looks like an empty collection to later stages. Worker threads make WinRT and COM calls using the process-wide multithreaded apartment created in `wmain`.
 
 The load phase runs for every non-early-exit command, even ones that need only part of the data, such as Shields Up.
 
@@ -64,7 +64,7 @@ Each inventory is a file-scope global, written by one loader thread and treated 
 | `g_app_packages` | `vector<AppContainerPackage>` | |
 | `g_ip_details` | `vector<IpInterfaceDetails>` | |
 
-The ten stores are Local, Group Policy, RSOP, static and configurable Windows Service Hardening, static and dynamic Interface Isolation, Application Isolation, MDM, and Tenant Restrictions. A store that does not exist (`ERROR_FILE_NOT_FOUND`) is skipped. Any other load failure stops loading the remaining stores, which keep `load_result == E_PENDING`.
+The ten stores are Local, Group Policy, RSOP, static and configurable Windows Service Hardening, static and dynamic Interface Isolation, Application Isolation, MDM, and Tenant Restrictions. A store that does not exist (`ERROR_FILE_NOT_FOUND`) has no rules. A store that fails for any other reason is reported as not analyzed, and the remaining stores still load.
 
 ### Firewall rule access
 

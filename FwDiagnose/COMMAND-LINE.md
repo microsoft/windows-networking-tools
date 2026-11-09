@@ -135,7 +135,7 @@ Run elevated. The code enforces this unevenly:
 |---|---|
 | `-analyze-wfp`, `-wfp-events` | Explicit check; fails with `ERROR_ACCESS_DENIED` and a message. |
 | `-clean-rules` | Store open is denied; a message is printed. |
-| `-analyze-rules`, `-analyze-inbound-rules`, `-analyze-app-package-rules` | If a store open is denied, the remaining stores are not loaded and appear to have no rules. |
+| `-analyze-rules`, `-analyze-inbound-rules`, `-analyze-app-package-rules` | A store that is denied is reported as not analyzed, and the remaining stores are still loaded. |
 | Shields Up | Printed per profile; exit `0`. |
 | `-remove-callouts`, `-tcpip-events` | No explicit check; the underlying API calls fail. |
 | `-list-app-packages` | Uses `PackageManager.FindPackages()` for all users. A failure is printed to stderr and the list is empty. |

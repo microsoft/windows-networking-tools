@@ -122,6 +122,22 @@ StoreAllowsOnlyReadAccess(FW_STORE_TYPE store_type) noexcept
 	       store_type == FW_STORE_TYPE_WSH_STATIC || store_type == FW_STORE_TYPE_WSH_CONFIGURABLE;
 }
 
+// A store that does not exist on this system is not a failure: it simply has no rules
+static bool
+StoreFailedToLoad(const FirewallPolicyObjects& policy) noexcept
+{
+	return FAILED(policy.load_result) && policy.load_result != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+}
+
+static void
+PrintStoreLoadFailure(const FirewallPolicyObjects& policy) noexcept
+{
+	std::printf(
+	    "  * Could not load the rules from the %hs store (0x%lx) - it was not analyzed\n",
+	    policy.store_type_string,
+	    policy.load_result);
+}
+
 namespace details
 {
 // Load the necessary functions from the FirewallAPI DLL
@@ -181,9 +197,15 @@ LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 		{
 			if (openStoreError == ERROR_ACCESS_DENIED)
 			{
-				std::printf(
-				    "\n  Administrative privileges required - try running from an elevated Administrator "
-				    "command prompt\n");
+				// every store can be denied for the same reason, so only print this once
+				static bool printed_elevation_message = false;
+				if (!printed_elevation_message)
+				{
+					printed_elevation_message = true;
+					std::printf(
+					    "\n  Administrative privileges required - try running from an elevated Administrator "
+					    "command prompt\n");
+				}
 				return HRESULT_FROM_WIN32(openStoreError);
 			}
 
@@ -1709,6 +1731,16 @@ static void
 CheckForMissingAppPackage(
     std::vector<NormalizedFirewallRule>& normalized_rules, PrintSummary print_summary = PrintSummary::Print)
 {
+	// without the list of installed packages, every package would look like it does not exist
+	const auto packages_load_result = GetAppPackagesLoadResult();
+	if (FAILED(packages_load_result))
+	{
+		std::printf(
+		    "  * Skipping the app-package analysis: installed packages could not be loaded (0x%lx)\n",
+		    packages_load_result);
+		return;
+	}
+
 	size_t count_of_rules_with_package_id = 0;
 	size_t count_of_rules_with_missing_package_id = 0;
 	size_t count_of_rules_with_package_family_name = 0;
@@ -2500,29 +2532,26 @@ LoadFirewallRules() noexcept
 try
 {
 	details::LoadFirewallFunctions();
+
+	// a failure in one store must not prevent loading the others: each store records its own result
+	HRESULT first_failure = S_OK;
 	for (auto& policy : g_policy_objects)
 	{
-		HRESULT load_error{};
 		try
 		{
-			load_error = details::LoadFirewallRulesFromStore(policy);
-			policy.load_result = load_error;
+			policy.load_result = details::LoadFirewallRulesFromStore(policy);
 		}
 		catch (...)
 		{
 			policy.load_result = wil::ResultFromCaughtException();
-			throw;
 		}
-		if (FAILED(load_error))
+
+		if (SUCCEEDED(first_failure) && StoreFailedToLoad(policy))
 		{
-			if (load_error == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
-			{
-				continue;
-			}
-			THROW_HR(load_error);
+			first_failure = policy.load_result;
 		}
 	}
-	return S_OK;
+	return first_failure;
 }
 CATCH_RETURN()
 
@@ -2531,6 +2560,12 @@ AnalyzeFirewallRulesReferencingAppPackages()
 {
 	for (auto& policy : g_policy_objects)
 	{
+		if (StoreFailedToLoad(policy))
+		{
+			PrintStoreLoadFailure(policy);
+			continue;
+		}
+
 		std::vector<std::wstring> rules_with_package_naming_without_package_id_231_or_earlier{};
 		std::vector<std::wstring> rules_with_package_naming_without_package_id_or_pfn_after_231{};
 
@@ -3039,9 +3074,16 @@ ProcessFirewallRules()
 			    banner_output.c_str(),
 			    banner_header.c_str());
 
-			if (policy.normalizedRules.empty())
+			if (StoreFailedToLoad(policy) || policy.normalizedRules.empty())
 			{
-				std::printf("  * No Rules in this store\n");
+				if (StoreFailedToLoad(policy))
+				{
+					PrintStoreLoadFailure(policy);
+				}
+				else
+				{
+					std::printf("  * No Rules in this store\n");
+				}
 				WriteFirewallRuleStatusJson(
 				    policy,
 				    0,
@@ -3155,6 +3197,12 @@ ProcessInboundRules()
 			    banner_header.c_str(),
 			    banner_output.c_str(),
 			    banner_header.c_str());
+
+			if (StoreFailedToLoad(policy))
+			{
+				PrintStoreLoadFailure(policy);
+				continue;
+			}
 
 			ChronoTimer timer;
 			timer.start("AnalyzeInboundRules");

@@ -131,6 +131,8 @@ struct AppContainerPackage
 
 void
 LoadAllAppPackages() noexcept;
+HRESULT
+GetAppPackagesLoadResult() noexcept;
 void
 PrintAllAppPackages();
 
