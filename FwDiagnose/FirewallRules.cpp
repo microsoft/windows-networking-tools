@@ -1582,11 +1582,17 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 
 			// now ask the user which rule to keep
 			std::wstring userInput;
+			bool input_ended = false;
 			for (;;)
 			{
 				std::printf("       Enter the number of the rule to keep: ");
 				userInput.clear();
-				std::getline(std::wcin, userInput);
+				if (!std::getline(std::wcin, userInput))
+				{
+					input_ended = true;
+					break;
+				}
+
 				const auto entered_rule_listing = std::wcstoul(userInput.c_str(), nullptr, 10);
 				if (entered_rule_listing < 1 || entered_rule_listing > rule_listing)
 				{
@@ -1604,6 +1610,12 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 					}
 				}
 				break;
+			}
+
+			if (input_ended)
+			{
+				std::printf("\n       - No more input - keeping all of these rules\n");
+				continue;
 			}
 		}
 

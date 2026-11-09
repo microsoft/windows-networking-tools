@@ -74,7 +74,12 @@ PromptForDeletion(PCSTR deletion_prompt)
 	{
 		std::printf("       %hs (y/n/s/a)? ", deletion_prompt);
 		userInput.clear();
-		std::getline(std::wcin, userInput);
+		if (!std::getline(std::wcin, userInput))
+		{
+			// running out of input must never count as approving a deletion
+			std::printf("\n       - No more input\n");
+			return PromptResponse::Skip;
+		}
 
 		if (userInput == L"y" || userInput == L"Y")
 		{
@@ -114,7 +119,12 @@ PromptForDeletion(PCWSTR deletion_prompt, bool onlyAllowYesNo = false)
 		}
 
 		userInput.clear();
-		std::getline(std::wcin, userInput);
+		if (!std::getline(std::wcin, userInput))
+		{
+			// running out of input must never count as approving a deletion
+			std::printf("\n       - No more input\n");
+			return onlyAllowYesNo ? PromptResponse::No : PromptResponse::Skip;
+		}
 
 		if (userInput == L"y" || userInput == L"Y")
 		{

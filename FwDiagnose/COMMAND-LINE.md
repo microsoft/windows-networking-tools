@@ -20,7 +20,7 @@ Option names are case-insensitive and use a single leading `-`. With no argument
 
 On 64-bit Windows, the 32-bit build skips the check for missing application files and says so, because redirection would make existing files look missing. Use the 64-bit build for that check.
 
-Prompts accept `y` (delete this one), `n` (keep it), `s` (skip the rest of this category in this store), and `a` (delete the rest of this category in this store without asking). For duplicates, `y` deletes all but one. If the duplicates have different names, a second prompt asks which name to keep.
+Prompts accept `y` (delete this one), `n` (keep it), `s` (skip the rest of this category in this store), and `a` (delete the rest of this category in this store without asking). For duplicates, `y` deletes all but one. If the duplicates have different names, a second prompt asks which name to keep. If input ends at any prompt, for example with redirected input, nothing further is deleted without an answer: that prompt counts as `s`, or leaves that group of duplicates alone.
 
 `-analyze-inbound-rules` details:
 
