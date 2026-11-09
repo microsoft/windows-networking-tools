@@ -1432,6 +1432,8 @@ try
 		WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
 	}
 
+	// never released: this thread ends the process, so the console control handler cannot also restore the filters
+	[[maybe_unused]] const auto lock = g_deletedWfpFiltersLock.lock();
 	std::printf("\n * Restoring filters to callout drivers...\n");
 	RestoreDeletedFilters();
 
@@ -1444,5 +1446,8 @@ catch (...)
 	std::printf(
 	    "*** Exception occurred while temporarily removing WFP filters for 3rd party callouts (0x%x)\n",
 	    wil::ResultFromCaughtException());
+
+	// RestoreDeletedFilters empties the list, so the console control handler has nothing left to restore after this
+	[[maybe_unused]] const auto lock = g_deletedWfpFiltersLock.lock();
 	RestoreDeletedFilters();
 }

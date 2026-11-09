@@ -115,7 +115,7 @@ The only link from a firewall rule to its WFP filters is the display name, so fi
 3. Prompt per driver, unless `-driver` was given.
 4. For each matching filter: fetch the full filter, fetch its original owner, group, and DACL, take ownership, delete by key, and confirm that it is gone. If the filter is not deleted, its original security is put back. Save the filter and descriptor to `g_deletedWfpFilters`. `g_deletedWfpFiltersLock` is held across this step, and the control handler takes it and never releases it, so a filter being deleted is recorded and restored, and no further deletions start.
 5. Start a thread waiting for Enter, and create the named event.
-6. Wait for either signal, restore, and call `TerminateProcess`.
+6. Wait for either signal, restore, and call `TerminateProcess`. Every restore path holds `g_deletedWfpFiltersLock`, so filters are only restored once.
 
 `TerminateProcess` is deliberate: the Enter thread may still be blocked in `getline`, which breaks CRT shutdown. Anything that must happen at exit on this path has to happen before that call, which matters for future JSON reporting.
 
@@ -153,7 +153,6 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 | Framing drops fall through | `ListenForTcpipEvents` | The `TcpipFramingPacketDrops` case has no `break`, so each framing event also prints a "Failed to read 'SynAttacksDetected'" message. |
 | Allow-bypass counts corrupt | `InboundRuleGroup::swap_rule_counts` | A missing `else` makes bypass rules also decrement `allow_rule_count`, which underflows. |
 | Prompts loop forever at end of input | `PromptForDeletion` | `getline` failure is not checked. Redirected or closed stdin spins indefinitely. |
-| Restoration can run twice at once | `RestoreDeletedFilters` | The control handler and the main path are not synchronized, so a Ctrl-C during restore can re-add and double-free entries. |
 | Refresh double-counts | `LoadWfpFilters` via `FindFilterByFilterId` | A reload increments sublayer and provider counts without resetting them. |
 
 ### Lower impact
