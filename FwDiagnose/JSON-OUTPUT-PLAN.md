@@ -430,11 +430,10 @@ The current `-json <path>` implementation exports firewall-profile configuration
 
 The implementation uses the existing C++/WinRT dependency's `Windows.Data.Json` serializer for JSON escaping and a formatting pass to keep `code`/`state` objects on one line. The file is UTF-8 without a BOM.
 
-Focused checks are in `tests\ProfileJsonReportTests.cpp`. They serialize synthetic collected records, including supplied failures, without reading or writing system firewall configuration. From the repository root in a Visual Studio Developer PowerShell, compile and run them using the currently restored include directories (update the C++/WinRT version path if the manifest changes):
+Focused checks are in `tests\ProfileJsonReportTests.cpp`, built by the `ProfileJsonReportTests` project in the solution. They serialize synthetic collected records, including supplied failures, without reading or writing system firewall configuration. After building the solution, run them from the repository root. The optional argument keeps the generated report; without it, a temporary file is used and deleted:
 
 ```powershell
-cl /nologo /std:c++latest /EHsc /W4 /WX /MTd /DWIN32_LEAN_AND_MEAN /DUNICODE /D_UNICODE /I .\ctl /I .\packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\include /I .\packages\Microsoft.Windows.CppWinRT.3.0.260818.1\include .\FwDiagnose\tests\ProfileJsonReportTests.cpp /Fo.\FwDiagnose\x64\Debug\ProfileJsonReportTests.obj /Fe.\FwDiagnose\x64\Debug\ProfileJsonReportTests.exe /link ole32.lib oleaut32.lib wbemuuid.lib runtimeobject.lib windowsapp.lib
-.\FwDiagnose\x64\Debug\ProfileJsonReportTests.exe .\FwDiagnose\x64\Debug\profile-failures.json
+.\x64\Debug\ProfileJsonReportTests.exe .\x64\Debug\profile-failures.json
 ```
 
 This is the first section of `-analyze-rules`, collected by `ProcessFirewallPolicy()`. Its content is identical with and without `-verbose`. The values below are illustrative, not captured from a running executable.

@@ -132,7 +132,15 @@ Restoration uses `FwpmFilterAdd0` with the original security descriptor. If that
 
 ## Testing
 
-There is no test project. `tests/ProfileJsonReportTests.cpp` includes `ProfileJsonReport.cpp` directly and is compiled by hand using the command in `JSON-OUTPUT-PLAN.md`. Otherwise, the safe smoke test is `FwDiagnose.exe -?`, which exits before loading any data. Other commands depend on the machine's state, and the mutating ones need a test machine.
+The solution includes two test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly and checks the JSON report using synthetic data. Neither needs system access. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
+
+```powershell
+msbuild WindowsNetworkingTools.sln /m /p:Configuration=Debug /p:Platform=x64
+.\x64\Debug\NormalizedStringTests.exe
+.\x64\Debug\ProfileJsonReportTests.exe
+```
+
+Otherwise, the safe smoke test is `FwDiagnose.exe -?`, which exits before loading any data. Other commands depend on the machine's state, and the mutating ones need a test machine.
 
 ## Known issues
 
@@ -148,7 +156,6 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 
 | Issue | Location | Effect |
 |---|---|---|
-| Substring search can read out of bounds | `NormalizedString::StrStrComparison` | In the non-ASCII branch, `haystack.size() - needle.size()` underflows when the needle is longer, so the loop reads past the string. Reachable from `-remove-callouts -driver`. |
 | Filter lookup accepts a near match | `FindFilterByFilterId` | `lower_bound` is not followed by an equality check, so a drop from a filter newer than the snapshot can be attributed to the next-higher filter ID. |
 | Framing drops fall through | `ListenForTcpipEvents` | The `TcpipFramingPacketDrops` case has no `break`, so each framing event also prints a "Failed to read 'SynAttacksDetected'" message. |
 | Allow-bypass counts corrupt | `InboundRuleGroup::swap_rule_counts` | A missing `else` makes bypass rules also decrement `allow_rule_count`, which underflows. |
@@ -167,6 +174,5 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 
 ### Documentation and test drift
 
-- `tests/ProfileJsonReportTests.cpp` calls `CodedValue` and `Pretty`, which were renamed to `ReturnJsonCodedValueObject` and `PrettifyJson`. It will not compile as written.
 - `JSON-OUTPUT-PLAN.md` cites `FirewallRules.cpp:2455` for `ProcessFirewallPolicy`; it has moved to about line 2783.
 - The help text says `-analyze-inbound-rules` covers "active" rules, and that `-driver` must follow `-remove-callouts`. Neither matches the code.

@@ -137,6 +137,11 @@ struct NormalizedString
 			return haystack.value.empty() && needle.value.empty();
 		}
 
+		if (needle.value.size() > haystack.value.size())
+		{
+			return false;
+		}
+
 		if (!haystack.containsNonAsciiCharacters && !needle.containsNonAsciiCharacters)
 		{
 			// if neither contain non-ascii characters, can just do a raw search without any conversions

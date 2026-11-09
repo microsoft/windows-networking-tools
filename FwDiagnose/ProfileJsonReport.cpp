@@ -292,6 +292,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 			return L"[]";
 		}
 
+		text = L"[\n";
 		for (uint32_t index = 0; index < array.Size(); ++index)
 		{
 			text += childIndent + PrettifyJson(array.GetAt(index), depth + 1);

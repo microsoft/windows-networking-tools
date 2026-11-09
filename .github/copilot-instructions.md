@@ -28,7 +28,7 @@ The solution configurations are `Debug`/`Release` for `x86`, `x64`, and `ARM64`.
 
 `LatestBuilds` contains published executables and symbols linked from `README.md`. Use freshly built output (such as `.\x64\Debug`) to validate source changes rather than those published binaries.
 
-There is no checked-in automated test project or test runner. Use the smallest affected executable as the single-test equivalent; non-mutating command-line smoke checks include:
+There is no test runner. The solution's test projects are `NormalizedStringTests` and `ProfileJsonReportTests`: run `.\x64\Debug\NormalizedStringTests.exe` and `.\x64\Debug\ProfileJsonReportTests.exe`, which return a nonzero exit code on failure. Otherwise, use the smallest affected executable as the single-test equivalent; non-mutating command-line smoke checks include:
 
 ```powershell
 .\x64\Debug\FwDiagnose.exe -?

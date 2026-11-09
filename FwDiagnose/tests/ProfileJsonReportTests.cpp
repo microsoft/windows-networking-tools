@@ -19,7 +19,28 @@ wmain(int argc, wchar_t** argv)
 try
 {
 	const auto init = wil::CoInitializeEx();
-	Check(argc == 2, "Expected an output path.");
+	Check(argc <= 2, "Expected at most one output path.");
+
+	// the output path is optional, so the test can run with no arguments from the solution
+	wchar_t temporaryPath[MAX_PATH + 1]{};
+	if (argc < 2)
+	{
+		wchar_t temporaryDirectory[MAX_PATH + 1]{};
+		Check(
+		    GetTempPathW(ARRAYSIZE(temporaryDirectory), temporaryDirectory) != 0,
+		    "Could not find the temp directory.");
+		Check(GetTempFileNameW(temporaryDirectory, L"fwd", 0, temporaryPath) != 0, "Could not create a temp file.");
+	}
+	const auto deleteTemporaryFile = wil::scope_exit(
+	    [&]
+	    {
+		    if (temporaryPath[0] != L'\0')
+		    {
+			    DeleteFileW(temporaryPath);
+		    }
+	    });
+	PCWSTR const outputPath = argc == 2 ? argv[1] : temporaryPath;
+
 	using namespace winrt::Windows::Data::Json;
 	Check(IsShieldsCommand(L"-enable-shields-up:public", L"-enable-shields-up"), "Profile suffix rejected.");
 	Check(
@@ -28,21 +49,24 @@ try
 	Check(!IsShieldsCommand(L"-enable-shields-up:invalid", L"-enable-shields-up"), "Invalid suffix accepted.");
 	Check(!IsShieldsCommand(L"-enable-shields-up-extra", L"-enable-shields-up"), "Invalid command prefix accepted.");
 
-	const auto unavailable = CodedValue(std::nullopt, PolicyValueKind::Boolean);
+	const auto unavailable = ReturnJsonCodedValueObject(std::nullopt, PolicyValueKind::Boolean);
 	Check(unavailable.GetNamedValue(L"code").ValueType() == JsonValueType::Null, "Unavailable code not null.");
 	Check(unavailable.GetNamedString(L"state") == L"unavailable", "Unavailable state incorrect.");
 	Check(
-	    CodedValue(2, PolicyValueKind::Boolean).GetNamedString(L"state") == L"not_configured",
+	    ReturnJsonCodedValueObject(2, PolicyValueKind::Boolean).GetNamedString(L"state") == L"not_configured",
 	    "Not configured lost.");
-	Check(CodedValue(999, PolicyValueKind::Action).GetNamedNumber(L"code") == 999, "Unknown raw code lost.");
+	Check(
+	    ReturnJsonCodedValueObject(999, PolicyValueKind::Action).GetNamedNumber(L"code") == 999,
+	    "Unknown raw code lost.");
 	JsonObject escaped;
 	escaped.SetNamedValue(L"text", String(L"quote\" slash\\ newline\n \u03a9 \u4e2d"));
-	const auto formatted = Pretty(escaped);
+	const auto formatted = PrettifyJson(escaped);
 	Check(
 	    JsonObject::Parse(formatted).GetNamedString(L"text") == L"quote\" slash\\ newline\n \u03a9 \u4e2d",
 	    "Unicode or escaping failed round trip.");
 	Check(
-	    Pretty(CodedValue(1, PolicyValueKind::Boolean)) == L"{ \"code\": 1, \"state\": \"true\" }",
+	    PrettifyJson(ReturnJsonCodedValueObject(1, PolicyValueKind::Boolean)) ==
+	        L"{ \"code\": 1, \"state\": \"true\" }",
 	    "Coded pair not inline.");
 	JsonObject category;
 	JsonArray ruleDetails;
@@ -51,27 +75,27 @@ try
 	category.SetNamedValue(L"count", JsonValue::CreateNumberValue(1));
 	category.SetNamedValue(L"category", String(L"parsing_error"));
 	Check(
-	    Pretty(category) ==
+	    PrettifyJson(category) ==
 	        L"{\n  \"category\": \"parsing_error\",\n  \"count\": 1,\n  \"rules\": [\n    \"example-rule\"\n  ]\n}",
 	    "Category fields are not in category/count/rules order.");
 	category.Remove(L"rules");
 	Check(
-	    Pretty(category) == L"{\n  \"category\": \"parsing_error\",\n  \"count\": 1\n}",
+	    PrettifyJson(category) == L"{\n  \"category\": \"parsing_error\",\n  \"count\": 1\n}",
 	    "Nonverbose category fields are not in category/count order.");
 	category.SetNamedValue(L"extraField", String(L"preserved"));
 	Check(
-	    JsonObject::Parse(Pretty(category)).GetNamedString(L"extraField") == L"preserved",
+	    JsonObject::Parse(PrettifyJson(category)).GetNamedString(L"extraField") == L"preserved",
 	    "Ordered formatting dropped an additional category field.");
 	JsonObject analysis;
 	analysis.SetNamedValue(L"categories", JsonArray{});
 	analysis.SetNamedValue(L"errorRuleCount", JsonValue::CreateNumberValue(0));
 	analysis.SetNamedValue(L"totalRuleCount", JsonValue::CreateNumberValue(733));
 	Check(
-	    Pretty(analysis) == L"{\n  \"totalRuleCount\": 733,\n  \"errorRuleCount\": 0,\n  \"categories\": []\n}",
+	    PrettifyJson(analysis) == L"{\n  \"totalRuleCount\": 733,\n  \"errorRuleCount\": 0,\n  \"categories\": []\n}",
 	    "Status analysis fields are not in total/error/categories order.");
 	analysis.SetNamedValue(L"extraField", String(L"preserved"));
 	Check(
-	    JsonObject::Parse(Pretty(analysis)).GetNamedString(L"extraField") == L"preserved",
+	    JsonObject::Parse(PrettifyJson(analysis)).GetNamedString(L"extraField") == L"preserved",
 	    "Ordered formatting dropped an additional status analysis field.");
 
 	FirewallProfileData profile;
@@ -94,10 +118,14 @@ try
 		     .message = L"Property read failed.",
 		     .error = E_ACCESSDENIED});
 	}
-	InitializeProfileJsonReport(argv[1], {L"-analyze-rules"});
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules"});
 	WriteFirewallProfileJson(profile, L"analyze_rules");
-	const auto output =
-	    g_results.GetAt(0).GetObject().GetNamedObject(L"data").GetNamedArray(L"firewallProfiles").GetAt(0).GetObject();
+	const auto output = g_jsonResults.GetAt(0)
+	                        .GetObject()
+	                        .GetNamedObject(L"data")
+	                        .GetNamedArray(L"firewallProfiles")
+	                        .GetAt(0)
+	                        .GetObject();
 	Check(output.GetNamedValue(L"profile").ValueType() == JsonValueType::Null, "Missing name not null.");
 	Check(output.GetNamedObject(L"enabled").GetNamedString(L"state") == L"unavailable", "Missing enabled defaulted.");
 	Check(
@@ -130,8 +158,12 @@ try
 	     .sourceProperty = L"Enabled",
 	     .unknownValue = 999});
 	WriteFirewallProfileJson(collected, L"analyze_rules");
-	const auto collectedOutput =
-	    g_results.GetAt(0).GetObject().GetNamedObject(L"data").GetNamedArray(L"firewallProfiles").GetAt(1).GetObject();
+	const auto collectedOutput = g_jsonResults.GetAt(0)
+	                                 .GetObject()
+	                                 .GetNamedObject(L"data")
+	                                 .GetNamedArray(L"firewallProfiles")
+	                                 .GetAt(1)
+	                                 .GetObject();
 	Check(collectedOutput.GetNamedString(L"profile") == L"public", "Collected profile name lost.");
 	Check(collectedOutput.GetNamedObject(L"enabled").GetNamedNumber(L"code") == 999, "Collected unknown code lost.");
 	Check(
@@ -162,7 +194,7 @@ try
 	    warning.GetNamedString(L"severity") == L"warning" && !warning.HasKey(L"error"),
 	    "Unknown value warning absent.");
 	Check(warning.GetNamedObject(L"subject").GetNamedString(L"sourceProperty") == L"Enabled", "Source property lost.");
-	const auto profileText = Pretty(collectedOutput);
+	const auto profileText = PrettifyJson(collectedOutput);
 	size_t nextField = 0;
 	for (const auto* key :
 	     {L"profile",
@@ -188,10 +220,10 @@ try
 	Check(JsonObject::Parse(profileText).Size() == collectedOutput.Size(), "Ordered formatting lost profile fields.");
 	collectedOutput.SetNamedValue(L"extraField", String(L"preserved"));
 	Check(
-	    JsonObject::Parse(Pretty(collectedOutput)).GetNamedString(L"extraField") == L"preserved",
+	    JsonObject::Parse(PrettifyJson(collectedOutput)).GetNamedString(L"extraField") == L"preserved",
 	    "Ordered formatting dropped an additional profile field.");
 	Check(
-	    JsonObject::Parse(Pretty(output)).GetNamedValue(L"profile").ValueType() == JsonValueType::Null,
+	    JsonObject::Parse(PrettifyJson(output)).GetNamedValue(L"profile").ValueType() == JsonValueType::Null,
 	    "Ordered formatting lost unavailable profile values.");
 
 	FirewallPolicyObjects store;
@@ -208,7 +240,7 @@ try
 	store.store_type_string = "Local";
 	store.load_result = S_OK;
 	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::NotPerformed);
-	const auto stores = g_results.GetAt(0).GetObject().GetNamedObject(L"data").GetNamedArray(L"stores");
+	const auto stores = g_jsonResults.GetAt(0).GetObject().GetNamedObject(L"data").GetNamedArray(L"stores");
 	Check(stores.GetAt(0).GetObject().GetNamedString(L"status") == L"completed", "Empty store not completed.");
 	Check(stores.GetAt(0).GetObject().GetNamedNumber(L"ruleCount") == 0, "Empty store count missing.");
 	Check(!stores.GetAt(0).GetObject().HasKey(L"ruleDetails"), "Empty store has details that were not collected.");
@@ -237,7 +269,7 @@ try
 	const auto normalAnalysis = stores.GetAt(3).GetObject().GetNamedObject(L"ruleDetails");
 	const auto normalStore = stores.GetAt(3).GetObject();
 	Check(!normalStore.HasKey(L"statusAnalysis"), "Old store analysis field retained.");
-	const auto storeText = Pretty(normalStore);
+	const auto storeText = PrettifyJson(normalStore);
 	size_t nextStoreField = 0;
 	for (const auto* key : {L"store", L"displayName", L"ruleDetails", L"status", L"diagnostics"})
 	{
@@ -250,7 +282,7 @@ try
 	    normalAnalysis.GetNamedNumber(L"totalRuleCount") == 0 && normalAnalysis.GetNamedNumber(L"errorRuleCount") == 0,
 	    "Nonverbose error count incorrect.");
 	Check(!normalAnalysis.HasKey(L"noErrorRuleCount"), "Old nonverbose no-error count retained.");
-	g_report.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(true));
+	g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(true));
 	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
 	const auto verboseCategories =
 	    stores.GetAt(4).GetObject().GetNamedObject(L"ruleDetails").GetNamedArray(L"categories");
@@ -266,7 +298,7 @@ try
 	store.store_type_string = "Group Policy (RSOP)";
 	for (const bool verbose : {false, true})
 	{
-		g_report.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
 		store.load_result = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::NotPerformed);
 		const auto absent = stores.GetAt(stores.Size() - 1).GetObject();
