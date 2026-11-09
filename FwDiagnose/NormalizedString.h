@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <string>
 #include <windows.h>
 
@@ -106,7 +107,7 @@ struct NormalizedString
 		case CSTR_GREATER_THAN:
 			return 1;
 		default:
-			WI_ASSERT(false);
+			assert(false);
 			return 1; // CompareStringOrdinal failed - report the strings as not equal
 		}
 	}
