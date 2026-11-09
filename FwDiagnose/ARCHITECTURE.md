@@ -113,13 +113,13 @@ The only link from a firewall rule to its WFP filters is the display name, so fi
 1. Build the list of third-party drivers, filtered by `-driver` if given.
 2. Install a console control handler, so an interruption at any later point restores what was deleted.
 3. Prompt per driver, unless `-driver` was given.
-4. For each matching filter: fetch the full filter, take ownership, fetch its security descriptor, delete by key, and confirm that it is gone. Save the filter and descriptor to `g_deletedWfpFilters`. `g_deletedWfpFiltersLock` is held across this step, and the control handler takes it and never releases it, so a filter being deleted is recorded and restored, and no further deletions start.
+4. For each matching filter: fetch the full filter, fetch its original owner, group, and DACL, take ownership, delete by key, and confirm that it is gone. If the filter is not deleted, its original security is put back. Save the filter and descriptor to `g_deletedWfpFilters`. `g_deletedWfpFiltersLock` is held across this step, and the control handler takes it and never releases it, so a filter being deleted is recorded and restored, and no further deletions start.
 5. Start a thread waiting for Enter, and create the named event.
 6. Wait for either signal, restore, and call `TerminateProcess`.
 
 `TerminateProcess` is deliberate: the Enter thread may still be blocked in `getline`, which breaks CRT shutdown. Anything that must happen at exit on this path has to happen before that call, which matters for future JSON reporting.
 
-Restoration uses `FwpmFilterAdd0`. A restored filter keeps its key but may get a new runtime ID. On `FWP_E_WRONG_SESSION`, it tries again through each active WFP session.
+Restoration uses `FwpmFilterAdd0` with the original security descriptor. If that fails, it retries with default security and prints a warning, because getting the filter back matters more than its security. The SACL is not preserved. A restored filter keeps its key but may get a new runtime ID. On `FWP_E_WRONG_SESSION`, it tries again through each active WFP session.
 
 ## Design rules
 
@@ -143,7 +143,6 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 | Issue | Location | Effect |
 |---|---|---|
 | A crash or forced kill strands removed filters | `TemporarilyRemoveWfpCalloutFilters` | The saved filters exist only in this process's memory, so they cannot be restored if it ends without running its console control handler. |
-| Original filter security is not preserved | `TemporarilyRemoveWfpCalloutFilters`, `TakeOwnershipOfWfpFilter` | Ownership and the DACL are replaced **before** the descriptor is captured, and the capture requests no components (`SECURITY_INFORMATION` of 0). Restored filters do not get their original security. |
 
 ### Medium impact
 

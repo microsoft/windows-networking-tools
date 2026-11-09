@@ -891,16 +891,62 @@ namespace
 {
 struct RemovedFilterDetails
 {
-    RemovedFilterDetails(FWPM_FILTER* input_filter, PSECURITY_DESCRIPTOR input_filter_sd)
-        : filter(input_filter), filter_sd(input_filter_sd)
-    {
-    }
-    FWPM_FILTER* filter{};
-    PSECURITY_DESCRIPTOR filter_sd{};
+	RemovedFilterDetails(FWPM_FILTER* input_filter, PSECURITY_DESCRIPTOR input_filter_sd)
+	    : filter(input_filter), filter_sd(input_filter_sd)
+	{
+	}
+	FWPM_FILTER* filter{};
+	PSECURITY_DESCRIPTOR filter_sd{};
 };
-}
+} // namespace
 static std::vector<RemovedFilterDetails> g_deletedWfpFilters;
 static wil::critical_section g_deletedWfpFiltersLock;
+
+// Puts back the security of a filter that was not deleted after taking ownership of it
+static void
+RestoreWfpFilterSecurity(_In_ const GUID& filterKey, PSID owner_sid, PSID group_sid, PACL dacl) noexcept
+{
+	constexpr SECURITY_INFORMATION securityInfo =
+	    OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
+	const auto set_security_error = FwpmFilterSetSecurityInfoByKey0(
+	    GetFwpmEngineHandle(),
+	    &filterKey,
+	    securityInfo,
+	    static_cast<const SID*>(owner_sid),
+	    static_cast<const SID*>(group_sid),
+	    dacl,
+	    nullptr);
+	if (set_security_error != ERROR_SUCCESS)
+	{
+		std::printf(
+		    "         - WARNING: could not put back the original security of this filter: 0x%lx\n",
+		    HRESULT_FROM_WIN32(set_security_error));
+	}
+}
+
+// Adds a deleted filter back with its original security when possible. The original owner is often an account this
+// process cannot assign, and having the filter back with default security is better than not having it back at all.
+static DWORD
+AddDeletedFilter(HANDLE engine_handle, FWPM_FILTER* filter, PSECURITY_DESCRIPTOR filter_sd) noexcept
+{
+	const auto original_security_error = FwpmFilterAdd0(engine_handle, filter, filter_sd, nullptr);
+	if (original_security_error == ERROR_SUCCESS || !filter_sd)
+	{
+		return original_security_error;
+	}
+
+	if (FwpmFilterAdd0(engine_handle, filter, nullptr, nullptr) != ERROR_SUCCESS)
+	{
+		return original_security_error;
+	}
+
+	std::printf(
+	    "WARNING: filter %llu was restored with default security - its original security could not be applied: 0x%lx\n",
+	    filter->filterId,
+	    HRESULT_FROM_WIN32(original_security_error));
+	return ERROR_SUCCESS;
+}
+
 static void
 RestoreDeletedFilters() noexcept
 {
@@ -917,7 +963,7 @@ RestoreDeletedFilters() noexcept
 	{
 		if (filter)
 		{
-			const auto fwpm_error = FwpmFilterAdd0(engine_handle, filter, filter_sd, nullptr);
+			const auto fwpm_error = AddDeletedFilter(engine_handle, filter, filter_sd);
 			if (fwpm_error != ERROR_SUCCESS)
 			{
 				// Fwpm* functions can return both Win32 errors and HRESULT values
@@ -1030,8 +1076,7 @@ RestoreDeletedFilters() noexcept
 							continue;
 						}
 
-						const auto fwpm_error_for_session =
-						    FwpmFilterAdd0(engineHandleForSession, filter, filter_sd, nullptr);
+						const auto fwpm_error_for_session = AddDeletedFilter(engineHandleForSession, filter, filter_sd);
 						if (fwpm_error_for_session != ERROR_SUCCESS)
 						{
 							std::printf(
@@ -1250,23 +1295,14 @@ try
 						    }
 					    });
 
-					// take ownership of the WFP filter so we can get the SECURITY_DESCRIPTOR
-					const auto ownership_error = TakeOwnershipOfWfpFilter(current_fwpm_filter.filterKey);
-					if (ownership_error != ERROR_SUCCESS)
-					{
-						std::printf(
-						    "         - TakeOwnershipOfWfpFilter failed: 0x%lx -- cannot delete filter %llu\n",
-						    HRESULT_FROM_WIN32(ownership_error),
-						    current_fwpm_filter.filterId);
-						continue;
-					}
-
+					// must be read before taking ownership, which replaces the owner and the DACL
 					PSID owner_sid{};
 					PSID group_sid{};
 					PACL dacl{};
 					PACL sacl{};
 					PSECURITY_DESCRIPTOR filter_security_descriptor{};
-					constexpr SECURITY_INFORMATION getFilterSecurityInfo{};
+					constexpr SECURITY_INFORMATION getFilterSecurityInfo =
+					    OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
 					const auto get_security_error = FwpmFilterGetSecurityInfoByKey0(
 					    GetFwpmEngineHandle(),
 					    &current_fwpm_filter.filterKey,
@@ -1305,6 +1341,16 @@ try
 						    }
 					    });
 
+					const auto ownership_error = TakeOwnershipOfWfpFilter(current_fwpm_filter.filterKey);
+					if (ownership_error != ERROR_SUCCESS)
+					{
+						std::printf(
+						    "         - TakeOwnershipOfWfpFilter failed: 0x%lx -- cannot delete filter %llu\n",
+						    HRESULT_FROM_WIN32(ownership_error),
+						    current_fwpm_filter.filterId);
+						continue;
+					}
+
 					const auto delete_error =
 					    FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
 					if (delete_error != 0)
@@ -1312,6 +1358,7 @@ try
 						std::printf(
 						    "         - FwpmFilterDeleteByKey failed: 0x%lx\n",
 						    HRESULT_FROM_WIN32(delete_error));
+						RestoreWfpFilterSecurity(current_fwpm_filter.filterKey, owner_sid, group_sid, dacl);
 						continue;
 					}
 
@@ -1326,6 +1373,7 @@ try
 						std::printf(
 						    "         - found the filter after FwpmFilterDeleteByKey succeeded -- cannot "
 						    "delete the filter (it likely applied security privileges to its filter)\n");
+						RestoreWfpFilterSecurity(current_fwpm_filter.filterKey, owner_sid, group_sid, dacl);
 						continue;
 					}
 
