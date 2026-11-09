@@ -13,6 +13,8 @@
 #include <wil/network.h>
 #include <wil/resource.h>
 
+#include "WilNetworkLocal.h"
+
 static std::wstring
 IpProtocolToString(UINT8 protocol)
 {
@@ -541,7 +543,7 @@ ListenForTcpipEvents()
 				}
 				const auto& local_address = local_address_string.value();
 				wil::network::socket_address local_sockaddr;
-				if (FAILED(local_sockaddr.reset_complete_address_nothrow(local_address.c_str())))
+				if (FAILED(ResetCompleteAddressNothrow(local_sockaddr, local_address.c_str())))
 				{
 					DebugBreak();
 				}

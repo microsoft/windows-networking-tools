@@ -269,6 +269,7 @@
     <ClInclude Include="TcpipEvents.h" />
     <ClInclude Include="WfpCounters.h" />
     <ClInclude Include="WfpEvents.h" />
+    <ClInclude Include="WilNetworkLocal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

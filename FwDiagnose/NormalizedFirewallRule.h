@@ -28,6 +28,7 @@ struct NormalizedFirewallRule
 	std::optional<bool> successfully_resolved_user_name{std::nullopt};
 	std::optional<bool> successfully_resolved_user_name_with_local_profile{std::nullopt};
 
+	std::string local_application_failure_error;
 	std::optional<bool> local_application_exists{std::nullopt};
 
 	size_t filter_count{};
@@ -39,6 +40,8 @@ struct NormalizedFirewallRule
 	bool missing_package_id = false;
 	bool missing_package_family_name = false;
 	bool unresolve_user_sid = false;
+	bool local_application_uses_per_user_variable = false;
+	bool local_application_uses_service_profile_variable = false;
 
 	NormalizedFirewallRule(const NormalizedFirewallRule&) = delete;
 	NormalizedFirewallRule&

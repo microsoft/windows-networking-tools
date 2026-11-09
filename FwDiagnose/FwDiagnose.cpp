@@ -209,7 +209,12 @@ try
 	}
 
 	std::vector<PCWSTR> args(argv + 1, argv + argc);
-	if (std::ranges::find(args, L"-?") != args.end())
+	if (std::ranges::find_if(
+	        args,
+	        [&](const auto* lhs)
+	        {
+		        return _wcsicmp(lhs, L"-?") == 0;
+	        }) != args.end())
 	{
 		PrintUsage();
 		return 0;

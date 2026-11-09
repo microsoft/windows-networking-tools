@@ -1,3 +1,4 @@
+#include <span>
 #include <string>
 
 #include <windows.h>
@@ -436,6 +437,53 @@ ProcessForStringResource(std::wstring& string_value)
 
 	std::wstring string_resource{raw_pointer_to_resource, raw_pointer_to_resource + conversion_size};
 	string_value.swap(string_resource);
+}
+
+static bool
+ContainsEnvironmentVariable(const std::wstring& path, std::span<const std::wstring_view> variables)
+{
+	// every variable starts with '%', so only those positions in the path can match
+	for (auto offset = path.find(L'%'); offset != std::wstring::npos; offset = path.find(L'%', offset + 1))
+	{
+		const auto remaining_path_size = path.size() - offset;
+		for (const auto variable : variables)
+		{
+			if (variable.size() > remaining_path_size)
+			{
+				continue;
+			}
+
+			constexpr BOOL ignore_case = TRUE;
+			if (CompareStringOrdinal(
+			        path.c_str() + offset,
+			        static_cast<int>(variable.size()),
+			        variable.data(),
+			        static_cast<int>(variable.size()),
+			        ignore_case) == CSTR_EQUAL)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// These variables expand differently for each account. The Firewall service (mpssvc) resolves rule paths as
+// LocalService, so a path using one of them does not reach the file of the user who the path was intended for.
+static bool
+ContainsPerUserEnvironmentVariable(const std::wstring& path)
+{
+	constexpr std::wstring_view per_user_variables[]{L"%LOCALAPPDATA%", L"%HOMEPATH%", L"%USERNAME%", L"%ONEDRIVE%"};
+	return ContainsEnvironmentVariable(path, per_user_variables);
+}
+
+// These variables resolve within the profile of the Firewall service account. That can be deliberate, but may be
+// unexpected, so a path using one is reported as a warning rather than as a broken rule.
+static bool
+ContainsServiceProfileEnvironmentVariable(const std::wstring& path)
+{
+	constexpr std::wstring_view service_profile_variables[]{L"%USERPROFILE%", L"%APPDATA%", L"%TEMP%", L"%TMP%"};
+	return ContainsEnvironmentVariable(path, service_profile_variables);
 }
 } // namespace details
 
@@ -998,8 +1046,13 @@ NormalizedFirewallRule::RuleTargetsLocalAppxRuleApplication() const
 void
 NormalizedFirewallRule::CheckIfLocalApplicationExists()
 {
-	if (!RuleTargetsLocalSystemApplication())
+	if (!fw_rule->wszLocalApplication || fw_rule->wszLocalApplication[0] == L'\0')
 	{
+		return;
+	}
+	if (RuleTargetsLocalSystemApplication())
+	{
+		// "System" identifies the kernel - it is not a file path
 		return;
 	}
 	if (RuleTargetsLocalAppxRuleApplication())
@@ -1009,6 +1062,20 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 	}
 
 	const std::wstring original_filename{fw_rule->wszLocalApplication};
+	if (details::ContainsPerUserEnvironmentVariable(original_filename))
+	{
+		local_application_exists = false;
+		local_application_uses_per_user_variable = true;
+		local_application_failure_error = "Contains per-user environment variable";
+		return;
+	}
+	if (details::ContainsServiceProfileEnvironmentVariable(original_filename))
+	{
+		// this expands differently for this process than for the Firewall service, so the file cannot be checked here
+		local_application_uses_service_profile_variable = true;
+		return;
+	}
+
 	const auto expanded_string = details::ExpandString(original_filename);
 	if (expanded_string.empty())
 	{
@@ -1027,8 +1094,11 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 		{
 			std::printf("Failed to FindFirstFileExW(%ls) (0x%lx)\n", expanded_string.c_str(), gle);
 		}
+
 		local_application_exists = false;
+		local_application_failure_error = "Failed to find the file (" + std::to_string(gle) + ")";
 	}
+
 	else
 	{
 		local_application_exists = true;
