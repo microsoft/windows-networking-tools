@@ -157,7 +157,6 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 | Issue | Location | Effect |
 |---|---|---|
 | Prompts loop forever at end of input | `PromptForDeletion` | `getline` failure is not checked. Redirected or closed stdin spins indefinitely. |
-| Refresh double-counts | `LoadWfpFilters` via `FindFilterByFilterId` | A reload increments sublayer and provider counts without resetting them. |
 
 ### Lower impact
 

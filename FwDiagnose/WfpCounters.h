@@ -191,6 +191,8 @@ const std::vector<SubLayerDetails>&
 ReadWfpSubLayers() noexcept;
 void
 WriteWfpSubLayers() noexcept;
+void
+ResetSubLayerFilterCounts() noexcept;
 
 SubLayerDetails&
 FindSublayer(const GUID& subLayerKey);
@@ -219,6 +221,8 @@ const std::vector<ProviderDetails>&
 ReadWfpProviders() noexcept;
 void
 WriteWfpProviders() noexcept;
+void
+ResetProviderFilterCounts() noexcept;
 
 ProviderDetails&
 FindProvider(const GUID& providerKey);

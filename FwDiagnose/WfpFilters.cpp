@@ -78,6 +78,10 @@ try
 {
 	g_all_filters.clear();
 
+	// the counts are rebuilt below, and this function also runs when refreshing the filters
+	ResetSubLayerFilterCounts();
+	ResetProviderFilterCounts();
+
 	HANDLE engine_handle = GetFwpmEngineHandle();
 	HANDLE enum_handle{};
 	auto fwpm_error = FwpmFilterCreateEnumHandle0(engine_handle, nullptr, &enum_handle);

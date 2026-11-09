@@ -273,6 +273,17 @@ ReadWfpSubLayers() noexcept
 }
 
 void
+ResetSubLayerFilterCounts() noexcept
+{
+	for (auto& sublayer : g_all_sublayers)
+	{
+		sublayer.filterCount = 0;
+		sublayer.disabledFilterCount = 0;
+		sublayer.persistentFilterCount = 0;
+	}
+}
+
+void
 WriteWfpSubLayers() noexcept
 {
 	std::printf(

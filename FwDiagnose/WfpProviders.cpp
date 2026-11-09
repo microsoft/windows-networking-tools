@@ -138,6 +138,17 @@ ReadWfpProviders() noexcept
 }
 
 void
+ResetProviderFilterCounts() noexcept
+{
+	for (auto& provider : g_all_providers)
+	{
+		provider.filterCount = 0;
+		provider.disabledFilterCount = 0;
+		provider.persistentFilterCount = 0;
+	}
+}
+
+void
 WriteWfpProviders() noexcept
 {
 	std::printf(
