@@ -111,10 +111,11 @@ The only link from a firewall rule to its WFP filters is the display name, so fi
 `TemporarilyRemoveWfpCalloutFilters` works in these stages:
 
 1. Build the list of third-party drivers, filtered by `-driver` if given.
-2. Prompt per driver, unless `-driver` was given.
-3. For each matching filter: fetch the full filter, take ownership, fetch its security descriptor, delete by key, and confirm that it is gone. Save the filter and descriptor to `g_deletedWfpFilters`.
-4. Install a console control handler, start a thread waiting for Enter, and create the named event.
-5. Wait for either signal, restore, and call `TerminateProcess`.
+2. Install a console control handler, so an interruption at any later point restores what was deleted.
+3. Prompt per driver, unless `-driver` was given.
+4. For each matching filter: fetch the full filter, take ownership, fetch its security descriptor, delete by key, and confirm that it is gone. Save the filter and descriptor to `g_deletedWfpFilters`. `g_deletedWfpFiltersLock` is held across this step, and the control handler takes it and never releases it, so a filter being deleted is recorded and restored, and no further deletions start.
+5. Start a thread waiting for Enter, and create the named event.
+6. Wait for either signal, restore, and call `TerminateProcess`.
 
 `TerminateProcess` is deliberate: the Enter thread may still be blocked in `getline`, which breaks CRT shutdown. Anything that must happen at exit on this path has to happen before that call, which matters for future JSON reporting.
 
@@ -141,7 +142,7 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 
 | Issue | Location | Effect |
 |---|---|---|
-| Ctrl-C during removal strands filters | `TemporarilyRemoveWfpCalloutFilters` | The control handler is installed only after every deletion and prompt. Ctrl-C at a later driver's prompt ends the process with earlier filters already deleted. A crash or forced kill at any time has the same result. |
+| A crash or forced kill strands removed filters | `TemporarilyRemoveWfpCalloutFilters` | The saved filters exist only in this process's memory, so they cannot be restored if it ends without running its console control handler. |
 | Original filter security is not preserved | `TemporarilyRemoveWfpCalloutFilters`, `TakeOwnershipOfWfpFilter` | Ownership and the DACL are replaced **before** the descriptor is captured, and the capture requests no components (`SECURITY_INFORMATION` of 0). Restored filters do not get their original security. |
 
 ### Medium impact

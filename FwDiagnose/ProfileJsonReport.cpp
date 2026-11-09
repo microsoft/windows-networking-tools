@@ -46,7 +46,7 @@ Timestamp()
 	    time.wMilliseconds);
 }
 
-// Windows::Data::Json::JsonObject is a refcounted object - not a deep copy
+// Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
 JsonObject
 ReturnJsonDiagnosticObject(PCWSTR property, PCWSTR operation, HRESULT error, std::wstring_view message)
 {
@@ -146,7 +146,7 @@ IsShieldsCommand(PCWSTR argument, PCWSTR command)
 	return _wcsicmp(profile, L"public") == 0 || _wcsicmp(profile, L"private") == 0 || _wcsicmp(profile, L"domain") == 0;
 }
 
-// Windows::Data::Json::JsonObject is a refcounted object - not a deep copy
+// Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
 JsonObject
 ReturnJsonResultObject(PCWSTR command)
 {
@@ -515,7 +515,7 @@ WriteFirewallProfileJson(const FirewallProfileData& profile, PCWSTR command)
 	output.SetNamedValue(L"diagnostics", diagnostics);
 	output.SetNamedValue(L"status", String(diagnostics.Size() == 0 ? L"completed" : L"partial"));
 
-	// Windows::Data::Json::JsonObject is a refcounted object - not a deep copy
+	// Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
 	JsonObject result = ReturnJsonResultObject(command);
 	result.GetNamedObject(L"data").GetNamedArray(L"firewallProfiles").Append(output);
 }
@@ -537,7 +537,7 @@ RecordProfileJsonFailure(PCWSTR command, HRESULT error, PCSTR message)
 
 	if (command)
 	{
-		// Windows::Data::Json::JsonObject is a refcounted object - not a deep copy
+		// Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
 		JsonObject result = ReturnJsonResultObject(command);
 		result.SetNamedValue(L"status", String(L"failed"));
 		result.GetNamedArray(L"diagnostics").Append(diagnostic);

@@ -887,16 +887,20 @@ TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 	return setSecurityError;
 }
 
+namespace
+{
 struct RemovedFilterDetails
 {
-	RemovedFilterDetails(FWPM_FILTER* input_filter, PSECURITY_DESCRIPTOR input_filter_sd)
-	    : filter(input_filter), filter_sd(input_filter_sd)
-	{
-	}
-	FWPM_FILTER* filter{};
-	PSECURITY_DESCRIPTOR filter_sd{};
+    RemovedFilterDetails(FWPM_FILTER* input_filter, PSECURITY_DESCRIPTOR input_filter_sd)
+        : filter(input_filter), filter_sd(input_filter_sd)
+    {
+    }
+    FWPM_FILTER* filter{};
+    PSECURITY_DESCRIPTOR filter_sd{};
 };
+}
 static std::vector<RemovedFilterDetails> g_deletedWfpFilters;
+static wil::critical_section g_deletedWfpFiltersLock;
 static void
 RestoreDeletedFilters() noexcept
 {
@@ -1155,6 +1159,20 @@ try
 	}
 	std::printf("\n");
 
+	// work hard to guarantee we restore the filters we deleted
+	// this must be in place before the first filter is deleted, as the user can interrupt at any later prompt
+	THROW_IF_WIN32_BOOL_FALSE(SetConsoleCtrlHandler(
+	    [](DWORD) -> BOOL
+	    {
+		    // never released: this thread ends the process, so a deletion waiting on this lock will never start
+		    [[maybe_unused]] const auto lock = g_deletedWfpFiltersLock.lock();
+		    std::printf("\n * Restoring filters to callout drivers...\n");
+		    RestoreDeletedFilters();
+		    TerminateProcess(GetCurrentProcess(), 0);
+		    return TRUE;
+	    },
+	    TRUE));
+
 	for (const auto& callout_entry : callout_drivers)
 	{
 		if (specific_callout_driver.empty())
@@ -1205,6 +1223,9 @@ try
 					    current_fwpm_filter.filterId,
 					    current_fwpm_filter.name.value.c_str(),
 					    FwpmLayerToString(current_fwpm_filter.layerKey).c_str());
+
+					// held until this filter is recorded, so the console control handler can restore it
+					[[maybe_unused]] const auto lock = g_deletedWfpFiltersLock.lock();
 
 					// ensure we have space in our vector before deleting the filter
 					g_deletedWfpFilters.reserve(g_deletedWfpFilters.size() + 1);
@@ -1328,17 +1349,6 @@ try
 	}
 
 	std::printf("\n * temporarily removed %zu filters\n", g_deletedWfpFilters.size());
-
-	// work hard to guarantee we restore the filters we deleted
-	SetConsoleCtrlHandler(
-	    [](DWORD) -> BOOL
-	    {
-		    std::printf("\n * Restoring filters to callout drivers...\n");
-		    RestoreDeletedFilters();
-		    TerminateProcess(GetCurrentProcess(), 0);
-		    return TRUE;
-	    },
-	    TRUE);
 
 	const auto cmd_prompt_thread = CreateThread(
 	    nullptr,

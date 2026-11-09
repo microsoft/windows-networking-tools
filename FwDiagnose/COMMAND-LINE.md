@@ -79,7 +79,7 @@ Filters are restored when any of these happens:
 
 - Enter is pressed in the waiting console.
 - Another instance runs `-signal-restore-callouts`.
-- A console control event such as Ctrl-C or closing the console arrives, once the wait has begun.
+- A console control event such as Ctrl-C or closing the console arrives, at any point once the driver list has been shown.
 
 The signal is the named event `FwDiagnoseCalloutsLoadedEvent`, in the session's local namespace, so run the signaling instance in the same logon session and at the same elevation.
 
