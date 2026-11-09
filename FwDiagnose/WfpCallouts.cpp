@@ -355,7 +355,7 @@ try
 	auto fwpm_error = FwpmCalloutCreateEnumHandle0(engine_handle, nullptr, &enum_handle);
 	if (fwpm_error != ERROR_SUCCESS)
 	{
-		std::printf("*** FwpmCalloutCreateEnumHandle0 failed: %lu\n", fwpm_error);
+		std::printf("*** FwpmCalloutCreateEnumHandle0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 		THROW_WIN32(fwpm_error);
 	}
 	const auto close_enum_handle = wil::scope_exit(
@@ -373,7 +373,7 @@ try
 		fwpm_error = FwpmCalloutEnum0(engine_handle, enum_handle, entries_quested, &entries, &numEntriesReturned);
 		if (fwpm_error != ERROR_SUCCESS)
 		{
-			std::printf("*** FwpmCalloutEnum0 failed: %lu\n", fwpm_error);
+			std::printf("*** FwpmCalloutEnum0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 			THROW_WIN32(fwpm_error);
 		}
 		const auto free_filter_entries = wil::scope_exit(
@@ -807,7 +807,7 @@ TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &processToken))
 	{
 		const auto error = GetLastError();
-		std::printf("TakeOwnershipOfWfpFilter: OpenProcessToken failed: 0x%lx\n", error);
+		std::printf("TakeOwnershipOfWfpFilter: OpenProcessToken failed: 0x%lx\n", HRESULT_FROM_WIN32(error));
 		return error;
 	}
 
@@ -817,7 +817,9 @@ TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 	if (tokenUserSize == 0)
 	{
 		const auto error = GetLastError();
-		std::printf("TakeOwnershipOfWfpFilter: GetTokenInformation (size query) failed: 0x%lx\n", error);
+		std::printf(
+		    "TakeOwnershipOfWfpFilter: GetTokenInformation (size query) failed: 0x%lx\n",
+		    HRESULT_FROM_WIN32(error));
 		return error;
 	}
 
@@ -825,7 +827,7 @@ TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 	if (!GetTokenInformation(processToken.get(), TokenUser, tokenUserBuffer.data(), tokenUserSize, &tokenUserSize))
 	{
 		const auto error = GetLastError();
-		std::printf("TakeOwnershipOfWfpFilter: GetTokenInformation failed: 0x%lx\n", error);
+		std::printf("TakeOwnershipOfWfpFilter: GetTokenInformation failed: 0x%lx\n", HRESULT_FROM_WIN32(error));
 		return error;
 	}
 
@@ -846,7 +848,7 @@ TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 	const auto setEntriesResult = SetEntriesInAclW(1, &explicitAccess, nullptr, &rawDacl);
 	if (setEntriesResult != ERROR_SUCCESS)
 	{
-		std::printf("TakeOwnershipOfWfpFilter: SetEntriesInAclW failed: 0x%lx\n", setEntriesResult);
+		std::printf("TakeOwnershipOfWfpFilter: SetEntriesInAclW failed: 0x%lx\n", HRESULT_FROM_WIN32(setEntriesResult));
 		return setEntriesResult;
 	}
 	newDacl.reset(rawDacl);
@@ -876,7 +878,9 @@ TakeOwnershipOfWfpFilter(_In_ const GUID& filterKey)
 		}
 		else
 		{
-			std::printf("TakeOwnershipOfWfpFilter: FwpmFilterSetSecurityInfoByKey0 failed: 0x%lx\n", setSecurityError);
+			std::printf(
+			    "TakeOwnershipOfWfpFilter: FwpmFilterSetSecurityInfoByKey0 failed: 0x%lx\n",
+			    HRESULT_FROM_WIN32(setSecurityError));
 		}
 	}
 
@@ -928,7 +932,7 @@ RestoreDeletedFilters() noexcept
 						    "Failed to retrieve provider context for filter %llu (provider GUID %ls). Error: 0x%lx\n",
 						    filter->filterId,
 						    GuidToString(filter->providerContextKey).c_str(),
-						    provider_context_error);
+						    HRESULT_FROM_WIN32(provider_context_error));
 					}
 					else
 					{
@@ -958,7 +962,7 @@ RestoreDeletedFilters() noexcept
 						std::printf(
 						    "   - Failed to create session enum handle (0x%lx) to investigate FWP_E_WRONG_SESSION "
 						    "error for filter %llu\n",
-						    session_enum_create_error,
+						    HRESULT_FROM_WIN32(session_enum_create_error),
 						    filter->filterId);
 						continue;
 					}
@@ -981,7 +985,7 @@ RestoreDeletedFilters() noexcept
 						    "   - Failed to enumerate sessions to investigate FWP_E_WRONG_SESSION error for filter "
 						    "%llu. Error: 0x%lx\n",
 						    filter->filterId,
-						    session_enum_error);
+						    HRESULT_FROM_WIN32(session_enum_error));
 						continue;
 					}
 
@@ -1018,7 +1022,7 @@ RestoreDeletedFilters() noexcept
 							    "error: 0x%lx\n",
 							    filter->filterId,
 							    i,
-							    fwpm_engine_open_error);
+							    HRESULT_FROM_WIN32(fwpm_engine_open_error));
 							continue;
 						}
 
@@ -1031,7 +1035,7 @@ RestoreDeletedFilters() noexcept
 							    "0x%lx\n",
 							    filter->filterId,
 							    i,
-							    fwpm_error_for_session);
+							    HRESULT_FROM_WIN32(fwpm_error_for_session));
 							continue;
 						}
 
@@ -1050,7 +1054,7 @@ RestoreDeletedFilters() noexcept
 					std::printf(
 					    "Failed to restore deleted WFP filter %llu. Error: 0x%lx\n",
 					    filter->filterId,
-					    fwpm_error);
+					    HRESULT_FROM_WIN32(fwpm_error));
 				}
 			}
 			else
@@ -1211,7 +1215,7 @@ try
 					{
 						std::printf(
 						    "         - FwpmFilterGetByKey failed: 0x%lx -- cannot delete filter %llu\n",
-						    filter_get_error,
+						    HRESULT_FROM_WIN32(filter_get_error),
 						    current_fwpm_filter.filterId);
 						continue;
 					}
@@ -1231,7 +1235,7 @@ try
 					{
 						std::printf(
 						    "         - TakeOwnershipOfWfpFilter failed: 0x%lx -- cannot delete filter %llu\n",
-						    ownership_error,
+						    HRESULT_FROM_WIN32(ownership_error),
 						    current_fwpm_filter.filterId);
 						continue;
 					}
@@ -1265,7 +1269,7 @@ try
 							std::printf(
 							    "         - FwpmFilterGetSecurityInfoByKey0 failed: 0x%lx -- cannot delete filter "
 							    "%llu\n",
-							    get_security_error,
+							    HRESULT_FROM_WIN32(get_security_error),
 							    current_fwpm_filter.filterId);
 						}
 						continue;
@@ -1284,7 +1288,9 @@ try
 					    FwpmFilterDeleteByKey(GetFwpmEngineHandle(), &current_fwpm_filter.filterKey);
 					if (delete_error != 0)
 					{
-						std::printf("         - FwpmFilterDeleteByKey failed: 0x%lx\n", delete_error);
+						std::printf(
+						    "         - FwpmFilterDeleteByKey failed: 0x%lx\n",
+						    HRESULT_FROM_WIN32(delete_error));
 						continue;
 					}
 
@@ -1351,13 +1357,15 @@ try
 	FAIL_FAST_IF_MSG(
 	    !cmd_prompt_thread,
 	    "Failed to create command prompt thread to wait for user input. Error: 0x%lx\n",
-	    GetLastError());
+	    HRESULT_FROM_WIN32(GetLastError()));
 
 	// open the named event if another FwDiagnose instance will signal us to restore the filters
 	const wil::unique_event named_event{CreateEventW(nullptr, TRUE, FALSE, GetNamedEventForRestoringFilters())};
 	if (!named_event)
 	{
-		std::printf(" ** Failed to open event to wait for callouts loaded signal. Error: 0x%lx\n", GetLastError());
+		std::printf(
+		    " ** Failed to open event to wait for callouts loaded signal. Error: 0x%lx\n",
+		    HRESULT_FROM_WIN32(GetLastError()));
 		WaitForSingleObject(g_callouts_loaded_event.get(), INFINITE);
 	}
 	else

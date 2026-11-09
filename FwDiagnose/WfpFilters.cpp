@@ -85,7 +85,7 @@ try
 	{
 		if (VerboseOutputEnabled())
 		{
-			std::printf("*** FwpmFilterCreateEnumHandle0 failed: %lu\n", fwpm_error);
+			std::printf("*** FwpmFilterCreateEnumHandle0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 		}
 		THROW_WIN32(fwpm_error);
 	}
@@ -105,7 +105,7 @@ try
 		{
 			if (VerboseOutputEnabled())
 			{
-				std::printf("*** FwpmFilterEnum0 failed: %lu\n", fwpm_error);
+				std::printf("*** FwpmFilterEnum0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 			}
 			THROW_WIN32(fwpm_error);
 		}

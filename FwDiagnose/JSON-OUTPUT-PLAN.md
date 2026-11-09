@@ -124,7 +124,7 @@ Use original display strings for export where available. `NormalizedString` is a
 }
 ```
 
-Errors include the originating API, raw code, correctly formatted hexadecimal code, and error domain when known. WFP APIs can return both Win32 errors and HRESULT-style values.
+Errors include the originating API, raw code, formatted code, and error domain when known. Format all codes as base-16 with a `0x` prefix. Convert Win32 (`DWORD`) codes with `HRESULT_FROM_WIN32` and leave `NTSTATUS` codes unconverted. WFP APIs can return both Win32 errors and HRESULT-style values, so convert every error from `Fwpm*` and `Fwps*` functions the same way; `HRESULT_FROM_WIN32` leaves an existing `HRESULT` unchanged.
 
 ## 3. Command-specific schemas
 

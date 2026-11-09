@@ -124,6 +124,7 @@ Restoration uses `FwpmFilterAdd0`. A restored filter keeps its key but may get a
 
 - Collect once, then render. Printing and JSON take the same collected record (see `FirewallProfileData`); JSON code must not query the system itself.
 - Preserve the difference between "not configured", "false", and "could not read". `FirewallProfileData` uses `std::optional` for this.
+- Print all error codes as base-16 with a `0x` prefix. Convert Win32 (`DWORD`) error codes with `HRESULT_FROM_WIN32` before printing, and print `NTSTATUS` codes unconverted. Convert every error from `Fwpm*` and `Fwps*` functions the same way: those APIs can return either kind of code, and `HRESULT_FROM_WIN32` leaves an existing `HRESULT` unchanged.
 - Keep the semantics of the comparison policies when changing duplicate or inbound grouping.
 - Respect the requested-version rule when adding `FW_RULE` fields.
 - Prefer `enum class` to boolean parameters and explicit `.has_value()`. The remaining conventions are in `.github/copilot-instructions.md`.
@@ -147,7 +148,6 @@ Found by reading the code at commit `a1118bb`; none were reproduced by running t
 
 | Issue | Location | Effect |
 |---|---|---|
-| SID check is guarded by the wrong field | `ProcessLocalUserSid`, `RuleTargetsLocalUser` | The guard tests `wszLocalUserAuthorizationList`, but the code resolves `wszLocalUserOwner`. Rules with an owner and no authorization list are skipped. Rules with a list and no owner are reported as unresolved, and become deletion candidates. |
 | Substring search can read out of bounds | `NormalizedString::StrStrComparison` | In the non-ASCII branch, `haystack.size() - needle.size()` underflows when the needle is longer, so the loop reads past the string. Reachable from `-remove-callouts -driver`. |
 | Filter lookup accepts a near match | `FindFilterByFilterId` | `lower_bound` is not followed by an equality check, so a drop from a filter newer than the snapshot can be attributed to the next-higher filter ID. |
 | Framing drops fall through | `ListenForTcpipEvents` | The `TcpipFramingPacketDrops` case has no `break`, so each framing event also prints a "Failed to read 'SynAttacksDetected'" message. |

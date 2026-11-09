@@ -201,7 +201,7 @@ LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 		std::printf(
 		    "  Failed to open %s firewall policy store. Error: 0x%lx\n",
 		    policy.store_type_string,
-		    openStoreError);
+		    HRESULT_FROM_WIN32(openStoreError));
 		return HRESULT_FROM_WIN32(openStoreError);
 	}
 
@@ -220,7 +220,7 @@ LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 	    &policy.parent_rule);
 	if (enumRulesError != ERROR_SUCCESS)
 	{
-		std::printf("  Failed to enumerate firewall rules. Error: 0x%lx\n", enumRulesError);
+		std::printf("  Failed to enumerate firewall rules. Error: 0x%lx\n", HRESULT_FROM_WIN32(enumRulesError));
 		THROW_WIN32(enumRulesError);
 	}
 	timer.end();
@@ -1594,7 +1594,7 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 			{
 				std::printf(
 				    "        Failed to delete one of the duplicate firewall rules (0x%lx) - RuleId %ls\n",
-				    deleteRuleError,
+				    HRESULT_FROM_WIN32(deleteRuleError),
 				    rule.fw_rule->wszRuleId);
 			}
 			else
@@ -1654,7 +1654,7 @@ CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_ru
 				        L"     Application-exe:  '%ls'%ls  (%hs) [%ls:  %ls]\n",
 				        rule.fw_rule->wszLocalApplication,
 				        rule.local_application_uses_per_user_variable ? PerUserVariableNote : L"",
-				        rule.local_application_failure_error.c_str(),
+				        rule.local_application_failure_string.c_str(),
 				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 				        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
 			}
@@ -1851,7 +1851,7 @@ DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Nor
 		const auto deleteRuleError = g_FWDeleteFirewallRule(store_handle, rule.fw_rule->wszRuleId);
 		if (deleteRuleError != ERROR_SUCCESS)
 		{
-			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", deleteRuleError);
+			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
 		}
 		else
 		{
@@ -1895,7 +1895,7 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 			const auto gle = GetLastError();
 			if (VerboseOutputEnabled())
 			{
-				std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", sid_string, gle);
+				std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", sid_string, HRESULT_FROM_WIN32(gle));
 			}
 			return std::nullopt;
 		}
@@ -1929,7 +1929,7 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 					const auto gle = GetLastError();
 					if (DebugOutputEnabled())
 					{
-						std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, gle);
+						std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, HRESULT_FROM_WIN32(gle));
 					}
 					return std::nullopt;
 				}
@@ -1958,7 +1958,7 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 				const auto gle = GetLastError();
 				if (DebugOutputEnabled())
 				{
-					std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, gle);
+					std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", sid_string, HRESULT_FROM_WIN32(gle));
 				}
 				return std::nullopt;
 			}
@@ -2042,8 +2042,9 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 			rule.unresolve_user_sid = true;
 			rules_with_unknown_sid_owners.emplace_back(
 			    wil::str_printf<std::wstring>(
-			        L"    Unresolved SID:  '%ls'  [%ls:  %ls]\n",
+			        L"    Unresolved SID:  '%ls'%hs[%ls:  %ls]\n",
 			        rule.fw_rule->wszLocalUserOwner,
+			        rule.resolve_name_failure_string.c_str(),
 			        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
 		}
@@ -2154,8 +2155,9 @@ DeleteUnresolvedUserAccountRules(
 		{
 			rule_to_delete = wil::str_printf<std::wstring>(
 			    L"\n"
-			    L"  - Unresolved SID '%ls'  [%ls:  %ls]\n",
+			    L"  - Unresolved SID '%ls'%hs[%ls:  %ls]\n",
 			    rule.fw_rule->wszLocalUserOwner,
+			    rule.resolve_name_failure_string.c_str(),
 			    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			    rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str());
 		}
@@ -2216,7 +2218,7 @@ DeleteUnresolvedUserAccountRules(
 		const auto deleteRuleError = g_FWDeleteFirewallRule(store_handle, rule.fw_rule->wszRuleId);
 		if (deleteRuleError != ERROR_SUCCESS)
 		{
-			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", deleteRuleError);
+			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
 		}
 		else
 		{

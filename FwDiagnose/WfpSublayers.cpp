@@ -322,7 +322,7 @@ try
 	auto fwpm_error = FwpmSubLayerCreateEnumHandle0(fpwm_handle, nullptr, &enumHandle);
 	if (fwpm_error != ERROR_SUCCESS)
 	{
-		std::printf("*** FwpmSubLayerCreateEnumHandle0 failed: %lu\n", fwpm_error);
+		std::printf("*** FwpmSubLayerCreateEnumHandle0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 		THROW_WIN32(fwpm_error);
 	}
 	const auto close_enum_handle = wil::scope_exit(
@@ -339,7 +339,7 @@ try
 		fwpm_error = FwpmSubLayerEnum0(fpwm_handle, enumHandle, entries_quested, &entries, &numEntriesReturned);
 		if (fwpm_error != ERROR_SUCCESS)
 		{
-			std::printf("*** FwpmSubLayerEnum0 failed: %lu\n", fwpm_error);
+			std::printf("*** FwpmSubLayerEnum0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 			THROW_WIN32(fwpm_error);
 		}
 		const auto free_sublayer_entries = wil::scope_exit(

@@ -185,7 +185,7 @@ try
 	auto fwpm_error = FwpmProviderCreateEnumHandle0(engine_handle, nullptr, &enum_handle);
 	if (fwpm_error != ERROR_SUCCESS)
 	{
-		std::printf("*** FwpmProviderCreateEnumHandle0 failed: %lu\n", fwpm_error);
+		std::printf("*** FwpmProviderCreateEnumHandle0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 		THROW_WIN32(fwpm_error);
 	}
 	const auto close_enum_handle = wil::scope_exit(
@@ -202,7 +202,7 @@ try
 		fwpm_error = FwpmProviderEnum0(engine_handle, enum_handle, entries_quested, &entries, &numEntriesReturned);
 		if (fwpm_error != ERROR_SUCCESS)
 		{
-			std::printf("*** FwpmProviderEnum0 failed: %lu\n", fwpm_error);
+			std::printf("*** FwpmProviderEnum0 failed: 0x%lx\n", HRESULT_FROM_WIN32(fwpm_error));
 			THROW_WIN32(fwpm_error);
 		}
 		const auto free_Provider_entries = wil::scope_exit(

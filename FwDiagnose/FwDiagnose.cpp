@@ -254,7 +254,9 @@ try
 		const auto restore_filters_event{OpenEventW(EVENT_MODIFY_STATE, FALSE, GetNamedEventForRestoringFilters())};
 		if (!restore_filters_event)
 		{
-			std::printf("Failed to open event to signal restore of callouts. Error: 0x%lx\n", GetLastError());
+			std::printf(
+			    "Failed to open event to signal restore of callouts. Error: 0x%lx\n",
+			    HRESULT_FROM_WIN32(GetLastError()));
 			return ERROR_INTERNAL_ERROR;
 		}
 

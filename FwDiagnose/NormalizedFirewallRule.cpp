@@ -1,3 +1,4 @@
+#include <format>
 #include <span>
 #include <string>
 
@@ -316,7 +317,10 @@ ExpandString(const std::wstring& original_filename)
 			const auto gle = GetLastError();
 			if (VerboseOutputEnabled())
 			{
-				std::printf("Failed to ExpandEnvironmentStrings(%ls) (0x%lx)", original_filename.c_str(), gle);
+				std::printf(
+				    "Failed to ExpandEnvironmentStrings(%ls) (0x%lx)",
+				    original_filename.c_str(),
+				    HRESULT_FROM_WIN32(gle));
 			}
 			expanded_string = {};
 			break;
@@ -393,7 +397,7 @@ ProcessForStringResource(std::wstring& string_value)
 		const auto gle = GetLastError();
 		if (VerboseOutputEnabled())
 		{
-			std::printf("Failed to LoadLibraryExW(%ls) (0x%lx)\n", expanded_file_name.c_str(), gle);
+			std::printf("Failed to LoadLibraryExW(%ls) (0x%lx)\n", expanded_file_name.c_str(), HRESULT_FROM_WIN32(gle));
 		}
 		return;
 	}
@@ -430,7 +434,11 @@ ProcessForStringResource(std::wstring& string_value)
 		const auto gle = GetLastError();
 		if (VerboseOutputEnabled())
 		{
-			std::printf("Failed to LoadStringW(%ls, %u) (0x%lx)\n", expanded_file_name.c_str(), converted_value, gle);
+			std::printf(
+			    "Failed to LoadStringW(%ls, %u) (0x%lx)\n",
+			    expanded_file_name.c_str(),
+			    converted_value,
+			    HRESULT_FROM_WIN32(gle));
 		}
 		return;
 	}
@@ -1067,7 +1075,7 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 	{
 		local_application_exists = false;
 		local_application_uses_per_user_variable = true;
-		local_application_failure_error = "Contains per-user environment variable";
+		local_application_failure_string = "Contains per-user environment variable";
 		return;
 	}
 	if (details::ContainsServiceProfileEnvironmentVariable(original_filename))
@@ -1093,11 +1101,12 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 		const auto gle = GetLastError();
 		if (DebugOutputEnabled())
 		{
-			std::printf("Failed to FindFirstFileExW(%ls) (0x%lx)\n", expanded_string.c_str(), gle);
+			std::printf("Failed to FindFirstFileExW(%ls) (0x%lx)\n", expanded_string.c_str(), HRESULT_FROM_WIN32(gle));
 		}
 
 		local_application_exists = false;
-		local_application_failure_error = "Failed to find the file (" + std::to_string(gle) + ")";
+		local_application_failure_string =
+		    std::format("Failed to find the file (0x{:x})", static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
 	}
 
 	else
@@ -1110,7 +1119,7 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 void
 NormalizedFirewallRule::ProcessLocalUserSid()
 {
-	if (!RuleTargetsLocalUser())
+	if (!fw_rule->wszLocalUserOwner || fw_rule->wszLocalUserOwner[0] == L'\0')
 	{
 		return;
 	}
@@ -1122,9 +1131,15 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 		const auto gle = GetLastError();
 		if (VerboseOutputEnabled())
 		{
-			std::printf("Failed to ConvertStringSidToSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
+			std::printf(
+			    "Failed to ConvertStringSidToSid(%ls) (0x%lx)\n",
+			    fw_rule->wszLocalUserOwner,
+			    HRESULT_FROM_WIN32(gle));
 		}
 		successfully_resolved_user_name = false;
+		resolve_name_failure_string = std::format(
+		    " Failed to convert string SID to SID (0x{:x}) ",
+		    static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
 		return;
 	}
 
@@ -1157,9 +1172,16 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 				const auto gle = GetLastError();
 				if (DebugOutputEnabled())
 				{
-					std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
+					std::printf(
+					    "Failed to LookupAccountSid(%ls) (0x%lx)\n",
+					    fw_rule->wszLocalUserOwner,
+					    HRESULT_FROM_WIN32(gle));
 				}
+
 				successfully_resolved_user_name = false;
+				resolve_name_failure_string = std::format(
+				    " Failed to lookup account SID (0x{:x}) ",
+				    static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
 				return;
 			}
 
@@ -1189,9 +1211,15 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 			const auto gle = GetLastError();
 			if (DebugOutputEnabled())
 			{
-				std::printf("Failed to LookupAccountSid(%ls) (0x%lx)\n", fw_rule->wszLocalUserOwner, gle);
+				std::printf(
+				    "Failed to LookupAccountSid(%ls) (0x%lx)\n",
+				    fw_rule->wszLocalUserOwner,
+				    HRESULT_FROM_WIN32(gle));
 			}
+
 			successfully_resolved_user_name = false;
+			resolve_name_failure_string =
+			    std::format(" Failed to lookup account SID (0x{:x}) ", static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
 		}
 	}
 	else

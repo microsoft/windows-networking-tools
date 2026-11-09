@@ -98,7 +98,9 @@ struct AppContainerPackage
 			LOG_HR_MSG(HRESULT_FROM_WIN32(gle), "ConvertSidToStringSidW failed");
 			if (DebugOutputEnabled())
 			{
-				std::printf("  -- Failed to convert AppContainer SID to string. Error: 0x%x\n", gle);
+				std::printf(
+				    "  -- Failed to convert AppContainer SID to string. Error: 0x%lx\n",
+				    HRESULT_FROM_WIN32(gle));
 			}
 			return;
 		}

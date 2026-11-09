@@ -991,7 +991,9 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			if (!ConvertSidToStringSidW(net_event->header.userId, &sid_string))
 			{
 				const auto gle = GetLastError();
-				result += wil::str_printf<std::wstring>(L"Failed to convert UserId SID to string (0x%x)", gle);
+				result += wil::str_printf<std::wstring>(
+				    L"Failed to convert UserId SID to string (0x%lx)",
+				    HRESULT_FROM_WIN32(gle));
 			}
 			else
 			{
@@ -1027,7 +1029,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 							result += wil::str_printf<std::wstring>(
 							    L"[Failed to LookupAccountSid(%ls) (0x%lx)]",
 							    sid_string.get(),
-							    gle);
+							    HRESULT_FROM_WIN32(gle));
 						}
 						else
 						{
@@ -1064,7 +1066,10 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 					else
 					{
 						const auto gle = GetLastError();
-						std::printf("Failed to LookupAccountSid(%ls) (0x%lx)", sid_string.get(), gle);
+						std::printf(
+						    "Failed to LookupAccountSid(%ls) (0x%lx)",
+						    sid_string.get(),
+						    HRESULT_FROM_WIN32(gle));
 					}
 				}
 				else
@@ -1098,7 +1103,9 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			else
 			{
 				const auto gle = GetLastError();
-				result += L"Failed to convert Package SID to string. Error: " + std::to_wstring(gle);
+				result += wil::str_printf<std::wstring>(
+				    L"Failed to convert Package SID to string. Error: 0x%lx",
+				    HRESULT_FROM_WIN32(gle));
 			}
 		}
 		else
@@ -1155,7 +1162,8 @@ PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE2* event)
 {
 	std::wstring result;
 
-	result += L"    FailureErrorCode: " + std::to_wstring(event->failureErrorCode) + L"\n";
+	result += L"    FailureErrorCode: " +
+	          wil::str_printf<std::wstring>(L"0x%lx", HRESULT_FROM_WIN32(event->failureErrorCode)) + L"\n";
 	result += L"    FailurePoint: " + std::to_wstring(event->failurePoint) + L"\n";
 	result += L"    Flags: 0x" + std::to_wstring(event->flags) + L"\n";
 	result += L"    KeyingModuleType: " + std::to_wstring(event->keyingModuleType) + L"\n";
@@ -1226,7 +1234,8 @@ PrintNetEventIkeExtQmFailure(const FWPM_NET_EVENT_IKEEXT_QM_FAILURE1* event)
 {
 	std::wstring result;
 
-	result += L"    FailureErrorCode: " + std::to_wstring(event->failureErrorCode) + L"\n";
+	result += L"    FailureErrorCode: " +
+	          wil::str_printf<std::wstring>(L"0x%lx", HRESULT_FROM_WIN32(event->failureErrorCode)) + L"\n";
 	result += L"    FailurePoint: " + std::to_wstring(event->failurePoint) + L"\n";
 	result += L"    KeyingModuleType: " + std::to_wstring(event->keyingModuleType) + L"\n";
 	result += L"    QmState: " + std::to_wstring(event->qmState) + L"\n";
@@ -1248,7 +1257,8 @@ PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE1* event)
 {
 	std::wstring result;
 
-	result += L"    FailureErrorCode: " + std::to_wstring(event->failureErrorCode) + L"\n";
+	result += L"    FailureErrorCode: " +
+	          wil::str_printf<std::wstring>(L"0x%lx", HRESULT_FROM_WIN32(event->failureErrorCode)) + L"\n";
 	result += L"    FailurePoint: " + std::to_wstring(event->failurePoint) + L"\n";
 	result += L"    Flags: 0x" + std::to_wstring(event->flags) + L"\n";
 	result += L"    EmState: " + std::to_wstring(event->emState) + L"\n";
@@ -1367,7 +1377,8 @@ PrintNetEventIpSecKernelDrop(const FWPM_NET_EVENT_IPSEC_KERNEL_DROP0* event)
 {
 	std::wstring result;
 
-	result += L"    FailureStatus: " + std::to_wstring(event->failureStatus) + L"\n";
+	result += L"    FailureStatus: " +
+	          wil::str_printf<std::wstring>(L"0x%lx", static_cast<ULONG>(event->failureStatus)) + L"\n";
 	result += L"    Direction: " + std::to_wstring(event->direction) + L"\n";
 	result += L"    Spi: " + std::to_wstring(event->spi) + L"\n";
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
@@ -1431,7 +1442,8 @@ PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
 		break;
 	}
 
-	result += L"    FailureStatus: " + std::to_wstring(event->failureStatus) + L"\n";
+	result += L"    FailureStatus: " +
+	          wil::str_printf<std::wstring>(L"0x%lx", static_cast<ULONG>(event->failureStatus)) + L"\n";
 	result += L"    Direction: " + std::to_wstring(event->direction) + L"\n";
 
 	return result;

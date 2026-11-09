@@ -25,10 +25,12 @@ struct NormalizedFirewallRule
 
 	std::wstring local_user_owner_name{};
 	std::wstring local_user_domain_name{};
+
+	std::string resolve_name_failure_string;
 	std::optional<bool> successfully_resolved_user_name{std::nullopt};
 	std::optional<bool> successfully_resolved_user_name_with_local_profile{std::nullopt};
 
-	std::string local_application_failure_error;
+	std::string local_application_failure_string;
 	std::optional<bool> local_application_exists{std::nullopt};
 
 	size_t filter_count{};
