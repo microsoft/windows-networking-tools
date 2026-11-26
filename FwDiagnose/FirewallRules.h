@@ -19,7 +19,6 @@ struct FirewallPolicyObjects
 
 	PCSTR store_type_string{};
 	FW_STORE_TYPE store_type{};
-	WORD rule_version{};
 	HRESULT load_result{E_PENDING};
 
 	// remains open until the process exits - -clean-rules deletes rules through it

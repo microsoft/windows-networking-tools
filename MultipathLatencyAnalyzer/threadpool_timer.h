@@ -4,6 +4,7 @@
 #pragma once
 
 #include <Windows.h>
+#include <algorithm>
 #include <functional>
 
 #include <wil/result.h>
@@ -67,7 +68,7 @@ private:
         }
 
         m_timerExpiration += m_period;
-        const long long remainingTime = max(0, m_timerExpiration - SnapSystemTimeInHundredNs());
+        const long long remainingTime = std::max<long long>(0, m_timerExpiration - SnapSystemTimeInHundredNs());
 
         // We are late! Call the next callback immediately
         if (remainingTime <= 0)

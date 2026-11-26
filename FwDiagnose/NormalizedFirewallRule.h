@@ -14,6 +14,14 @@
 bool
 RunningUnderWow64() noexcept;
 
+// placeholders shared by the firewall rule printers so every rule prints the same set of fields
+inline constexpr PCWSTR FirewallRuleNoValueText = L"(none)";
+inline constexpr PCWSTR FirewallRuleEmptyText = L"(empty)";
+
+// (none) for nullptr, (empty) for an empty string, otherwise the string
+std::wstring
+FirewallRuleTextToString(PCWSTR value);
+
 struct NormalizedFirewallRule
 {
 	NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion);
@@ -61,6 +69,24 @@ struct NormalizedFirewallRule
 
 	std::wstring
 	PrintRule() const;
+
+	// FW_RULE is allocated for the requested version, and the rule supports only the fields of its own schema version
+	bool
+	SupportsFieldsFromVersion(WORD version) const noexcept
+	{
+		return requested_rule_version >= version && fw_rule->wSchemaVersion >= version;
+	}
+
+	// nullptr when the requested version or the rule's schema version predates the field (2.33)
+	PCWSTR
+	PackageFamilyName() const noexcept
+	{
+		return SupportsFieldsFromVersion(FW_BINARY_VERSION_33) ? fw_rule->wszPackageFamilyName : nullptr;
+	}
+
+	// placeholder for a field that the rule's schema version or the requested version does not support
+	std::wstring
+	FieldNotAvailableText() const;
 
 	bool
 	RuleTargetsLocalUser() const;
@@ -138,6 +164,10 @@ struct NormalizedFirewallRule
 		normalized_rule_details.value.append(std::to_wstring(convertedValue) + L',');
 	}
 };
+
+// the verbose inbound-rule summary: one numbered rule with the same labels for every schema version and protocol
+std::wstring
+PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter);
 
 inline int
 CompareFlagsIgnoringActive(_In_ const FW_RULE* lhs, _In_ const FW_RULE* rhs) noexcept

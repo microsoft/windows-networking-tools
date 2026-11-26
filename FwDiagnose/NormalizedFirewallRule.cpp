@@ -627,7 +627,7 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 	AppendValue(fwRule->wszFqbn);
 	AppendValue(fwRule->compartmentId);
 
-	if (requested_rule_version < FW_BINARY_VERSION_31 || fwRule->wSchemaVersion < FW_BINARY_VERSION_31)
+	if (!SupportsFieldsFromVersion(FW_BINARY_VERSION_31))
 	{
 		AppendValue(GUID{});  // FW_RULE::providerContextKey
 		AppendValue(DWORD{}); // FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID_LIST::dwNumIds
@@ -639,21 +639,223 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 		AppendValue(fwRule->RemoteDynamicKeywordAddresses);
 	}
 
-	if (requested_rule_version < FW_BINARY_VERSION_33 || fwRule->wSchemaVersion < FW_BINARY_VERSION_33)
+	// nullptr when the field is not available, which matches a rule that has no package family name
+	const auto package_family_name = PackageFamilyName();
+	if (package_family_name)
 	{
-		AppendValue(PCWSTR{nullptr});
+		auto temp_name = NormalizedString::Create(package_family_name);
+		normalized_package_family_name.swap(temp_name);
 	}
-	else
-	{
-		if (fw_rule->wszPackageFamilyName)
-		{
-			auto temp_name = NormalizedString::Create(fw_rule->wszPackageFamilyName);
-			normalized_package_family_name.swap(temp_name);
-		}
-		AppendValue(fwRule->wszPackageFamilyName);
-	}
+	AppendValue(package_family_name);
 }
 
+static std::wstring
+AddressKeywordToString(DWORD keyword);
+static std::wstring
+PortKeywordToString(DWORD keyword);
+
+namespace details
+{
+// Condition fields that are empty do not restrict the rule, so they print the effective policy rather than "(none)"
+static std::wstring
+NotRestrictedText(std::wstring_view scope)
+{
+	return std::format(L"(not restricted - {})", scope);
+}
+
+static std::wstring
+ConditionTextToString(PCWSTR value, std::wstring_view scope)
+{
+	if (!value || *value == L'\0')
+	{
+		return NotRestrictedText(scope);
+	}
+	return value;
+}
+
+static bool
+HasAddressEntries(const FW_ADDRESSES& addresses) noexcept
+{
+	return addresses.V4SubNets.dwNumEntries > 0 || addresses.V4Ranges.dwNumEntries > 0 ||
+	       addresses.V6SubNets.dwNumEntries > 0 || addresses.V6Ranges.dwNumEntries > 0;
+}
+
+// The effective address restriction when a side has no subnets or ranges: keywords, then dynamic keyword addresses
+// (remote side only), otherwise any address. Returns an empty string when subnets or ranges restrict the side.
+static std::wstring
+UnlistedAddressPolicyToString(const FW_ADDRESSES& addresses, DWORD dynamic_keyword_address_count)
+{
+	if (HasAddressEntries(addresses))
+	{
+		return {};
+	}
+	const DWORD keywords = addresses.dwV4AddressKeywords | addresses.dwV6AddressKeywords;
+	if (keywords != FW_ADDRESS_KEYWORD_NONE)
+	{
+		return std::format(L"(set by address keywords: {})", AddressKeywordToString(keywords));
+	}
+	if (dynamic_keyword_address_count > 0)
+	{
+		return L"(set by dynamic keyword addresses)";
+	}
+	return NotRestrictedText(L"any address");
+}
+static std::wstring
+SchemaVersionToString(WORD schema_version)
+{
+	return std::format(
+	    L"{}.{}",
+	    MajorVersionFromSchemaVersion(schema_version),
+	    MinorVersionFromSchemaVersion(schema_version));
+}
+
+template <typename T>
+static std::wstring
+HexToString(T value)
+{
+	return std::format(L"0x{:x}", static_cast<uint64_t>(value));
+}
+
+static std::wstring
+CountToString(DWORD count)
+{
+	return count == 0 ? std::wstring{FirewallRuleNoValueText} : std::to_wstring(count) + L" entries";
+}
+
+static std::wstring
+AddressListToString(DWORD count, const FW_ADDRESSES& addresses, DWORD dynamic_keyword_address_count)
+{
+	if (count > 0)
+	{
+		return CountToString(count);
+	}
+	// an empty list only means "any address" when nothing else on that side restricts the address
+	auto policy = UnlistedAddressPolicyToString(addresses, dynamic_keyword_address_count);
+	return policy.empty() ? std::wstring{FirewallRuleNoValueText} : policy;
+}
+
+static std::wstring
+PortsToString(const FW_PORT_RANGE_LIST& ports, PCWSTR empty_text)
+{
+	if (ports.dwNumEntries == 0 || !ports.pPorts)
+	{
+		return empty_text;
+	}
+
+	std::wstring result;
+	for (DWORD i = 0; i < ports.dwNumEntries; ++i)
+	{
+		if (i > 0)
+		{
+			result += L", ";
+		}
+		result += std::to_wstring(ports.pPorts[i].wBegin);
+		if (ports.pPorts[i].wBegin != ports.pPorts[i].wEnd)
+		{
+			result += L"-" + std::to_wstring(ports.pPorts[i].wEnd);
+		}
+	}
+	return result;
+}
+
+static std::wstring
+PortConditionToString(const FW_PORTS& ports)
+{
+	const auto unlisted_text =
+	    ports.wPortKeywords != FW_PORT_KEYWORD_NONE
+	        ? std::format(L"(set by port keywords: {})", PortKeywordToString(ports.wPortKeywords))
+	        : NotRestrictedText(L"any port");
+	return PortsToString(ports.Ports, unlisted_text.c_str());
+}
+
+static std::wstring
+IcmpTypeCodesToString(const FW_ICMP_TYPE_CODE_LIST& type_codes, PCWSTR empty_text)
+{
+	if (type_codes.dwNumEntries == 0 || !type_codes.pEntries)
+	{
+		return empty_text;
+	}
+
+	std::wstring result;
+	for (DWORD i = 0; i < type_codes.dwNumEntries; ++i)
+	{
+		if (i > 0)
+		{
+			result += L", ";
+		}
+		result += L"[type] " + std::to_wstring(type_codes.pEntries[i].bType) + L" - [code] " +
+		          std::to_wstring(type_codes.pEntries[i].wCode);
+	}
+	return result;
+}
+
+static std::wstring
+NetworkNamesToString(const FW_NETWORK_NAMES& names, std::wstring_view empty_text)
+{
+	if (names.dwNumEntries == 0 || !names.wszNames)
+	{
+		return std::wstring{empty_text};
+	}
+
+	std::wstring result;
+	for (DWORD i = 0; i < names.dwNumEntries; ++i)
+	{
+		if (i > 0)
+		{
+			result += L", ";
+		}
+		result += FirewallRuleTextToString(names.wszNames[i]);
+	}
+	return result;
+}
+
+static std::wstring
+GuidsToString(DWORD count, const GUID* guids, std::wstring_view empty_text)
+{
+	if (count == 0 || !guids)
+	{
+		return std::wstring{empty_text};
+	}
+
+	std::wstring result;
+	for (DWORD i = 0; i < count; ++i)
+	{
+		if (i > 0)
+		{
+			result += L", ";
+		}
+		result += GuidToString(guids[i]);
+	}
+	return result;
+}
+} // namespace details
+
+std::wstring
+FirewallRuleTextToString(PCWSTR value)
+{
+	if (!value)
+	{
+		return FirewallRuleNoValueText;
+	}
+	if (*value == L'\0')
+	{
+		return FirewallRuleEmptyText;
+	}
+	return value;
+}
+
+std::wstring
+NormalizedFirewallRule::FieldNotAvailableText() const
+{
+	// the readable fields are limited by whichever is older: the version the store was opened with or the rule's version
+	return std::format(
+	    L"(not available in schema version {})",
+	    details::SchemaVersionToString(std::min(requested_rule_version, fw_rule->wSchemaVersion)));
+}
+
+// Prints every FW_RULE field in declaration order for every rule, so output has the same lines regardless of schema
+// version: fields the rule's schema version cannot carry print FieldNotAvailableText(), fields the IP protocol does
+// not use print a not-applicable placeholder, and empty fields print FirewallRuleNoValueText.
 std::wstring
 NormalizedFirewallRule::PrintRule() const
 {
@@ -663,359 +865,173 @@ NormalizedFirewallRule::PrintRule() const
 	}
 
 	std::wstring result;
-
-	result += L"Rule Name: ";
-	result += !fw_rule->wszName ? L"(null)" : fw_rule->wszName;
-	result += L"\n";
-
-	result += L"Rule ID: ";
-	result += !fw_rule->wszRuleId ? L"(null)" : fw_rule->wszRuleId;
-	result += L"\n";
-
-	result += L"Description: ";
-	result += !fw_rule->wszDescription ? L"(null)" : fw_rule->wszDescription;
-	result += L"\n";
-
-	result += L"Schema Version: " + std::to_wstring(details::MajorVersionFromSchemaVersion(fw_rule->wSchemaVersion)) +
-	          L"." + std::to_wstring(details::MinorVersionFromSchemaVersion(fw_rule->wSchemaVersion)) + L"\n";
-	result += L"Profiles: 0x" + std::to_wstring(fw_rule->dwProfiles) + L"\n";
-	result += L"Direction: " + details::ToString(fw_rule->Direction) + L"\n";
-	result += L"IP Protocol: " + details::ToString(static_cast<NET_FW_IP_PROTOCOL>(fw_rule->wIpProtocol)) + L"\n";
-
-	switch (fw_rule->wIpProtocol)
+	const auto append_line = [&](std::wstring_view label, std::wstring_view value)
 	{
-	case NET_FW_IP_PROTOCOL_TCP:
-	case NET_FW_IP_PROTOCOL_UDP:
+		result.append(label);
+		result.append(L": ");
+		result.append(value);
+		result.append(L"\n");
+	};
+
+	append_line(L"Rule Name", FirewallRuleTextToString(fw_rule->wszName));
+	append_line(L"Rule ID", FirewallRuleTextToString(fw_rule->wszRuleId));
+	append_line(L"Description", FirewallRuleTextToString(fw_rule->wszDescription));
+	append_line(L"Schema Version", details::SchemaVersionToString(fw_rule->wSchemaVersion));
+	append_line(
+	    L"Profiles",
+	    fw_rule->dwProfiles == FW_PROFILE_TYPE_ALL
+	        ? details::HexToString(fw_rule->dwProfiles) + L" " + details::NotRestrictedText(L"all profiles")
+	        : details::HexToString(fw_rule->dwProfiles));
+	append_line(L"Direction", details::ToString(fw_rule->Direction));
+	append_line(L"IP Protocol", details::ToString(static_cast<NET_FW_IP_PROTOCOL>(fw_rule->wIpProtocol)));
+
+	// ports and ICMP type/codes share a union in FW_RULE, so only the member that matches the protocol is valid
+	constexpr WORD icmp_v4_protocol = 1;
+	constexpr WORD icmp_v6_protocol = 58;
+	const auto not_applicable = std::format(L"(not applicable to IP protocol {})", fw_rule->wIpProtocol);
+	const bool uses_ports =
+	    fw_rule->wIpProtocol == NET_FW_IP_PROTOCOL_TCP || fw_rule->wIpProtocol == NET_FW_IP_PROTOCOL_UDP;
+	append_line(
+	    L"Local Port Keywords",
+	    uses_ports ? details::HexToString(fw_rule->LocalPorts.wPortKeywords) : not_applicable);
+	append_line(L"Local Ports", uses_ports ? details::PortConditionToString(fw_rule->LocalPorts) : not_applicable);
+	append_line(
+	    L"Remote Port Keywords",
+	    uses_ports ? details::HexToString(fw_rule->RemotePorts.wPortKeywords) : not_applicable);
+	append_line(L"Remote Ports", uses_ports ? details::PortConditionToString(fw_rule->RemotePorts) : not_applicable);
+	const auto any_icmp_type_code = details::NotRestrictedText(L"any ICMP type and code");
+	append_line(
+	    L"ICMP v4 Type/Code List",
+	    fw_rule->wIpProtocol == icmp_v4_protocol
+	        ? details::IcmpTypeCodesToString(fw_rule->V4TypeCodeList, any_icmp_type_code.c_str())
+	        : not_applicable);
+	append_line(
+	    L"ICMP v6 Type/Code List",
+	    fw_rule->wIpProtocol == icmp_v6_protocol
+	        ? details::IcmpTypeCodesToString(fw_rule->V6TypeCodeList, any_icmp_type_code.c_str())
+	        : not_applicable);
+
+	const auto& local = fw_rule->LocalAddresses;
+	const auto& remote = fw_rule->RemoteAddresses;
+	const DWORD dynamic_keyword_address_count =
+	    SupportsFieldsFromVersion(FW_BINARY_VERSION_31) ? fw_rule->RemoteDynamicKeywordAddresses.dwNumIds : 0;
+	append_line(L"Local Address V4 Keywords", details::HexToString(local.dwV4AddressKeywords));
+	append_line(L"Local Address V6 Keywords", details::HexToString(local.dwV6AddressKeywords));
+	append_line(L"Local Address V4 Subnets", details::AddressListToString(local.V4SubNets.dwNumEntries, local, 0));
+	append_line(L"Local Address V4 Ranges", details::AddressListToString(local.V4Ranges.dwNumEntries, local, 0));
+	append_line(L"Local Address V6 Subnets", details::AddressListToString(local.V6SubNets.dwNumEntries, local, 0));
+	append_line(L"Local Address V6 Ranges", details::AddressListToString(local.V6Ranges.dwNumEntries, local, 0));
+	append_line(L"Remote Address V4 Keywords", details::HexToString(remote.dwV4AddressKeywords));
+	append_line(L"Remote Address V6 Keywords", details::HexToString(remote.dwV6AddressKeywords));
+	append_line(
+	    L"Remote Address V4 Subnets",
+	    details::AddressListToString(remote.V4SubNets.dwNumEntries, remote, dynamic_keyword_address_count));
+	append_line(
+	    L"Remote Address V4 Ranges",
+	    details::AddressListToString(remote.V4Ranges.dwNumEntries, remote, dynamic_keyword_address_count));
+	append_line(
+	    L"Remote Address V6 Subnets",
+	    details::AddressListToString(remote.V6SubNets.dwNumEntries, remote, dynamic_keyword_address_count));
+	append_line(
+	    L"Remote Address V6 Ranges",
+	    details::AddressListToString(remote.V6Ranges.dwNumEntries, remote, dynamic_keyword_address_count));
+	append_line(
+	    L"Local Interface IDs",
+	    details::GuidsToString(
+	        fw_rule->LocalInterfaceIds.dwNumLUIDs,
+	        fw_rule->LocalInterfaceIds.pLUIDs,
+	        details::NotRestrictedText(L"all interfaces")));
+	append_line(
+	    L"Local Interface Types",
+	    fw_rule->dwLocalInterfaceTypes == FW_INTERFACE_TYPE_ALL
+	        ? details::HexToString(fw_rule->dwLocalInterfaceTypes) + L" " +
+	              details::NotRestrictedText(L"all interface types")
+	        : details::HexToString(fw_rule->dwLocalInterfaceTypes));
+	append_line(L"Local Application", details::ConditionTextToString(fw_rule->wszLocalApplication, L"any application"));
+	append_line(L"Local Service", details::ConditionTextToString(fw_rule->wszLocalService, L"any service"));
+
+	append_line(L"Action", details::ToString(fw_rule->Action));
+	append_line(
+	    L"Flags",
+	    details::ToString(static_cast<FW_RULE_FLAG>(fw_rule->wFlags)) + L" (" + details::HexToString(fw_rule->wFlags) +
+	        L")");
+	append_line(
+	    L"Remote Machine Authorization List",
+	    details::ConditionTextToString(fw_rule->wszRemoteMachineAuthorizationList, L"any remote machine"));
+	append_line(
+	    L"Remote User Authorization List",
+	    details::ConditionTextToString(fw_rule->wszRemoteUserAuthorizationList, L"any remote user"));
+	append_line(L"Embedded Context", FirewallRuleTextToString(fw_rule->wszEmbeddedContext));
+
+	append_line(
+	    L"Platform Validity List",
+	    fw_rule->PlatformValidityList.dwNumEntries == 0
+	        ? details::NotRestrictedText(L"all platforms")
+	        : details::CountToString(fw_rule->PlatformValidityList.dwNumEntries));
+	if (fw_rule->PlatformValidityList.pPlatforms)
 	{
-		// TCP/UDP ports
-		result += L"Local Port Keywords: 0x" + std::to_wstring(fw_rule->LocalPorts.wPortKeywords) + L"\n";
-		result += L"Local Ports: ";
-		if (fw_rule->LocalPorts.Ports.dwNumEntries > 0 && fw_rule->LocalPorts.Ports.pPorts)
+		for (DWORD i = 0; i < fw_rule->PlatformValidityList.dwNumEntries; ++i)
 		{
-			for (DWORD i = 0; i < fw_rule->LocalPorts.Ports.dwNumEntries; ++i)
-			{
-				result += std::to_wstring(fw_rule->LocalPorts.Ports.pPorts[i].wBegin);
-				if (fw_rule->LocalPorts.Ports.pPorts[i].wBegin != fw_rule->LocalPorts.Ports.pPorts[i].wEnd)
-				{
-					result += L"-" + std::to_wstring(fw_rule->LocalPorts.Ports.pPorts[i].wEnd);
-				}
-				if (i < fw_rule->LocalPorts.Ports.dwNumEntries - 1)
-				{
-					result += L", ";
-				}
-			}
-		}
-		else
-		{
-			result += L"(none)";
-		}
-		result += L"\n";
-
-		result += L"Remote Port Keywords: 0x" + std::to_wstring(fw_rule->RemotePorts.wPortKeywords) + L"\n";
-		result += L"Remote Ports: ";
-		if (fw_rule->RemotePorts.Ports.dwNumEntries > 0 && fw_rule->RemotePorts.Ports.pPorts)
-		{
-			for (DWORD i = 0; i < fw_rule->RemotePorts.Ports.dwNumEntries; ++i)
-			{
-				result += std::to_wstring(fw_rule->RemotePorts.Ports.pPorts[i].wBegin);
-				if (fw_rule->RemotePorts.Ports.pPorts[i].wBegin != fw_rule->RemotePorts.Ports.pPorts[i].wEnd)
-				{
-					result += L"-" + std::to_wstring(fw_rule->RemotePorts.Ports.pPorts[i].wEnd);
-				}
-				if (i < fw_rule->RemotePorts.Ports.dwNumEntries - 1)
-				{
-					result += L", ";
-				}
-			}
-		}
-		else
-		{
-			result += L"(none)";
-		}
-		result += L"\n";
-		break;
-	}
-	case 1:
-	case 58:
-	{
-		// ICMP
-		result += L"ICMP v4 Type/Code List: ";
-		if (fw_rule->V4TypeCodeList.dwNumEntries > 0 && fw_rule->V4TypeCodeList.pEntries)
-		{
-			for (DWORD i = 0; i < fw_rule->V4TypeCodeList.dwNumEntries; ++i)
-			{
-				result += std::to_wstring(fw_rule->V4TypeCodeList.pEntries[i].bType) + L":" +
-				          std::to_wstring(fw_rule->V4TypeCodeList.pEntries[i].wCode);
-				if (i < fw_rule->V4TypeCodeList.dwNumEntries - 1)
-				{
-					result += L", ";
-				}
-			}
-		}
-		else
-		{
-			result += L"(none)";
-		}
-		result += L"\n";
-
-		result += L"ICMP v6 Type/Code List: ";
-		if (fw_rule->V6TypeCodeList.dwNumEntries > 0 && fw_rule->V6TypeCodeList.pEntries)
-		{
-			for (DWORD i = 0; i < fw_rule->V6TypeCodeList.dwNumEntries; ++i)
-			{
-				result += std::to_wstring(fw_rule->V6TypeCodeList.pEntries[i].bType) + L":" +
-				          std::to_wstring(fw_rule->V6TypeCodeList.pEntries[i].wCode);
-				if (i < fw_rule->V6TypeCodeList.dwNumEntries - 1)
-				{
-					result += L", ";
-				}
-			}
-		}
-		else
-		{
-			result += L"(none)";
-		}
-		result += L"\n";
-		break;
-	}
-	}
-
-	if (fw_rule->LocalAddresses.dwV4AddressKeywords > 0)
-	{
-		result +=
-		    L"Local Address V4 Keywords: 0x" + std::to_wstring(fw_rule->LocalAddresses.dwV4AddressKeywords) + L"\n";
-	}
-	if (fw_rule->LocalAddresses.dwV6AddressKeywords > 0)
-	{
-		result +=
-		    L"Local Address V6 Keywords: 0x" + std::to_wstring(fw_rule->LocalAddresses.dwV6AddressKeywords) + L"\n";
-	}
-	if (fw_rule->LocalAddresses.V4SubNets.dwNumEntries > 0)
-	{
-		result += L"Local Address : V4 Subnets: " + std::to_wstring(fw_rule->LocalAddresses.V4SubNets.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->LocalAddresses.V6SubNets.dwNumEntries > 0)
-	{
-		result += L"Local Address : V6 Subnets: " + std::to_wstring(fw_rule->LocalAddresses.V6SubNets.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->LocalAddresses.V4Ranges.dwNumEntries > 0)
-	{
-		result += L"Local Address : V4 Ranges: " + std::to_wstring(fw_rule->LocalAddresses.V4Ranges.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->LocalAddresses.V6Ranges.dwNumEntries > 0)
-	{
-		result += L"Local Address : V6 Ranges: " + std::to_wstring(fw_rule->LocalAddresses.V6Ranges.dwNumEntries) +
-		          L" entries\n";
-	}
-
-	if (fw_rule->RemoteAddresses.dwV4AddressKeywords > 0)
-	{
-		result +=
-		    L"Remote Address V4 Keywords: 0x" + std::to_wstring(fw_rule->RemoteAddresses.dwV4AddressKeywords) + L"\n";
-	}
-	if (fw_rule->RemoteAddresses.dwV6AddressKeywords > 0)
-	{
-		result +=
-		    L"Remote Address V6 Keywords: 0x" + std::to_wstring(fw_rule->RemoteAddresses.dwV6AddressKeywords) + L"\n";
-	}
-	if (fw_rule->RemoteAddresses.V4SubNets.dwNumEntries > 0)
-	{
-		result += L"Remote Address : V4 Subnets: " + std::to_wstring(fw_rule->RemoteAddresses.V4SubNets.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->RemoteAddresses.V6SubNets.dwNumEntries > 0)
-	{
-		result += L"Remote Address : V6 Subnets: " + std::to_wstring(fw_rule->RemoteAddresses.V6SubNets.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->RemoteAddresses.V4Ranges.dwNumEntries > 0)
-	{
-		result += L"Remote Address : V4 Ranges: " + std::to_wstring(fw_rule->RemoteAddresses.V4Ranges.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->RemoteAddresses.V6Ranges.dwNumEntries > 0)
-	{
-		result += L"Remote Address : V6 Ranges: " + std::to_wstring(fw_rule->RemoteAddresses.V6Ranges.dwNumEntries) +
-		          L" entries\n";
-	}
-	if (fw_rule->LocalInterfaceIds.dwNumLUIDs > 0)
-	{
-		result += L"Local Interface IDs: " + std::to_wstring(fw_rule->LocalInterfaceIds.dwNumLUIDs) + L" entries\n";
-	}
-
-	if (fw_rule->dwLocalInterfaceTypes > 0)
-	{
-		result += L"Local Interface Types: 0x" + std::to_wstring(fw_rule->dwLocalInterfaceTypes) + L"\n";
-	}
-
-	if (fw_rule->wszLocalApplication)
-	{
-		result += std::wstring(L"Local Application: ") + fw_rule->wszLocalApplication + L"\n";
-	}
-
-	if (fw_rule->wszLocalService)
-	{
-		result += std::wstring(L"Local Service: ") + fw_rule->wszLocalService + L"\n";
-	}
-
-	result += L"Action: " + details::ToString(fw_rule->Action) + L"\n";
-	result += L"Flags: " + details::ToString(static_cast<FW_RULE_FLAG>(fw_rule->wFlags)) + L" (0x" +
-	          std::to_wstring(fw_rule->wFlags) + L")\n";
-	if (fw_rule->wFlags2 > 0)
-	{
-		result += L"Flags2: " + details::ToString(static_cast<FW_RULE_FLAGS2>(fw_rule->wFlags2)) + L" (0x" +
-		          std::to_wstring(fw_rule->wFlags2) + L")\n";
-	}
-
-	if (fw_rule->wszRemoteMachineAuthorizationList)
-	{
-		result +=
-		    std::wstring(L"Remote Machine Authorization List : ") + fw_rule->wszRemoteMachineAuthorizationList + L"\n";
-	}
-
-	if (fw_rule->wszRemoteUserAuthorizationList)
-	{
-		result += std::wstring(L"Remote User Authorization List: ") + fw_rule->wszRemoteUserAuthorizationList + L"\n";
-	}
-
-	if (fw_rule->wszLocalUserAuthorizationList)
-	{
-		result += std::wstring(L"Local User Authorization List: ") + fw_rule->wszLocalUserAuthorizationList + L"\n";
-	}
-
-	if (fw_rule->wszEmbeddedContext)
-	{
-		result += std::wstring(L"Embedded Context: ") + fw_rule->wszEmbeddedContext + L"\n";
-	}
-
-	if (fw_rule->PlatformValidityList.dwNumEntries > 0)
-	{
-		result +=
-		    L"Platform Validity List: " + std::to_wstring(fw_rule->PlatformValidityList.dwNumEntries) + L" entries\n";
-		for (uint32_t count = 0; count < fw_rule->PlatformValidityList.dwNumEntries; ++count)
-		{
-			result += L"  - " + details::ToString(fw_rule->PlatformValidityList.pPlatforms[count]) + L"\n";
+			result += L"  - " + details::ToString(fw_rule->PlatformValidityList.pPlatforms[i]) + L"\n";
 		}
 	}
 
-	result += L"Status: ";
-	if (fw_rule->Status == FW_RULE_STATUS_OK)
+	append_line(
+	    L"Status",
+	    fw_rule->Status == FW_RULE_STATUS_OK ? std::wstring{L"FW_RULE_STATUS_OK"}
+	                                         : details::HexToString(fw_rule->Status));
+	append_line(L"Origin", details::ToString(fw_rule->Origin));
+	append_line(L"GPO Name", FirewallRuleTextToString(fw_rule->wszGPOName));
+	append_line(
+	    L"MetaData",
+	    fw_rule->pMetaData ? details::CountToString(fw_rule->pMetaData->dwNumEntries) : FirewallRuleNoValueText);
+	append_line(
+	    L"Local User Authorization List",
+	    details::ConditionTextToString(fw_rule->wszLocalUserAuthorizationList, L"any local user"));
+	append_line(L"Package ID", details::ConditionTextToString(fw_rule->wszPackageId, L"any package"));
+	append_line(L"Local User Owner", details::ConditionTextToString(fw_rule->wszLocalUserOwner, L"all users"));
+	append_line(L"Trust Tuple Keywords", details::HexToString(fw_rule->dwTrustTupleKeywords));
+	append_line(
+	    L"Network Names",
+	    details::NetworkNamesToString(fw_rule->OnNetworkNames, details::NotRestrictedText(L"any network")));
+	append_line(
+	    L"Security Realm ID",
+	    details::ConditionTextToString(fw_rule->wszSecurityRealmId, L"any security realm"));
+	append_line(
+	    L"Flags2",
+	    details::ToString(static_cast<FW_RULE_FLAGS2>(fw_rule->wFlags2)) + L" (" +
+	        details::HexToString(fw_rule->wFlags2) + L")");
+	append_line(
+	    L"Remote Out Server Names",
+	    details::NetworkNamesToString(fw_rule->RemoteOutServerNames, details::NotRestrictedText(L"any server name")));
+	append_line(L"FQBN", details::ConditionTextToString(fw_rule->wszFqbn, L"any binary"));
+	append_line(L"Compartment ID", std::to_wstring(fw_rule->compartmentId));
+
+	if (SupportsFieldsFromVersion(FW_BINARY_VERSION_31))
 	{
-		result += L"FW_RULE_STATUS_OK";
+		constexpr GUID null_guid{};
+		append_line(
+		    L"Provider Context Key",
+		    fw_rule->providerContextKey == null_guid ? std::wstring{FirewallRuleNoValueText}
+		                                             : GuidToString(fw_rule->providerContextKey));
+		append_line(
+		    L"Remote Dynamic Keyword Address IDs",
+		    details::GuidsToString(
+		        fw_rule->RemoteDynamicKeywordAddresses.dwNumIds,
+		        fw_rule->RemoteDynamicKeywordAddresses.ids,
+		        L"(not restricted by dynamic keyword addresses)"));
 	}
 	else
 	{
-		result += std::to_wstring(fw_rule->Status);
-	}
-	result += L"\n";
-
-	result += L"Origin: " + details::ToString(fw_rule->Origin) + L"\n";
-
-	if (fw_rule->wszGPOName)
-	{
-		result += std::wstring(L"GPO Name: ") + fw_rule->wszGPOName + L"\n";
+		append_line(L"Provider Context Key", FieldNotAvailableText());
+		append_line(L"Remote Dynamic Keyword Address IDs", FieldNotAvailableText());
 	}
 
-	if (fw_rule->pMetaData)
-	{
-		result += L"MetaData: " + std::to_wstring(fw_rule->pMetaData->dwNumEntries) + L" entries\n";
-	}
-
-	if (fw_rule->wszPackageId)
-	{
-		result += std::wstring(L"Package ID: ") + fw_rule->wszPackageId + L"\n";
-	}
-
-	if (fw_rule->wszLocalUserOwner)
-	{
-		result += std::wstring(L"Local User Owner: ") + fw_rule->wszLocalUserOwner + L"\n";
-	}
-
-	if (fw_rule->dwTrustTupleKeywords > 0)
-	{
-		result += L"Trust Tuple Keywords: 0x" + std::to_wstring(fw_rule->dwTrustTupleKeywords) + L"\n";
-	}
-
-	if (fw_rule->OnNetworkNames.dwNumEntries > 0)
-	{
-		result += L"Network Names: ";
-		for (DWORD i = 0; i < fw_rule->OnNetworkNames.dwNumEntries; ++i)
-		{
-			result +=
-			    fw_rule->OnNetworkNames.wszNames[i] ? std::wstring(fw_rule->OnNetworkNames.wszNames[i]) : L"(null)";
-			if (i < fw_rule->OnNetworkNames.dwNumEntries - 1)
-			{
-				result += L", ";
-			}
-		}
-		result += L"\n";
-	}
-
-	if (fw_rule->wszSecurityRealmId)
-	{
-		result += std::wstring(L"Security Realm ID: ") + fw_rule->wszSecurityRealmId + L"\n";
-	}
-
-	if (fw_rule->RemoteOutServerNames.dwNumEntries > 0)
-	{
-		result += L"Remote Out Server Names: ";
-		for (DWORD i = 0; i < fw_rule->RemoteOutServerNames.dwNumEntries; ++i)
-		{
-			result += fw_rule->RemoteOutServerNames.wszNames[i]
-			              ? std::wstring(fw_rule->RemoteOutServerNames.wszNames[i])
-			              : L"(null)";
-			if (i < fw_rule->RemoteOutServerNames.dwNumEntries - 1)
-			{
-				result += L", ";
-			}
-		}
-		result += L"\n";
-	}
-
-	if (fw_rule->wszFqbn)
-	{
-		result += std::wstring(L"FQBN: ") + fw_rule->wszFqbn + L"\n";
-	}
-
-	if (fw_rule->compartmentId > 0)
-	{
-		result += L"Compartment ID: " + std::to_wstring(fw_rule->compartmentId) + L"\n";
-	}
-
-	if (requested_rule_version >= FW_BINARY_VERSION_31 && fw_rule->wSchemaVersion >= FW_BINARY_VERSION_31)
-	{
-		// fields are present in 2.31 and later
-		constexpr GUID null_guid{};
-		if (fw_rule->providerContextKey != null_guid)
-		{
-			result += std::wstring(L"Provider Context Key: ") + GuidToString(fw_rule->providerContextKey) + L"\n";
-		}
-
-		if (fw_rule->RemoteDynamicKeywordAddresses.dwNumIds > 0)
-		{
-			result += L"Remote Dynamic Keyword Address IDs: ";
-			for (DWORD i = 0; i < fw_rule->RemoteDynamicKeywordAddresses.dwNumIds; ++i)
-			{
-				result += GuidToString(fw_rule->RemoteDynamicKeywordAddresses.ids[i]);
-				if (i < fw_rule->RemoteDynamicKeywordAddresses.dwNumIds - 1)
-				{
-					result += L", ";
-				}
-			}
-			result += L"\n";
-		}
-	}
-
-	if (requested_rule_version > FW_BINARY_VERSION_31 && fw_rule->wSchemaVersion > FW_BINARY_VERSION_31)
-	{
-		if (fw_rule->wszPackageFamilyName)
-		{
-			result += std::wstring(L"Package Family Name: ") + fw_rule->wszPackageFamilyName + L"\n";
-		}
-	}
+	append_line(
+	    L"Package Family Name",
+	    SupportsFieldsFromVersion(FW_BINARY_VERSION_33)
+	        ? details::ConditionTextToString(fw_rule->wszPackageFamilyName, L"any package family")
+	        : FieldNotAvailableText());
 
 	return result;
 }
@@ -1039,7 +1055,8 @@ NormalizedFirewallRule::RuleTargetsLocalNonSystemApplication() const
 	{
 		return !RuleTargetsLocalSystemApplication();
 	}
-	return (fw_rule->wszPackageFamilyName && *fw_rule->wszPackageFamilyName != L'\0') ||
+	const auto package_family_name = PackageFamilyName();
+	return (package_family_name && *package_family_name != L'\0') ||
 	       (fw_rule->wszPackageId && *fw_rule->wszPackageId != L'\0');
 }
 
@@ -1213,6 +1230,9 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 				return;
 			}
 
+			// on success, the sizes exclude the null terminator that the first call included
+			local_user_owner_name.resize(localUserOwnerNameSize);
+			local_user_domain_name.resize(cchReferencedDomainName);
 			successfully_resolved_user_name = true;
 
 			if (DebugOutputEnabled())
@@ -1676,4 +1696,275 @@ NormalizedFirewallRule::AppendValue(const FW_RULE::FW_DYNAMIC_KEYWORD_ADDRESS_ID
 			AppendValue(id);
 		}
 	}
+}
+
+static std::wstring
+AddressKeywordToString(DWORD keyword)
+{
+	FW_ADDRESS_KEYWORD address_keyword = static_cast<FW_ADDRESS_KEYWORD>(keyword);
+
+	if (address_keyword == FW_ADDRESS_KEYWORD_NONE)
+	{
+		return L"None";
+	}
+
+	std::wstring result;
+	if (address_keyword & FW_ADDRESS_KEYWORD_LOCAL_SUBNET)
+	{
+		result += L"LocalSubnet ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_DNS)
+	{
+		result += L"DNS ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_DHCP)
+	{
+		result += L"DHCP ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_WINS)
+	{
+		result += L"WINS ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_DEFAULT_GATEWAY)
+	{
+		result += L"DefaultGateway ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_INTRANET)
+	{
+		result += L"Intranet ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_INTERNET)
+	{
+		result += L"Internet ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_PLAYTO_RENDERERS)
+	{
+		result += L"PlayToRenderers ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_REMOTE_INTRANET)
+	{
+		result += L"RemoteIntranet ";
+	}
+	if (address_keyword & FW_ADDRESS_KEYWORD_CAPTIVE_PORTAL)
+	{
+		result += L"CaptivePortal ";
+	}
+	if (!result.empty())
+	{
+		// strip off the trailing space
+		result.pop_back();
+	}
+
+	if (result.empty())
+	{
+		result = L"<Unknown FW_ADDRESS_KEYWORD> " + std::to_wstring(address_keyword);
+	}
+	return result;
+}
+
+static bool
+IsAnyAddressSpecified(const FW_RULE* fw_rule) noexcept
+{
+	return fw_rule->LocalAddresses.V4Ranges.dwNumEntries > 0 || fw_rule->LocalAddresses.V4SubNets.dwNumEntries > 0 ||
+	       fw_rule->LocalAddresses.V6Ranges.dwNumEntries > 0 || fw_rule->LocalAddresses.V6SubNets.dwNumEntries > 0 ||
+	       fw_rule->RemoteAddresses.V4Ranges.dwNumEntries > 0 || fw_rule->RemoteAddresses.V4SubNets.dwNumEntries > 0 ||
+	       fw_rule->RemoteAddresses.V6Ranges.dwNumEntries > 0 || fw_rule->RemoteAddresses.V6SubNets.dwNumEntries > 0;
+}
+
+static std::wstring
+PortKeywordToString(DWORD keyword)
+{
+	FW_PORT_KEYWORD port_keyword = static_cast<FW_PORT_KEYWORD>(keyword);
+
+	if (port_keyword == FW_PORT_KEYWORD_NONE)
+	{
+		return L"None";
+	}
+
+	std::wstring result;
+	if (port_keyword & FW_PORT_KEYWORD_DYNAMIC_RPC_PORTS)
+	{
+		result += L"DynamicRpcPorts ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_RPC_EP)
+	{
+		result += L"RpcEphemeralPorts ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_TEREDO_PORT)
+	{
+		result += L"TeredoPort ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_IP_TLS_IN)
+	{
+		result += L"IpTlsIn ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_IP_TLS_OUT)
+	{
+		result += L"IpTlsOut ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_DHCP)
+	{
+		result += L"Dhcp ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_PLAYTO_DISCOVERY)
+	{
+		result += L"PlayToDiscovery ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_MDNS)
+	{
+		result += L"Mdns ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_CORTANA_OUT)
+	{
+		result += L"CortanaOut ";
+	}
+	if (port_keyword & FW_PORT_KEYWORD_PROXIMAL_TCP_CDP)
+	{
+		result += L"ProximalTcpCdp ";
+	}
+
+	if (!result.empty())
+	{
+		// strip off the trailing space
+		result.pop_back();
+	}
+
+	if (result.empty())
+	{
+		result = L"<Unknown FW_PORT_KEYWORD> " + std::to_wstring(port_keyword);
+	}
+	return result;
+}
+
+// Prints the same lines for every rule: fields that are empty print a placeholder, fields the rule's schema version
+// cannot carry print NormalizedFirewallRule::FieldNotAvailableText(), and fields the IP protocol does not use print a
+// not-applicable placeholder (ports and ICMP type/codes share a union in FW_RULE, so only one of them is valid).
+std::wstring
+PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter)
+{
+	const auto* fw_rule = rule_details.fw_rule;
+	std::wstring return_string = std::format(
+	    L"       {} : Rule Name: {}\n",
+	    counter,
+	    rule_details.rule_name.value.empty() ? L"<empty>" : rule_details.rule_name.value);
+	const auto append_line = [&](std::wstring_view label, std::wstring_view value)
+	{
+		return_string.append(std::format(L"           {}: {}\n", label, value));
+	};
+
+	append_line(
+	    L"Description",
+	    rule_details.rule_description.empty() ? std::wstring{FirewallRuleNoValueText} : rule_details.rule_description);
+
+	if (rule_details.missing_package_family_name || rule_details.missing_package_id)
+	{
+		return_string.append(L"           Inbound rule targeting an application that is not installed\n");
+	}
+
+	append_line(L"Local Service", details::ConditionTextToString(fw_rule->wszLocalService, L"any service"));
+	append_line(L"Application", details::ConditionTextToString(fw_rule->wszLocalApplication, L"any application"));
+	append_line(
+	    L"Package Family Name",
+	    rule_details.SupportsFieldsFromVersion(FW_BINARY_VERSION_33)
+	        ? details::ConditionTextToString(fw_rule->wszPackageFamilyName, L"any package family")
+	        : rule_details.FieldNotAvailableText());
+	append_line(L"Package ID", details::ConditionTextToString(fw_rule->wszPackageId, L"any package"));
+
+	if (rule_details.successfully_resolved_user_name.value_or(false))
+	{
+		append_line(
+		    L"User",
+		    std::format(
+		        L"{}\\{}",
+		        rule_details.local_user_domain_name.empty() ? L"<empty>" : rule_details.local_user_domain_name,
+		        rule_details.local_user_owner_name.empty() ? L"<empty>" : rule_details.local_user_owner_name));
+	}
+	else if (!fw_rule->wszLocalUserOwner || fw_rule->wszLocalUserOwner[0] == L'\0')
+	{
+		append_line(L"User", details::NotRestrictedText(L"all users"));
+	}
+	else
+	{
+		append_line(L"User", std::format(L"{} (not resolved)", fw_rule->wszLocalUserOwner));
+	}
+	append_line(
+	    L"Local User Authorization List",
+	    details::ConditionTextToString(fw_rule->wszLocalUserAuthorizationList, L"any local user"));
+
+	// keywords are the restriction when a side has no subnets or ranges; otherwise both apply
+	const auto address_constraints_to_string = [](const FW_ADDRESSES& addresses, DWORD dynamic_keyword_address_count)
+	{
+		if (!details::HasAddressEntries(addresses) && addresses.dwV4AddressKeywords == FW_ADDRESS_KEYWORD_NONE &&
+		    addresses.dwV6AddressKeywords == FW_ADDRESS_KEYWORD_NONE)
+		{
+			return details::UnlistedAddressPolicyToString(addresses, dynamic_keyword_address_count);
+		}
+		return std::format(
+		    L"IPv4 ({}) IPv6 ({})",
+		    AddressKeywordToString(addresses.dwV4AddressKeywords),
+		    AddressKeywordToString(addresses.dwV6AddressKeywords));
+	};
+	const DWORD dynamic_keyword_address_count = rule_details.SupportsFieldsFromVersion(FW_BINARY_VERSION_31)
+	                                                ? fw_rule->RemoteDynamicKeywordAddresses.dwNumIds
+	                                                : 0;
+	append_line(L"Local Addresses Constraints", address_constraints_to_string(fw_rule->LocalAddresses, 0));
+	append_line(
+	    L"Remote Addresses Constraints",
+	    address_constraints_to_string(fw_rule->RemoteAddresses, dynamic_keyword_address_count));
+	append_line(
+	    L"Target Address Constraints",
+	    IsAnyAddressSpecified(fw_rule) ? L"address subnets or ranges are specified"
+	                                   : L"(not restricted by address subnets or ranges)");
+
+	const auto protocol = fw_rule->wIpProtocol;
+	const bool uses_ports = protocol == IPPROTO_TCP || protocol == IPPROTO_UDP;
+	std::wstring protocol_string;
+	switch (protocol)
+	{
+	case IPPROTO_TCP:
+		protocol_string = L"TCP";
+		break;
+	case IPPROTO_UDP:
+		protocol_string = L"UDP";
+		break;
+	case IPPROTO_ICMP:
+		protocol_string = L"ICMPv4";
+		break;
+	case IPPROTO_ICMPV6:
+		protocol_string = L"ICMPv6";
+		break;
+	case FW_IP_PROTOCOL_ANY:
+		protocol_string = L"any protocol";
+		break;
+	default:
+		protocol_string = L"IP protocol " + std::to_wstring(protocol);
+		break;
+	}
+	const auto not_applicable = std::format(L"(not applicable to {})", protocol_string);
+
+	append_line(
+	    L"Protocol",
+	    protocol == FW_IP_PROTOCOL_ANY ? details::NotRestrictedText(L"any protocol") : protocol_string);
+	append_line(
+	    L"Local Port Constraints",
+	    uses_ports ? PortKeywordToString(fw_rule->LocalPorts.wPortKeywords) : not_applicable);
+	append_line(
+	    L"Remote Port Constraints",
+	    uses_ports ? PortKeywordToString(fw_rule->RemotePorts.wPortKeywords) : not_applicable);
+	append_line(L"Local Ports", uses_ports ? details::PortConditionToString(fw_rule->LocalPorts) : not_applicable);
+	append_line(L"Remote Ports", uses_ports ? details::PortConditionToString(fw_rule->RemotePorts) : not_applicable);
+
+	const auto any_icmp_type_code = details::NotRestrictedText(L"any ICMP type and code");
+	std::wstring icmp_type_codes = not_applicable;
+	if (protocol == IPPROTO_ICMP)
+	{
+		icmp_type_codes = details::IcmpTypeCodesToString(fw_rule->V4TypeCodeList, any_icmp_type_code.c_str());
+	}
+	else if (protocol == IPPROTO_ICMPV6)
+	{
+		icmp_type_codes = details::IcmpTypeCodesToString(fw_rule->V6TypeCodeList, any_icmp_type_code.c_str());
+	}
+	append_line(L"ICMP Type/Code Constraints", icmp_type_codes);
+
+	return return_string;
 }

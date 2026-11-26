@@ -452,7 +452,7 @@ ctEtwReader::StopTraceSession(_In_ PCWSTR szSessionName) noexcept
         error_code);
 }
 
-inline [[nodiscard]] HRESULT
+[[nodiscard]] inline HRESULT
 ctEtwReader::EnableTraceProviders(
     _In_ const std::vector<GUID>& providerGUIDs,
     UCHAR uLevel,
@@ -482,7 +482,7 @@ try
 }
 CATCH_RETURN();
 
-inline [[nodiscard]] HRESULT
+[[nodiscard]] inline HRESULT
 ctEtwReader::EnableTraceProvidersPerEventId(_In_ const GUID& providerGUID, std::vector<uint16_t> eventIds) noexcept
 try
 {

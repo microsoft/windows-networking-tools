@@ -28,7 +28,7 @@ The solution configurations are `Debug`/`Release` for `x86`, `x64`, and `ARM64`.
 
 `LatestBuilds` contains published executables and symbols linked from `README.md`. Use freshly built output (such as `.\x64\Debug`) to validate source changes rather than those published binaries.
 
-There is no test runner. The solution's test projects are `NormalizedStringTests` and `ProfileJsonReportTests`: run `.\x64\Debug\NormalizedStringTests.exe` and `.\x64\Debug\ProfileJsonReportTests.exe`, which return a nonzero exit code on failure. Otherwise, use the smallest affected executable as the single-test equivalent; non-mutating command-line smoke checks include:
+There is no test runner. The solution's test projects are `NormalizedStringTests`, `ProfileJsonReportTests`, and `FirewallRulePrintTests`: run `.\x64\Debug\NormalizedStringTests.exe` (about a minute in Debug), `.\x64\Debug\ProfileJsonReportTests.exe`, and `.\x64\Debug\FirewallRulePrintTests.exe`, which return a nonzero exit code on failure. Otherwise, use the smallest affected executable as the single-test equivalent; non-mutating command-line smoke checks include:
 
 ```powershell
 .\x64\Debug\FwDiagnose.exe -?
@@ -62,6 +62,7 @@ Apply it to changed C++ files with `clang-format -i <files>`. Exclude restored p
 - Print all error codes as base-16 with a `0x` prefix. Convert Win32 (`DWORD`) error codes with `HRESULT_FROM_WIN32` before printing, and print `NTSTATUS` codes unconverted. Convert every error from `Fwpm*` and `Fwps*` functions the same way: those APIs can return either kind of code, and `HRESULT_FROM_WIN32` leaves an existing `HRESULT` unchanged.
 - Preserve the established failure model. Top-level entry points commonly use function-try-blocks; asynchronous/thread-pool callbacks are `noexcept` and fail fast on unexpected exceptions because exceptions must not escape Windows callbacks.
 - Use wide strings and `wmain` for command lines that interact with Unicode Windows APIs. Keep API-specific types (`GUID`, `HANDLE`, `HRESULT`, interface indices) visible rather than converting them to generic abstractions.
+- Every project defines `WIN32_LEAN_AND_MEAN` and `NOMINMAX`. Include `<wil/network.h>` for Winsock and IP definitions (such as `IPPROTO_*`) instead of `winsock2.h` or `ws2def.h`, and call `std::min`/`std::max` directly.
 - Projects compile as the latest C++ language mode with level-4 warnings, warnings as errors, SDL checks, and the static MSVC runtime. New code must remain warning-clean for all supported architectures.
 - Follow the applicable `.clang-format` (4-column indentation, 120 columns, Allman-style braces, no include sorting). `FwDiagnose` and `MigrateIpProperties` use tabs; other projects use spaces. Prefer formatting changed files rather than unrelated repository-wide reformatting.
 - Keep platform-dependent behavior behind existing RAII wrappers. In DualSTA code, the WLAN handle must remain open for the lifetime of the secondary connection, network-status subscriptions must be revoked during shutdown, and sockets bound to a secondary interface must be rebuilt when connectivity changes.

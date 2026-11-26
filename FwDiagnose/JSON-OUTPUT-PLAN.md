@@ -79,7 +79,7 @@ Reuse these definitions across command schemas rather than independently reinven
 
 ### Firewall policy profile
 
-Collected by `ProcessFirewallPolicy()` in `FirewallRules.cpp:2455`.
+Collected by `ProcessFirewallPolicy()` in `FirewallRules.cpp:2933`.
 
 Fields:
 
@@ -213,15 +213,13 @@ SID derivation failures must be distinguishable from an empty identifier. Packag
 
 ### `-analyze-app-package-rules`
 
-This is specifically a package-reference/schema-version classification, not the missing-package analysis from `-analyze-rules`.
+This is a package-reference classification, not the missing-package analysis from `-analyze-rules`. It does not group rules by schema version; a rule whose version predates the PFN field is classified as having no PFN.
 
-For each store, export five named categories with counts and verbose-only rule IDs:
+For each store, export three named categories with counts and verbose-only rule IDs:
 
-1. PFN present, rule version after 2.31.
-2. Package SID present without PFN, version after 2.31.
-3. Package SID present, version 2.31 or earlier.
-4. Package-like rule name without SID/PFN, version after 2.31.
-5. Package-like rule name without SID, version 2.31 or earlier.
+1. PFN present.
+2. Package SID present without PFN.
+3. Package-like rule name without SID/PFN.
 
 Use `packageLikeName` terminology for the heuristic based on names beginning with `@`; do not assert that the name proves package ownership.
 
@@ -366,7 +364,7 @@ Use the same event envelope, with ETW provider identity, event ID/version, sourc
 
 Reason codes retain both numeric values and symbolic names, with a reason domain distinguishing transport, network, and framing.
 
-There are also security-counter cases in the source for IDs 1025, 1055-1058, and 1063. Define their payload (SYN attacks, reassembly violations, connection-rate backlog/violations/depth, and land-attack drops), but do not broaden the subscription as part of JSON support.
+The callback also has cases for IDs 1025, 1055-1058, and 1063, but the session does not subscribe to them, so they are never received. Define their payload (SYN attacks, reassembly violations, connection-rate backlog/violations/depth, and land-attack drops), but do not broaden the subscription as part of JSON support.
 
 Preserve existing noise filtering in both outputs. Capture metadata should describe those exclusions so consumers do not mistake the file for all TCP/IP drops. Missing or malformed ETW properties become diagnostics, not strings such as `"<etw-field-not-set>"`.
 
@@ -622,4 +620,4 @@ The example status code is `FW_RULE_STATUS_PARSING_ERROR_APP`, retaining the spe
 - Include the rule ID as stable identity even when the console uses its name; names need not be unique.
 - A successfully empty store has zero rules, not a collection failure. The existing "No Rules in this store" output is represented at store scope rather than inventing an analysis that did not run.
 
-Store collection outcomes are retained during firewall enumeration. Successfully empty stores contain `status: "completed"` and `ruleCount: 0`, without `ruleDetails`. Missing stores use `not_present`; unattempted stores use `not_collected`; other collection errors use `failed`. These unavailable-store records include the collection error in `diagnostics`, rather than reporting zero rules, except that `ERROR_FILE_NOT_FOUND` for `group_policy_rsop` is expected: retain its identity and `status: "not_present"` without `diagnostics`, `ruleCount`, or `ruleDetails`, at both verbosity levels. Other RSOP failures still include diagnostics. Stores skipped by cleanup because they cannot be modified locally use `skipped` with a reason.
+Store collection outcomes are retained during firewall enumeration. Successfully empty stores contain `status: "completed"` and `ruleCount: 0`, without `ruleDetails`. Missing stores use `not_present`; unattempted stores use `not_collected`; Other collection errors use `failed`. These unavailable-store records include the collection error in `diagnostics`, rather than reporting zero rules, except that `ERROR_FILE_NOT_FOUND` for `group_policy_rsop` is expected: retain its identity and `status: "not_present"` without `diagnostics`, `ruleCount`, or `ruleDetails`, at both verbosity levels. Other RSOP failures still include diagnostics. Under `-clean-rules`, a read-only store that loaded with rules uses `skipped` with `reason: "store_cannot_be_modified_locally"`; a read-only store that loaded empty is `completed` with `ruleCount: 0`, and one that failed to load keeps its load status.

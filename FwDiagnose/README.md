@@ -42,7 +42,7 @@ Run `nuget restore` first: `FwDiagnose.vcxproj` needs C++/WinRT 3.0.260818.1 and
 
 Use the published binaries in `LatestBuilds\` to run the tool, and a fresh build to validate source changes.
 
-> **Before using a mutating command:** read [Known issues](ARCHITECTURE.md#known-issues). `-clean-rules` and `-remove-callouts` have defects that affect what they delete and whether filters are restored. Use a test machine.
+> **Before using a mutating command:** read [Known issues](ARCHITECTURE.md#known-issues). A crash or forced kill during `-remove-callouts` strands the removed filters until reboot. Use a test machine.
 
 ## Documentation
 
@@ -54,4 +54,4 @@ Use the published binaries in `LatestBuilds\` to run the tool, and a fresh build
 
 Coding conventions and build details for the whole repository are in [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-These documents describe the source at commit `a1118bb`. They were written by reading the code; the tool was not run to produce them.
+These documents describe the source at commit `6ca81b1`. They were written by reading the code; the tool was not run to produce them.

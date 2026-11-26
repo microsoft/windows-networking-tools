@@ -63,54 +63,44 @@ static FirewallPolicyObjects g_policy_objects[] = // NOLINT(bugprone-throwing-st
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Local",
-         .store_type = FW_STORE_TYPE_LOCAL,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_LOCAL},
         // { .type= FW_STORE_TYPE_DYNAMIC, .type_string= "Dynamic", .normalizedRules = {}},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Group Policy",
-         .store_type = FW_STORE_TYPE_GPO,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_GPO},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Group Policy (RSOP)",
-         .store_type = FW_STORE_TYPE_GP_RSOP,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_GP_RSOP},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Windows Service Hardening (Static)",
-         .store_type = FW_STORE_TYPE_WSH_STATIC,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_WSH_STATIC},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Windows Service Hardening (Configurable)",
-         .store_type = FW_STORE_TYPE_WSH_CONFIGURABLE,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_WSH_CONFIGURABLE},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Interface-Isolation",
-         .store_type = FW_STORE_TYPE_IF_ISO,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_IF_ISO},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Interface-Isolation (Dynamic)",
-         .store_type = FW_STORE_TYPE_IF_ISO_DYNAMIC,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_IF_ISO_DYNAMIC},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Application-Isolation",
-         .store_type = FW_STORE_TYPE_APP_ISO,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_APP_ISO},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Mobile-Device-Management (MDM)",
-         .store_type = FW_STORE_TYPE_MDM,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_MDM},
         {.parent_rule = nullptr,
          .normalizedRules = {},
          .store_type_string = "Tenant Restrictions",
-         .store_type = FW_STORE_TYPE_TENANT_RESTRICTIONS,
-         .rule_version = 0},
+         .store_type = FW_STORE_TYPE_TENANT_RESTRICTIONS},
 };
 
 // These stores deny read/write access, even to Administrators
@@ -227,10 +217,6 @@ LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 		    HRESULT_FROM_WIN32(openStoreError));
 		return HRESULT_FROM_WIN32(openStoreError);
 	}
-
-	// we must store the version we used to open the store
-	// as that will indicate to what fields from FW_RULE are valid to read
-	policy.rule_version = versionSelected;
 
 	timer.start("EnumFirewallRules");
 	DWORD num_rules = 0;
@@ -421,416 +407,6 @@ PrintRulesSortedOnFilterCounts(std::vector<NormalizedFirewallRule>& normalized_r
 	}
 }
 
-static std::wstring
-AddressKeywordToString(DWORD keyword)
-{
-	FW_ADDRESS_KEYWORD address_keyword = static_cast<FW_ADDRESS_KEYWORD>(keyword);
-
-	if (address_keyword == FW_ADDRESS_KEYWORD_NONE)
-	{
-		return L"None";
-	}
-
-	std::wstring result;
-	if (address_keyword & FW_ADDRESS_KEYWORD_LOCAL_SUBNET)
-	{
-		result += L"LocalSubnet ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_DNS)
-	{
-		result += L"DNS ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_DHCP)
-	{
-		result += L"DHCP ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_WINS)
-	{
-		result += L"WINS ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_DEFAULT_GATEWAY)
-	{
-		result += L"DefaultGateway ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_INTRANET)
-	{
-		result += L"Intranet ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_INTERNET)
-	{
-		result += L"Internet ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_PLAYTO_RENDERERS)
-	{
-		result += L"PlayToRenderers ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_REMOTE_INTRANET)
-	{
-		result += L"RemoteIntranet ";
-	}
-	if (address_keyword & FW_ADDRESS_KEYWORD_CAPTIVE_PORTAL)
-	{
-		result += L"CaptivePortal ";
-	}
-	if (!result.empty())
-	{
-		// strip off the trailing space
-		result.pop_back();
-	}
-
-	if (result.empty())
-	{
-		result = L"<Unknown FW_ADDRESS_KEYWORD> " + std::to_wstring(address_keyword);
-	}
-	return result;
-}
-
-static bool
-IsAnyAddressSpecified(const FW_RULE* fw_rule) noexcept
-{
-	return fw_rule->LocalAddresses.V4Ranges.dwNumEntries > 0 || fw_rule->LocalAddresses.V4SubNets.dwNumEntries > 0 ||
-	       fw_rule->LocalAddresses.V6Ranges.dwNumEntries > 0 || fw_rule->LocalAddresses.V6SubNets.dwNumEntries > 0 ||
-	       fw_rule->RemoteAddresses.V4Ranges.dwNumEntries > 0 || fw_rule->RemoteAddresses.V4SubNets.dwNumEntries > 0 ||
-	       fw_rule->RemoteAddresses.V6Ranges.dwNumEntries > 0 || fw_rule->RemoteAddresses.V6SubNets.dwNumEntries > 0;
-}
-
-static std::wstring
-PortKeywordToString(DWORD keyword)
-{
-	FW_PORT_KEYWORD port_keyword = static_cast<FW_PORT_KEYWORD>(keyword);
-
-	if (port_keyword == FW_PORT_KEYWORD_NONE)
-	{
-		return L"None ";
-	}
-
-	std::wstring result;
-	if (port_keyword & FW_PORT_KEYWORD_DYNAMIC_RPC_PORTS)
-	{
-		result += L"DynamicRpcPorts ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_RPC_EP)
-	{
-		result += L"RpcEphemeralPorts ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_TEREDO_PORT)
-	{
-		result += L"TeredoPort ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_IP_TLS_IN)
-	{
-		result += L"IpTlsIn ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_IP_TLS_OUT)
-	{
-		result += L"IpTlsOut ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_DHCP)
-	{
-		result += L"Dhcp ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_PLAYTO_DISCOVERY)
-	{
-		result += L"PlayToDiscovery ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_MDNS)
-	{
-		result += L"Mdns ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_CORTANA_OUT)
-	{
-		result += L"CortanaOut ";
-	}
-	if (port_keyword & FW_PORT_KEYWORD_PROXIMAL_TCP_CDP)
-	{
-		result += L"ProximalTcpCdp ";
-	}
-
-	if (result.empty())
-	{
-		result = L"<Unknown FW_PORT_KEYWORD> " + std::to_wstring(port_keyword);
-	}
-	return result;
-}
-
-static bool
-IsLocalPortKeywordsSpecified(const FW_RULE* fw_rule)
-{
-	if (fw_rule->wIpProtocol != IPPROTO_TCP && fw_rule->wIpProtocol != IPPROTO_UDP)
-	{
-		// local port keywords only apply to TCP and UDP rules
-		return false;
-	}
-	return fw_rule->LocalPorts.wPortKeywords != 0;
-}
-
-static bool
-IsRemotePortKeywordsSpecified(const FW_RULE* fw_rule)
-{
-	if (fw_rule->wIpProtocol != IPPROTO_TCP && fw_rule->wIpProtocol != IPPROTO_UDP)
-	{
-		// remote port keywords only apply to TCP and UDP rules
-		return false;
-	}
-	return fw_rule->LocalPorts.wPortKeywords != 0;
-}
-
-static std::wstring
-IsAnyLocalPortSpecified(const FW_RULE* fw_rule) noexcept
-{
-	if (!fw_rule->LocalPorts.Ports.pPorts)
-	{
-		return {};
-	}
-
-	std::wstring result;
-	for (const auto& port_range :
-	     wil::make_range(fw_rule->LocalPorts.Ports.pPorts, fw_rule->LocalPorts.Ports.dwNumEntries))
-	{
-		if (port_range.wBegin == port_range.wEnd)
-		{
-			result += std::to_wstring(port_range.wBegin) + L",";
-		}
-		else
-		{
-			result += std::to_wstring(port_range.wBegin) + L"-" + std::to_wstring(port_range.wEnd) + L",";
-		}
-	}
-
-	if (!result.empty())
-	{
-		// strip off the trailing comma
-		result.pop_back();
-	}
-	if (result.empty())
-	{
-		result = L"<Any Local Port>";
-	}
-	return result;
-}
-
-static std::wstring
-IsAnyRemotePortSpecified(const FW_RULE* fw_rule) noexcept
-{
-	if (!fw_rule->RemotePorts.Ports.pPorts)
-	{
-		return {};
-	}
-
-	std::wstring result;
-	for (const auto& port_range :
-	     wil::make_range(fw_rule->RemotePorts.Ports.pPorts, fw_rule->RemotePorts.Ports.dwNumEntries))
-	{
-		if (port_range.wBegin == port_range.wEnd)
-		{
-			result += std::to_wstring(port_range.wBegin) + L",";
-		}
-		else
-		{
-			result += std::to_wstring(port_range.wBegin) + L"-" + std::to_wstring(port_range.wEnd) + L",";
-		}
-	}
-
-	if (!result.empty())
-	{
-		// strip off the trailing comma
-		result.pop_back();
-	}
-	if (result.empty())
-	{
-		result = L"<Any Remote Port>";
-	}
-	return result;
-}
-
-static std::wstring
-IsAnyIcmpTypeCodeSpecified(const FW_RULE* fw_rule)
-{
-	if (fw_rule->wIpProtocol != IPPROTO_ICMP && fw_rule->wIpProtocol != IPPROTO_ICMPV6)
-	{
-		// ICMP type/code keywords only apply to ICMP and ICMPv6 rules
-		return {};
-	}
-
-	if (fw_rule->wIpProtocol == IPPROTO_ICMP)
-	{
-		std::wstring result{L"ICMPv4: "};
-		for (const auto& type_code_range :
-		     wil::make_range(fw_rule->V4TypeCodeList.pEntries, fw_rule->V4TypeCodeList.dwNumEntries))
-		{
-			result += L"[type] " + std::to_wstring(type_code_range.bType) + L" - [code] " +
-			          std::to_wstring(type_code_range.wCode) + L",";
-		}
-		if (!result.empty())
-		{
-			// strip off the trailing comma
-			result.pop_back();
-		}
-		if (result.empty())
-		{
-			result = L"<Any ICMPv4 Type/Code>";
-		}
-		return result;
-	}
-	if (fw_rule->wIpProtocol == IPPROTO_ICMPV6)
-	{
-		std::wstring result{L"ICMPv6: "};
-		for (const auto& type_code_range :
-		     wil::make_range(fw_rule->V6TypeCodeList.pEntries, fw_rule->V6TypeCodeList.dwNumEntries))
-		{
-			result += L"[type] " + std::to_wstring(type_code_range.bType) + L" - [code] " +
-			          std::to_wstring(type_code_range.wCode) + L",";
-		}
-		if (!result.empty())
-		{
-			// strip off the trailing comma
-			result.pop_back();
-		}
-		if (result.empty())
-		{
-			result = L"<Any ICMPv6 Type/Code>";
-		}
-		return result;
-	}
-
-	return L"<Unknown protocol: " + std::to_wstring(fw_rule->wIpProtocol) + L">";
-}
-
-static std::wstring
-PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter, bool include_empty_fields = false)
-{
-	std::wstring return_string;
-	return_string.append(
-	    std::format(
-	        L"       {} : Rule Name: {}\n",
-	        counter,
-	        rule_details.rule_name.value.empty() ? L"<empty>" : rule_details.rule_name.value));
-	if (!rule_details.rule_description.empty())
-	{
-		return_string.append(std::format(L"           Description: {}\n", rule_details.rule_description));
-	}
-
-	if (rule_details.missing_package_family_name || rule_details.missing_package_id)
-	{
-		return_string.append(L"           Inbound rule targeting an application that is not installed\n");
-		if (rule_details.fw_rule->wszPackageFamilyName)
-		{
-			return_string.append(
-			    std::format(L"           Package Family Name: {}\n", rule_details.fw_rule->wszPackageFamilyName));
-		}
-		if (rule_details.fw_rule->wszPackageId)
-		{
-			return_string.append(std::format(L"           Package ID: {}\n", rule_details.fw_rule->wszPackageId));
-		}
-	}
-
-	if (rule_details.fw_rule->wszLocalService)
-	{
-		return_string.append(std::format(L"           Local Service: {}\n", rule_details.fw_rule->wszLocalService));
-	}
-	if (rule_details.fw_rule->wszLocalApplication)
-	{
-		return_string.append(std::format(L"           Application: {}\n", rule_details.fw_rule->wszLocalApplication));
-	}
-
-	if (rule_details.fw_rule->wszPackageFamilyName)
-	{
-		return_string.append(
-		    std::format(L"           PackageFamilyName: {}\n", rule_details.fw_rule->wszPackageFamilyName));
-	}
-	else if (rule_details.fw_rule->wszPackageId)
-	{
-		return_string.append(std::format(L"           Package ID: {}\n", rule_details.fw_rule->wszPackageId));
-	}
-
-	if (rule_details.successfully_resolved_user_name.value_or(false))
-	{
-		return_string.append(
-		    std::format(
-		        L"           User: {}\\{}\n",
-		        rule_details.local_user_domain_name.empty() ? L"<empty>" : rule_details.local_user_domain_name,
-		        rule_details.local_user_owner_name.empty() ? L"<empty>" : rule_details.local_user_owner_name));
-	}
-	else if (include_empty_fields)
-	{
-		return_string.append(L"           User: (all users)\n");
-	}
-	if (rule_details.fw_rule->wszLocalUserAuthorizationList)
-	{
-		return_string.append(
-		    std::format(
-		        L"           Local User Authorization List: {}\n",
-		        rule_details.fw_rule->wszLocalUserAuthorizationList));
-	}
-
-	if (rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords != 0 ||
-	    rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords != 0)
-	{
-		return_string.append(
-		    std::format(
-		        L"           Local Addresses Constraints: IPv4 ({}) IPv6 ({})\n",
-		        AddressKeywordToString(rule_details.fw_rule->LocalAddresses.dwV4AddressKeywords),
-		        AddressKeywordToString(rule_details.fw_rule->LocalAddresses.dwV6AddressKeywords)));
-	}
-	if (rule_details.fw_rule->RemoteAddresses.dwV4AddressKeywords != 0 ||
-	    rule_details.fw_rule->RemoteAddresses.dwV6AddressKeywords != 0)
-	{
-		return_string.append(
-		    std::format(
-		        L"           Remote Addresses Constraints: IPv4 ({}) IPv6 ({})\n",
-		        AddressKeywordToString(rule_details.fw_rule->RemoteAddresses.dwV4AddressKeywords),
-		        AddressKeywordToString(rule_details.fw_rule->RemoteAddresses.dwV6AddressKeywords)));
-	}
-
-	if (IsAnyAddressSpecified(rule_details.fw_rule))
-	{
-		return_string.append(L"           Target Address Constraints: exist\n");
-	}
-
-	if (IsLocalPortKeywordsSpecified(rule_details.fw_rule))
-	{
-		return_string.append(
-		    std::format(
-		        L"           Local Port Constraints: {}\n",
-		        PortKeywordToString(rule_details.fw_rule->LocalPorts.wPortKeywords)));
-	}
-	if (IsRemotePortKeywordsSpecified(rule_details.fw_rule))
-	{
-		return_string.append(
-		    std::format(
-		        L"           Remote Port Constraints: {}\n",
-		        PortKeywordToString(rule_details.fw_rule->RemotePorts.wPortKeywords)));
-	}
-
-	PCWSTR protocol_string{L"any protocol"};
-	if (rule_details.fw_rule->wIpProtocol == IPPROTO_TCP || rule_details.fw_rule->wIpProtocol == IPPROTO_UDP)
-	{
-		protocol_string = rule_details.fw_rule->wIpProtocol == IPPROTO_TCP ? L"TCP" : L"UDP";
-	}
-	auto local_port_string = IsAnyLocalPortSpecified(rule_details.fw_rule);
-	if (!local_port_string.empty() || include_empty_fields)
-	{
-		return_string.append(
-		    std::format(
-		        L"           Local Ports ({}): {}\n",
-		        protocol_string,
-		        local_port_string.empty() ? L"(all ports)" : local_port_string));
-	}
-
-	auto remote_port_string = IsAnyRemotePortSpecified(rule_details.fw_rule);
-	if (!remote_port_string.empty())
-	{
-		return_string.append(std::format(L"           Remote Ports ({}): {}\n", protocol_string, remote_port_string));
-	}
-	auto icmp_type_code_string = IsAnyIcmpTypeCodeSpecified(rule_details.fw_rule);
-	if (!icmp_type_code_string.empty())
-	{
-		return_string.append(std::format(L"           ICMP Type/Code Constraints: {}\n", icmp_type_code_string));
-	}
-
-	return return_string;
-}
-
 namespace
 {
 enum class InboundProfileCategory : uint8_t
@@ -945,7 +521,7 @@ struct InboundRuleGroup
 			}
 
 			// add_rule counts any other action as an allow rule, so these counts must stay consistent with it
-		    --lhs.allow_rule_count;
+			--lhs.allow_rule_count;
 			++rhs.allow_rule_count;
 			break;
 		}
@@ -1802,26 +1378,24 @@ CheckForMissingAppPackage(
 			}
 		}
 
-		// check for PFN only if we requested a supported version and the returned rule version supports it
-		if (rule.requested_rule_version > FW_BINARY_VERSION_31 && rule.fw_rule->wSchemaVersion > FW_BINARY_VERSION_31)
+		// PackageFamilyName() is nullptr unless both the requested version and the rule's schema version support it
+		const auto package_family_name = rule.PackageFamilyName();
+		if (package_family_name && package_family_name[0] != L'\0')
 		{
-			if (rule.fw_rule->wszPackageFamilyName && rule.fw_rule->wszPackageFamilyName[0] != L'\0')
+			++count_of_rules_with_package_family_name;
+
+			const auto [name, exists] = FindPackageFamilyName(rule.normalized_package_family_name);
+			if (exists == AppContainerName::None)
 			{
-				++count_of_rules_with_package_family_name;
+				rule.missing_package_family_name = true;
+				++count_of_rules_with_missing_package_family_name;
 
-				const auto [name, exists] = FindPackageFamilyName(rule.normalized_package_family_name);
-				if (exists == AppContainerName::None)
-				{
-					rule.missing_package_family_name = true;
-					++count_of_rules_with_missing_package_family_name;
-
-					verbose_output_of_error_strings.emplace_back(
-					    wil::str_printf<std::wstring>(
-					        L"     Package-Family-Name:  '%ls'  [%ls:  %ls]\n",
-					        rule.fw_rule->wszPackageFamilyName,
-					        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					        rule.rule_name.value.empty() ? rule.rule_id.c_str() : rule.rule_name.value.c_str()));
-				}
+				verbose_output_of_error_strings.emplace_back(
+				    wil::str_printf<std::wstring>(
+				        L"     Package-Family-Name:  '%ls'  [%ls:  %ls]\n",
+				        package_family_name,
+				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+				        rule.rule_name.value.empty() ? rule.rule_id.c_str() : rule.rule_name.value.c_str()));
 			}
 		}
 	}
@@ -1999,6 +1573,10 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 					}
 					return std::nullopt;
 				}
+
+				// on success, the sizes exclude the null terminator that the first call included
+				localUserOwnerName.resize(localUserOwnerNameSize);
+				localUserDomainName.resize(cchReferencedDomainName);
 
 				if (DebugOutputEnabled())
 				{
@@ -2601,119 +2179,56 @@ AnalyzeFirewallRulesReferencingAppPackages()
 			continue;
 		}
 
-		std::vector<std::wstring> rules_with_package_naming_without_package_id_231_or_earlier{};
-		std::vector<std::wstring> rules_with_package_naming_without_package_id_or_pfn_after_231{};
-
-		std::vector<std::wstring> rules_with_package_id_231_or_earlier{};
-		std::vector<std::wstring> rules_with_package_id_after_231{};
-		std::vector<std::wstring> rules_with_pfn_after_231{};
+		std::vector<std::wstring> rules_with_pfn{};
+		std::vector<std::wstring> rules_with_package_id_without_pfn{};
+		std::vector<std::wstring> rules_with_package_naming_without_package_id_or_pfn{};
 		for (const auto& rule : policy.normalizedRules)
 		{
-			if (rule.fw_rule->wSchemaVersion > FW_BINARY_VERSION_31 && rule.fw_rule->wszPackageFamilyName)
+			// a rule whose schema version predates the PFN field is classified as if its PFN were empty
+			const auto package_family_name = rule.PackageFamilyName();
+			if (package_family_name && package_family_name[0] != L'\0')
 			{
-				rules_with_pfn_after_231.emplace_back(rule.fw_rule->wszRuleId);
+				rules_with_pfn.emplace_back(rule.fw_rule->wszRuleId);
 			}
-			else if (rule.fw_rule->wszPackageId)
+			else if (rule.fw_rule->wszPackageId && rule.fw_rule->wszPackageId[0] != L'\0')
 			{
-				// we are reading the versioning from the rule, not the requested version
-				// as we are only counting rules
-				// we cannot read the fields in the structure without looking at requestedRuleVersion
-				if (rule.fw_rule->wSchemaVersion <= FW_BINARY_VERSION_31)
-				{
-					rules_with_package_id_231_or_earlier.emplace_back(rule.fw_rule->wszRuleId);
-				}
-				else
-				{
-					rules_with_package_id_after_231.emplace_back(rule.fw_rule->wszRuleId);
-				}
+				rules_with_package_id_without_pfn.emplace_back(rule.fw_rule->wszRuleId);
 			}
 			else if (!rule.rule_name.value.empty() && rule.rule_name.value[0] == L'@')
 			{
-				if (rule.fw_rule->wSchemaVersion <= FW_BINARY_VERSION_31)
-				{
-					// Schema version 2.31 or earlier did not support PackageFamilyName in the FW_RULE structure
-					rules_with_package_naming_without_package_id_231_or_earlier.emplace_back(rule.fw_rule->wszRuleId);
-				}
-				else
-				{
-					rules_with_package_naming_without_package_id_or_pfn_after_231.emplace_back(rule.fw_rule->wszRuleId);
-				}
+				rules_with_package_naming_without_package_id_or_pfn.emplace_back(rule.fw_rule->wszRuleId);
 			}
 		}
 
-		if (!rules_with_package_naming_without_package_id_231_or_earlier.empty() ||
-		    !rules_with_package_naming_without_package_id_or_pfn_after_231.empty() ||
-		    !rules_with_package_id_231_or_earlier.empty() || !rules_with_package_id_after_231.empty() ||
-		    !rules_with_pfn_after_231.empty())
+		if (rules_with_pfn.empty() && rules_with_package_id_without_pfn.empty() &&
+		    rules_with_package_naming_without_package_id_or_pfn.empty())
 		{
-			wprintf(L"\n\n");
-			wprintf(
-			    L"*** Firewall Rules in %hs Store with a PFN version after 2.31 [%zu rules] ***\n",
-			    policy.store_type_string,
-			    rules_with_pfn_after_231.size());
-			if (VerboseOutputEnabled())
-			{
-				for (const auto& rule_id : rules_with_pfn_after_231)
-				{
-					wprintf(L"  RuleId: %ws\n", rule_id.c_str());
-				}
-				wprintf(L"\n\n");
-			}
-
-			wprintf(
-			    L"*** Firewall Rules in %hs Store with a Package ID and no PFN version after 2.31 [%zu rules] ***\n",
-			    policy.store_type_string,
-			    rules_with_package_id_after_231.size());
-			if (VerboseOutputEnabled())
-			{
-				for (const auto& rule_id : rules_with_package_id_after_231)
-				{
-					wprintf(L"  RuleId: %ws\n", rule_id.c_str());
-				}
-				wprintf(L"\n\n");
-			}
-
-			wprintf(
-			    L"*** Firewall Rules in %hs Store with a Package ID (PFN not supported) version 2.31 or earlier [%zu "
-			    L"rules] ***\n",
-			    policy.store_type_string,
-			    rules_with_package_id_231_or_earlier.size());
-			if (VerboseOutputEnabled())
-			{
-				for (const auto& rule_id : rules_with_package_id_231_or_earlier)
-				{
-					wprintf(L"  RuleId: %ws\n", rule_id.c_str());
-				}
-				wprintf(L"\n\n");
-			}
-
-			wprintf(
-			    L"*** Firewall Rules in %hs Store without a Package ID or PFN but a Firewall name that looks like a "
-			    L"package-name, version after 2.31 [%zu rules] ***\n",
-			    policy.store_type_string,
-			    rules_with_package_naming_without_package_id_or_pfn_after_231.size());
-			if (VerboseOutputEnabled())
-			{
-				for (const auto& rule_id : rules_with_package_naming_without_package_id_or_pfn_after_231)
-				{
-					wprintf(L"  RuleId: %ws\n", rule_id.c_str());
-				}
-			}
-
-			wprintf(
-			    L"*** Firewall Rules in %hs Store without a Package ID (PFN not supported) but a Firewall name that "
-			    L"looks like a package-name, version 2.31 or earlier [%zu rules] ***\n",
-			    policy.store_type_string,
-			    rules_with_package_naming_without_package_id_231_or_earlier.size());
-			if (VerboseOutputEnabled())
-			{
-				for (const auto& rule_id : rules_with_package_naming_without_package_id_231_or_earlier)
-				{
-					wprintf(L"  RuleId: %ws\n", rule_id.c_str());
-				}
-				wprintf(L"\n\n");
-			}
+			continue;
 		}
+
+		const auto print_category = [&](PCWSTR description, const std::vector<std::wstring>& rule_ids)
+		{
+			wprintf(
+			    L"*** Firewall Rules in %hs Store %ws [%zu rules] ***\n",
+			    policy.store_type_string,
+			    description,
+			    rule_ids.size());
+			if (VerboseOutputEnabled())
+			{
+				for (const auto& rule_id : rule_ids)
+				{
+					wprintf(L"  RuleId: %ws\n", rule_id.c_str());
+				}
+				wprintf(L"\n\n");
+			}
+		};
+
+		wprintf(L"\n\n");
+		print_category(L"with a Package Family Name", rules_with_pfn);
+		print_category(L"with a Package ID and no Package Family Name", rules_with_package_id_without_pfn);
+		print_category(
+		    L"without a Package ID or Package Family Name but a Firewall name that looks like a package-name",
+		    rules_with_package_naming_without_package_id_or_pfn);
 	}
 
 	return S_OK;

@@ -12,8 +12,8 @@ Option names are case-insensitive and use a single leading `-`. With no argument
 
 | Option | Effect |
 |---|---|
-| `-analyze-rules` | Prints the active configuration of each firewall profile, then analyzes each of the 10 policy stores: rule status errors, missing application files, missing app packages, unresolved SID owners, top rules by WFP filter count, and duplicates. |
-| `-clean-rules` | Runs the same analysis and prompts to delete problem rules. Opens stores read/write, except RSOP and static Windows Service Hardening, which deny it: those are opened read-only, analyzed, and never modified. Skips Group Policy, MDM, and configurable Windows Service Hardening entirely, including their analysis. |
+| `-analyze-rules` | Prints the active configuration of each firewall profile, then analyzes each of the 10 policy stores: rule status (partially ignored, ignored, parsing, semantic, runtime, and unknown errors), missing application files, missing app packages, unresolved SID owners, top rules by WFP filter count and by filter-condition count, and duplicates. |
+| `-clean-rules` | Runs the same analysis and prompts to delete problem rules. Opens stores read/write, except Group Policy, RSOP, static and configurable Windows Service Hardening, and MDM, which cannot be modified locally: those are opened read-only and skipped entirely, including their analysis. |
 | `-analyze-inbound-rules` | Classifies inbound allow rules in each store by profile. |
 
 `-clean-rules` deletes in this order within each store: rules with missing applications, rules with unresolved SIDs or no local profile, then duplicates.
@@ -38,7 +38,7 @@ Prompts accept `y` (delete this one), `n` (keep it), `s` (skip the rest of this 
 | `-disable-shields-up` | Clears the setting on all three profiles. |
 | `-disable-shields-up:<profile>` | Same, for one profile. |
 
-After changing the setting, the tool prints each profile's configuration.
+After attempting the change, the tool prints each profile's configuration, whether or not the change succeeded.
 
 - Only one form of each option is allowed per run. You cannot pass two profiles, as in `-enable-shields-up:public -enable-shields-up:private`; run the tool twice.
 - Enable and disable cannot be combined in one run, even for different profiles. The combination is an error and nothing is changed. Run the tool twice.
@@ -49,19 +49,19 @@ After changing the setting, the tool prints each profile's configuration.
 | Option | Effect |
 |---|---|
 | `-list-app-packages` | Prints every package with version, architecture, publisher, full and family names, and their derived AppContainer SIDs. |
-| `-analyze-app-package-rules` | Classifies, per store, how rules reference packages: package family name, package SID, or only a name beginning with `@`. Split by rule schema version (after 2.31, or 2.31 and earlier). `-verbose` adds rule IDs. |
+| `-analyze-app-package-rules` | Classifies, per store, how rules reference packages: package family name, package SID, or only a name beginning with `@`. Rules are not grouped by schema version. `-verbose` adds rule IDs. |
 
 ### WFP
 
 | Option | Effect |
 |---|---|
 | `-analyze-wfp` | Prints callouts, sublayers, providers, filter totals, and each third-party callout with its filters. `-verbose` adds per-layer callouts and per-sublayer, per-provider, and per-callout counts. |
-| `-wfp-events` | Subscribes to WFP net events and prints them until Ctrl-C. Classify drops also show the filter, callout, layer, and sublayer. |
-| `-tcpip-events` | Prints TCP/IP packet-drop ETW events until Ctrl-C. |
+| `-wfp-events` | Subscribes to WFP net events and prints them until a console control event such as Ctrl-C. Classify drops also show the filter, callout, layer, and sublayer. Local addresses are annotated with interface details from the snapshot taken at startup. |
+| `-tcpip-events` | Prints TCP/IP packet-drop ETW events (IDs 1214 transport, 1215 network, 1478 framing) until a console control event such as Ctrl-C. |
 
 `-tcpip-events` deliberately omits noise, so its output is not every drop. It ignores:
 
-- Transport drops to broadcast or multicast addresses, to port 0, or to addresses not on this machine.
+- Transport drops to broadcast or multicast addresses, or to port 0. When the unicast-address table can be read, transport drops to addresses not on this machine are also ignored.
 - Network drops where the protocol is HOPOPT, TCP, or UDP.
 - Framing drops with reason code 3 (invalid Ethernet type).
 
@@ -100,6 +100,7 @@ If restoration fails, the tool prints a recommendation to reboot. See [Known iss
 - It may appear only with `-analyze-rules`, `-clean-rules`, Shields Up commands, and `-verbose`, and needs at least one of the first three. Anything else fails before any work is done.
 - The path is the next argument and cannot begin with `-`. `-json` may appear only once.
 - It exports only firewall-profile configuration and per-store rule status. Every report has a `json_export_incomplete` warning, and `run.status` is `partial` if the run reached the end, even with a nonzero exit code, or `failed` if it stopped early. `completed` is not yet produced at run level.
+- Each profile and store record has its own `status` and `diagnostics`, separate from the findings. Store status is `completed`, `not_present`, `not_collected`, `failed`, or `skipped` (a read-only store with rules, under `-clean-rules`).
 - The file is created and truncated at startup, held open exclusively, and written only at the end. If the process dies, the file is empty.
 - `-jsonl` appears in the plan but is not implemented.
 

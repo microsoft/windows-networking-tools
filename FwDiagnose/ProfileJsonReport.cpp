@@ -398,7 +398,7 @@ FinishProfileJsonReport(int exitCode, ReportRunOutcome outcome)
 	size_t offset = 0;
 	while (offset < bytes.size())
 	{
-		const auto length = static_cast<DWORD>((std::min)(bytes.size() - offset, static_cast<size_t>(MAXDWORD)));
+		const auto length = static_cast<DWORD>(std::min(bytes.size() - offset, static_cast<size_t>(MAXDWORD)));
 		DWORD written{};
 		THROW_LAST_ERROR_IF_MSG(
 		    !WriteFile(g_output.get(), bytes.data() + offset, length, &written, nullptr),
