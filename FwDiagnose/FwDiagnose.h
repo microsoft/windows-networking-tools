@@ -6,6 +6,7 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <cstdint>
 
 #include <Windows.h>
 #include <Objbase.h>

@@ -3,6 +3,8 @@
 
 #pragma once
 #include <vector>
+#include <string>
+#include <tuple>
 #include "NormalizedFirewallRule.h"
 
 struct FirewallPolicyObjects

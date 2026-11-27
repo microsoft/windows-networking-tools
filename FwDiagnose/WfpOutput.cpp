@@ -3,8 +3,9 @@
 
 #include <algorithm>
 #include <numeric>
-#include <ranges>
-#include <stdio.h>
+#include <cstdio>
+#include <cstdint>
+#include <string>
 
 #include <windows.h>
 #include "firewall.h"
@@ -89,7 +90,7 @@ OutputWfpDetails()
 		{
 			const auto internal_string = GetInternalCalloutString(callout);
 			std::printf(
-			    "      callout id %ld : [%llu filters enabled] [%llu filters disabled] [callout name: %ls] [driver "
+			    "      callout id %u : [%llu filters enabled] [%llu filters disabled] [callout name: %ls] [driver "
 			    "name: %ls]\n",
 			    callout.callout_id,
 			    callout.referenced_by_filter_count_enabled,

@@ -50,6 +50,13 @@ Apply it to changed C++ files with `clang-format -i <files>`. Exclude restored p
 
 - Test `std::optional` presence explicitly with `.has_value()`, including conditionals, ternary expressions, and error-check macros. Do not use the optional's implicit boolean conversion; checking a contained boolean value remains a separate operation.
 - Use `enum class` rather than boolean parameters for behavior flags in new functions, so call sites state the flag's meaning explicitly.
+- Give file-local helpers internal linkage: put types in an anonymous `namespace { ... } // namespace` and mark free functions `static`.
+- Take pointer and reference parameters as `const` when the function does not modify the target.
+- Keep `printf`-family specifiers matched to the argument type: `%u` for `uint32_t`/`UINT32`, `%llu` for `uint64_t`/`UINT64`, `%zu` for `size_t`, `%ls` for wide strings.
+- Initialize enum variables with a named enumerator (for example, `SID_NAME_USE use{SidTypeUnknown}`) rather than `{}` when zero is not a valid value. With designated initializers, name every member, using `= {}` for intentionally empty ones.
+- Append single characters as character literals (`text += L'\n'`), not one-character strings.
+- Include the standard headers for types used directly (for example, `<cstdint>` for `uint8_t`); do not rely on transitive includes, even when tools report the include as unused. Headers must be self-contained; a `.cpp` file may rely on the includes of its own paired header. Use the C++ forms (`<cstdint>`, `<cstdio>`), not `<stdint.h>`/`<stdio.h>`.
+- In FwDiagnose, compare rule names and other user-visible text with `NormalizedString`, not raw `wcscmp`/`_wcsicmp`/`std::wstring` comparisons. Its `operator<`/`StringCompare` order shorter strings first, which is fast for lookups and grouping; use `NormalizedString::AlphabeticalCompare` when sorting anything displayed to users.
 - Keep function-call arguments on the function line when they fit; otherwise put each argument on its own line, including multiline lambdas (`BinPackArguments: false`, `AllowAllArgumentsOnNextLine: false`). Declaration parameters may all fit on one line (the declaration line or following line), or use one parameter per line (`BinPackParameters: false`, `AllowAllParametersOfDeclarationOnNextLine: true`). MultipathLatencyAnalyzer keeps its independent configuration.
 - Preserve CRLF line endings in C++ source and header files. Do not introduce LF-only or mixed line endings; all clang-format configurations emit CRLF.
 - Put each `template <...>` declaration on its own line, separate from the following declaration; clang-format enforces this with `BreakTemplateDeclarations: Yes`.

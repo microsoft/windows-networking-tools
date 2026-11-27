@@ -169,7 +169,7 @@ PrintDuplicateAnalysis(const DuplicateAnalysis& analysis, AnalysisOutput output)
 		{
 			text += std::format(L"  [{} different names]", set.nameCount);
 		}
-		text += L"\n";
+		text += L'\n';
 	}
 	return text;
 }

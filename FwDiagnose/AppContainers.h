@@ -86,7 +86,7 @@ struct AppContainerPackage
 			LOG_HR_MSG(hr, "DeriveAppContainerSidFromAppContainerName failed");
 			if (DebugOutputEnabled())
 			{
-				std::printf("  -- Failed to derive AppContainer SID from FullName : 0x%x\n", hr);
+				std::printf("  -- Failed to derive AppContainer SID from FullName : 0x%lx\n", hr);
 			}
 			return;
 		}

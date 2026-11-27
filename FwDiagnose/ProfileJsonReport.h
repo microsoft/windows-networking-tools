@@ -6,6 +6,7 @@
 #include <string>
 #include <optional>
 #include <vector>
+#include <cstdint>
 #include <Windows.h>
 
 #include "ApplicationAnalysis.h"

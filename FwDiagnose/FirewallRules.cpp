@@ -10,6 +10,8 @@
 #include <iostream>
 #include <initializer_list>
 #include <type_traits>
+#include <cstdint>
+#include <utility>
 
 #include <Windows.h>
 #include <sddl.h>
@@ -21,7 +23,6 @@
 
 #include <icftypes.h>
 #include <netfw.h>
-#include <netioapi.h>
 #include <numeric>
 
 #include "NormalizedFirewallRule.h"

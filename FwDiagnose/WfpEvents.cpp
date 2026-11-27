@@ -677,9 +677,8 @@ PrintIcmpCode(UINT8 protocol, UINT16 type, UINT16 code)
 		}
 		case 160:
 		{
-			switch (code)
+			if (code == 0)
 			{
-			case 0:
 				return L"No Error (0)";
 			}
 			if (code >= 1 && code <= 255)
@@ -789,7 +788,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			result += L"(unknown ipVersion - " + std::to_wstring(net_event->header.ipVersion) + L")";
 			break;
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET)
@@ -846,7 +845,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 				result += L" : " + std::to_wstring(net_event->header.localPort);
 			}
 		}
-		result += L"\n";
+		result += L'\n';
 
 		// print the interface information for this address
 		// 15 == number of spaces so it lines up with the address above - "LocalAddr: "
@@ -900,7 +899,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 				result += L" : " + std::to_wstring(net_event->header.remotePort);
 			}
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (net_event->header.ipProtocol == IPPROTO_ICMP || net_event->header.ipProtocol == IPPROTO_ICMPV6)
@@ -911,7 +910,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET)
 		{
 			result += L"    ICMP Type: " + PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
-			result += L"\n";
+			result += L'\n';
 		}
 		else
 		{
@@ -919,7 +918,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			{
 				result += L"    ICMP Type (event flag not set): " +
 				          PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
-				result += L"\n";
+				result += L'\n';
 			}
 		}
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
@@ -927,7 +926,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			result +=
 			    L"    ICMP Code: " +
 			    PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
-			result += L"\n";
+			result += L'\n';
 		}
 		else
 		{
@@ -935,7 +934,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			{
 				result += L"    ICMP Type (event flag not set): " +
 				          PrintIcmpType(net_event->header.ipProtocol, net_event->header.localPort);
-				result += L"\n";
+				result += L'\n';
 			}
 		}
 		if (net_event->header.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET)
@@ -943,7 +942,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 			result +=
 			    L"    ICMP Code: " +
 			    PrintIcmpCode(net_event->header.ipProtocol, net_event->header.localPort, net_event->header.remotePort);
-			result += L"\n";
+			result += L'\n';
 		}
 		else
 		{
@@ -953,7 +952,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 				                                                        net_event->header.ipProtocol,
 				                                                        net_event->header.localPort,
 				                                                        net_event->header.remotePort);
-				result += L"\n";
+				result += L'\n';
 			}
 		}
 	}
@@ -979,7 +978,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			result += L"(null AppId)";
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_USER_ID_SET)
@@ -1001,7 +1000,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 				DWORD localUserOwnerNameSize = 0;
 				std::wstring localUserDomainName;
 				DWORD cchReferencedDomainName = 0;
-				SID_NAME_USE sid_name_use{};
+				SID_NAME_USE sid_name_use{SidTypeUnknown};
 				if (!LookupAccountSidW(
 				        nullptr,
 				        net_event->header.userId,
@@ -1083,7 +1082,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			result += L"(null UserId)";
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_PACKAGE_ID_SET)
@@ -1112,7 +1111,7 @@ PrintNetEventHeader(const FWPM_NET_EVENT5* net_event)
 		{
 			result += L"(null PackageSid)";
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (net_event->header.flags & FWPM_NET_EVENT_FLAG_ENTERPRISE_ID_SET)
@@ -1178,7 +1177,7 @@ PrintNetEventIkeExtMmFailure(const FWPM_NET_EVENT_IKEEXT_MM_FAILURE2* event)
 		swprintf_s(buf, L"%02x", i);
 		result += buf;
 	}
-	result += L"\n";
+	result += L'\n';
 
 	result += L"    MmId: " + std::to_wstring(event->mmId) + L"\n";
 	result += L"    MmFilterId: " + std::to_wstring(event->mmFilterId) + L"\n";
@@ -1272,7 +1271,7 @@ PrintNetEventIkeExtEmFailure(const FWPM_NET_EVENT_IKEEXT_EM_FAILURE1* event)
 		swprintf_s(buf, L"%02x", i);
 		result += buf;
 	}
-	result += L"\n";
+	result += L'\n';
 
 	result += L"    MmId: " + std::to_wstring(event->mmId) + L"\n";
 	result += L"    QmFilterId: " + std::to_wstring(event->qmFilterId) + L"\n";
@@ -1357,7 +1356,7 @@ PrintNetEventClassifyDrop(const FWPM_NET_EVENT_CLASSIFY_DROP2* event)
 			swprintf_s(buf, L"%02x", event->vSwitchId.data[i]);
 			result += buf;
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (event->vSwitchSourcePort > 0)
@@ -1405,7 +1404,7 @@ PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
 				result += result_buf;
 			}
 		}
-		result += L"\n";
+		result += L'\n';
 		result += L"    InternalHostV4Addr: ";
 		{
 			WCHAR result_buf[17]{};
@@ -1414,7 +1413,7 @@ PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
 				result += result_buf;
 			}
 		}
-		result += L"\n";
+		result += L'\n';
 		break;
 	case FWP_IP_VERSION_V6:
 		result += L"IPv6\n";
@@ -1426,7 +1425,7 @@ PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
 				result += result_buf;
 			}
 		}
-		result += L"\n";
+		result += L'\n';
 		result += L"    InternalHostV6Addr: ";
 		{
 			WCHAR result_buf[47]{};
@@ -1435,7 +1434,7 @@ PrintNetEventIpSecDosDrop(const FWPM_NET_EVENT_IPSEC_DOSP_DROP0* event)
 				result += result_buf;
 			}
 		}
-		result += L"\n";
+		result += L'\n';
 		break;
 	default:
 		result += L"(unknown)\n";
@@ -1502,7 +1501,7 @@ PrintNetEventCapabilityDrop(const FWPM_NET_EVENT_CAPABILITY_DROP0* event)
 		result += L"(unknown - " + std::to_wstring(event->networkCapabilityId) + L")";
 		break;
 	}
-	result += L"\n";
+	result += L'\n';
 
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	if (event->isLoopback)
@@ -1535,7 +1534,7 @@ PrintNetEventCapabilityAllow(const FWPM_NET_EVENT_CAPABILITY_ALLOW0* event)
 		result += L"(unknown - " + std::to_wstring(event->networkCapabilityId) + L")";
 		break;
 	}
-	result += L"\n";
+	result += L'\n';
 
 	result += L"    FilterId: " + std::to_wstring(event->filterId) + L"\n";
 	if (event->isLoopback)
@@ -1560,10 +1559,10 @@ PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0* event)
 		result += buf;
 		if (i < 5)
 		{
-			result += L":";
+			result += L':';
 		}
 	}
-	result += L"\n";
+	result += L'\n';
 
 	result += L"    RemoteMacAddr: ";
 	for (int i = 0; i < 6; ++i)
@@ -1573,10 +1572,10 @@ PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0* event)
 		result += buf;
 		if (i < 5)
 		{
-			result += L":";
+			result += L':';
 		}
 	}
-	result += L"\n";
+	result += L'\n';
 
 	result += L"    Direction: " + DirectionToString(event->msFwpDirection) + L"\n";
 	result += L"    MediaType: " + std::to_wstring(event->mediaType) + L"\n";
@@ -1619,7 +1618,7 @@ PrintNetEventClassifyDropMac(const FWPM_NET_EVENT_CLASSIFY_DROP_MAC0* event)
 			swprintf_s(buf, L"%02x", event->vSwitchId.data[i]);
 			result += buf;
 		}
-		result += L"\n";
+		result += L'\n';
 	}
 
 	if (event->vSwitchSourcePort > 0)

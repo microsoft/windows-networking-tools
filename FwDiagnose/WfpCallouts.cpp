@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <string>
+#include <cstdint>
+#include <utility>
 #include <windows.h>
 #include <fwpmu.h>
 #include <aclapi.h>
@@ -927,7 +929,7 @@ RestoreWfpFilterSecurity(_In_ const GUID& filterKey, PSID owner_sid, PSID group_
 // Adds a deleted filter back with its original security when possible. The original owner is often an account this
 // process cannot assign, and having the filter back with default security is better than not having it back at all.
 static DWORD
-AddDeletedFilter(HANDLE engine_handle, FWPM_FILTER* filter, PSECURITY_DESCRIPTOR filter_sd) noexcept
+AddDeletedFilter(HANDLE engine_handle, const FWPM_FILTER* filter, PSECURITY_DESCRIPTOR filter_sd) noexcept
 {
 	const auto original_security_error = FwpmFilterAdd0(engine_handle, filter, filter_sd, nullptr);
 	if (original_security_error == ERROR_SUCCESS || !filter_sd)
@@ -1451,7 +1453,7 @@ try
 catch (...)
 {
 	std::printf(
-	    "*** Exception occurred while temporarily removing WFP filters for 3rd party callouts (0x%x)\n",
+	    "*** Exception occurred while temporarily removing WFP filters for 3rd party callouts (0x%lx)\n",
 	    wil::ResultFromCaughtException());
 	RecordOperationFailure(wil::ResultFromCaughtException());
 

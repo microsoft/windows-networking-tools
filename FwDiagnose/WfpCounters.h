@@ -4,7 +4,7 @@
 // ReSharper disable CppInconsistentNaming
 // ReSharper disable IdentifierTypo
 #pragma once
-#include <stdint.h>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,10 +14,9 @@
 #include <fwpmu.h>
 
 #include "FwDiagnose.h"
+#include "NormalizedString.h"
 
 #include <wil/resource.h>
-
-#include "NormalizedString.h"
 
 bool
 InitializeWfpPerfCounters() noexcept;

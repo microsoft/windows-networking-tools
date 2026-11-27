@@ -5,6 +5,8 @@
 #include <ranges>
 #include <string>
 #include <vector>
+#include <cstdint>
+#include <optional>
 
 #include <windows.h>
 #include <fwpmu.h>

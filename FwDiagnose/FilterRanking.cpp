@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <format>
+#include <cstdint>
+#include <utility>
 
 namespace
 {
@@ -99,7 +101,7 @@ PrintRanking(
 		{
 			text += std::format(L"  [{} rules match this name]", ruleName.ruleCount);
 		}
-		text += L"\n";
+		text += L'\n';
 	}
 }
 } // namespace
@@ -168,7 +170,8 @@ AnalyzeFilterRankings(
 		    .ruleName = name.value,
 		    .ruleCount = static_cast<size_t>(last - first),
 		    .filterCount = counts.filterCount,
-		    .filterConditionCount = counts.filterConditionCount};
+		    .filterConditionCount = counts.filterConditionCount,
+		    .ruleIds = {}};
 		for (auto rule = first; rule != last; ++rule)
 		{
 			ruleName.ruleIds.push_back((*rule)->fw_rule->wszRuleId);

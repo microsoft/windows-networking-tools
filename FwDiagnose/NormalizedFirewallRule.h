@@ -4,6 +4,9 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
+#include <optional>
+#include <utility>
 #include <Windows.h>
 
 #include "firewall.h"

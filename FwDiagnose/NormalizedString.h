@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cassert>
 #include <string>
+#include <utility>
 #include <windows.h>
 
 struct NormalizedString

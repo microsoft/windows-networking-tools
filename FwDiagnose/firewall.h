@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 #pragma once
+#include <cstdint>
 #include <windows.h>
 
 #pragma warning(push)

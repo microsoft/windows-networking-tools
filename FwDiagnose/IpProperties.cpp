@@ -1,4 +1,5 @@
 #include <optional>
+#include <vector>
 #include "IpProperties.h"
 
 #include <wil/stl.h>
@@ -7,6 +8,8 @@
 
 #include "FwDiagnose.h"
 
+namespace
+{
 struct IpAddressDetails
 {
 	explicit IpAddressDetails(MIB_UNICASTIPADDRESS_ROW row) noexcept
@@ -58,6 +61,7 @@ struct IpInterfaceDetails
 
 	std::vector<IpAddressDetails> addresses;
 };
+} // namespace
 
 static std::vector<IpInterfaceDetails> g_ip_details;
 
@@ -282,7 +286,7 @@ try
 			    std::to_wstring(found_interface.l2_interface_row->TunnelType).c_str(),
 			    IfTunnelTypeToString(found_interface.l2_interface_row->TunnelType).c_str());
 		}
-		return_string += L"\n";
+		return_string += L'\n';
 	}
 	else if (found_interface.l3_interface_row.has_value())
 	{
@@ -346,7 +350,7 @@ try
 			    std::to_wstring(found_interface.l2_interface_row->TunnelType).c_str(),
 			    IfTunnelTypeToString(found_interface.l2_interface_row->TunnelType).c_str());
 		}
-		return_string += L"\n";
+		return_string += L'\n';
 	}
 	else if (found_interface.l3_interface_row.has_value())
 	{

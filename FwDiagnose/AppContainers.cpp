@@ -5,6 +5,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <utility>
 
 #include <windows.h>
 
@@ -90,7 +91,7 @@ PrintAllAppPackages()
 		std::wprintf(L"\n");
 		std::wprintf(L"Package: %ws\n", package.name.value.c_str());
 		std::wprintf(
-		    L"  Version: %u.%u.%u.%u\n",
+		    L"  Version: %hu.%hu.%hu.%hu\n",
 		    package.version.major,
 		    package.version.minor,
 		    package.version.build,

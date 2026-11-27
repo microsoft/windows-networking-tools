@@ -95,6 +95,8 @@ IpProtocolToString(int protocol)
 	return IpProtocolToString(static_cast<UINT8>(protocol));
 }
 
+namespace
+{
 // also listen for TCPIP ETW events for packet drops and failed connections
 enum IpDiscardReason
 {
@@ -244,6 +246,7 @@ enum FlDiscardReason
 	FlDiscardFlsnpiClientDrop = 16,
 	FlDiscardMax = 17
 };
+} // namespace
 
 static PCSTR
 TransportDiscardReasonToString(InetDiscardReason reason) noexcept

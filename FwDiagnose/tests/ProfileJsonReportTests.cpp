@@ -7,7 +7,7 @@
 #include <iterator>
 #include <stdexcept>
 
-void
+static void
 Check(bool condition, const char* message)
 {
 	if (!condition)

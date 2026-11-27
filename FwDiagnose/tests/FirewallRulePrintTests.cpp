@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <string_view>
 
 #include <wil/network.h>
 #include <Windows.h>

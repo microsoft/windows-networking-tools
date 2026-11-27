@@ -1,6 +1,9 @@
 #include <format>
 #include <span>
 #include <string>
+#include <cstdint>
+#include <string_view>
+#include <vector>
 
 #include <windows.h>
 #include <netfw.h>
@@ -361,7 +364,7 @@ IsRuleAnAppxRule(const std::wstring& rule_name)
 static void
 ProcessForStringResource(std::wstring& string_value)
 {
-	if (!string_value.starts_with(L"@"))
+	if (!string_value.starts_with(L'@'))
 	{
 		return;
 	}
@@ -870,7 +873,7 @@ NormalizedFirewallRule::PrintRule() const
 		result.append(label);
 		result.append(L": ");
 		result.append(value);
-		result.append(L"\n");
+		result += L'\n';
 	};
 
 	append_line(L"Rule Name", FirewallRuleTextToString(fw_rule->wszName));
