@@ -18,6 +18,7 @@
 #include "..\ApplicationAnalysis.h"
 #include "..\PackageAnalysis.h"
 #include "..\UserOwnerAnalysis.h"
+#include "..\FilterRanking.h"
 
 bool
 VerboseOutputEnabled() noexcept
@@ -1021,6 +1022,187 @@ TestUserOwnerAnalysisWithNullFindingFields()
 	    printed.ends_with(L"     SID:  '(none)' ((empty))  [(no Rule Name) RuleId:  (none)]\n"),
 	    "a missing-profile finding without a rule ID, SID, or account prints placeholders");
 }
+wchar_t g_alpha_name[] = L"Alpha";
+wchar_t g_alpha_upper_name[] = L"ALPHA";
+wchar_t g_beta_name[] = L"beta";
+wchar_t g_gamma_name[] = L"gamma";
+wchar_t g_delta_name[] = L"delta";
+wchar_t g_epsilon_name[] = L"epsilon";
+wchar_t g_alpha_rule_id[] = L"{alpha-1}";
+wchar_t g_beta_rule_id[] = L"{beta}";
+
+//
+// MakeRankingRules
+//
+// Returns:
+//   Rules named Alpha, beta, ALPHA, gamma, delta, epsilon, in that (unsorted) order. The two
+//   Alpha rules share a name but differ in case; the second has no rule ID.
+//
+std::vector<FW_RULE>
+MakeRankingRules()
+{
+	PWSTR names[]{g_alpha_name, g_beta_name, g_alpha_upper_name, g_gamma_name, g_delta_name, g_epsilon_name};
+	std::vector<FW_RULE> fw_rules;
+	for (const auto name : names)
+	{
+		auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rule.wszName = name;
+		fw_rules.push_back(fw_rule);
+	}
+	fw_rules[0].wszRuleId = g_alpha_rule_id;
+	fw_rules[1].wszRuleId = g_beta_rule_id;
+	fw_rules[2].wszRuleId = nullptr;
+	return fw_rules;
+}
+
+//
+// NormalizeRules
+//
+// Parameters:
+//   fw_rules [in] - the rules to normalize; they must outlive the result, which points into them
+//
+// Returns:
+//   One NormalizedFirewallRule per rule, in the same order.
+//
+std::vector<NormalizedFirewallRule>
+NormalizeRules(const std::vector<FW_RULE>& fw_rules)
+{
+	std::vector<NormalizedFirewallRule> rules;
+	for (const auto& fw_rule : fw_rules)
+	{
+		rules.emplace_back(&fw_rule, FW_BINARY_VERSION_33);
+	}
+	return rules;
+}
+
+//
+// RankedNames
+//
+// Parameters:
+//   ranking [in] - a ranking from AnalyzeFilterRankings
+//
+// Returns:
+//   The ranked rule names in order, each followed by ';', so a test can compare a whole ranking.
+//
+std::wstring
+RankedNames(const std::vector<RankedRuleName>& ranking)
+{
+	std::wstring names;
+	for (const auto& ruleName : ranking)
+	{
+		names += ruleName.ruleName + L";";
+	}
+	return names;
+}
+
+//
+// TestFilterRankingsGroupAndOrderRuleNames
+//
+// Checks that rule names are grouped case-insensitively, counted once each, ranked by count and
+// then by name, limited to 3 (or 10 when verbose), and printed with the expected text.
+//
+void
+TestFilterRankingsGroupAndOrderRuleNames()
+{
+	const auto fw_rules = MakeRankingRules();
+	const auto rules = NormalizeRules(fw_rules);
+	size_t calls{};
+	const auto counter = [&calls](const NormalizedString& name)
+	{
+		++calls;
+		const std::wstring_view value{name.value};
+		if (value == L"alpha")
+		{
+			return FilterCounts{5, 0};
+		}
+		if (value == L"beta")
+		{
+			return FilterCounts{5, 7};
+		}
+		if (value == L"gamma")
+		{
+			return FilterCounts{9, 7};
+		}
+		if (value == L"delta")
+		{
+			return FilterCounts{1, 7};
+		}
+		return FilterCounts{0, 3};
+	};
+
+	const auto summary = AnalyzeFilterRankings(rules, S_OK, AnalysisOutput::Summary, counter);
+	Check(calls == 5, "filters are counted once per rule name, even when rules sharing a name are not adjacent");
+	Check(summary.limit == 3, "the summary rankings hold 3 rule names");
+	Check(
+	    RankedNames(summary.byFilterCount) == L"gamma;alpha;beta;",
+	    "rule names are ranked by filter count, then by name; names without filters are not ranked");
+	Check(
+	    RankedNames(summary.byFilterConditionCount) == L"beta;delta;gamma;",
+	    "rule names are ranked by condition count, then by name; names without conditions are not ranked");
+	const auto& alpha = summary.byFilterCount[1];
+	Check(
+	    alpha.ruleCount == 2 && alpha.filterCount == 5 && alpha.filterConditionCount == 0 &&
+	        alpha.ruleIds == std::vector<PCWSTR>{g_alpha_rule_id, nullptr},
+	    "rule names differing only in case are one entry with every rule ID, including null IDs");
+	Check(
+	    PrintFilterRankings(summary) == L"\n  * Top 3 rule names by WFP filter count:\n"
+	                                    L"    [9 filters] 'gamma'\n"
+	                                    L"    [5 filters] 'alpha'  [2 rules match this name]\n"
+	                                    L"    [5 filters] 'beta'\n"
+	                                    L"\n  * Top 3 rule names by WFP filter-condition count:\n"
+	                                    L"    [7 conditions] 'beta'\n"
+	                                    L"    [7 conditions] 'delta'\n"
+	                                    L"    [7 conditions] 'gamma'\n",
+	    "the summary rankings print each rule name once, with the rule count only when it is shared");
+
+	const auto verbose = AnalyzeFilterRankings(rules, S_OK, AnalysisOutput::Verbose, counter);
+	Check(
+	    verbose.limit == 10 && RankedNames(verbose.byFilterCount) == L"gamma;alpha;beta;delta;" &&
+	        RankedNames(verbose.byFilterConditionCount) == L"beta;delta;gamma;epsilon;",
+	    "the verbose rankings hold up to 10 rule names");
+	Check(
+	    PrintFilterRankings(verbose).starts_with(L"\n  * Top 10 rule names by WFP filter count:\n"),
+	    "the verbose heading states the verbose limit");
+}
+
+//
+// TestFilterRankingsWithoutFilters
+//
+// Checks the rankings when the filters could not be read, when no rule name has filters, and
+// when the store has no rules.
+//
+void
+TestFilterRankingsWithoutFilters()
+{
+	const auto fw_rules = MakeRankingRules();
+	const auto rules = NormalizeRules(fw_rules);
+	size_t calls{};
+	const auto counter = [&calls](const NormalizedString&)
+	{
+		++calls;
+		return FilterCounts{};
+	};
+
+	const auto failed = AnalyzeFilterRankings(rules, E_ACCESSDENIED, AnalysisOutput::Summary, counter);
+	Check(
+	    calls == 0 && failed.byFilterCount.empty() && failed.byFilterConditionCount.empty(),
+	    "nothing is ranked when the WFP filters could not be read");
+	Check(
+	    PrintFilterRankings(failed) ==
+	        L"\n  * Skipping the filter rankings: WFP filters could not be read (0x80070005)\n",
+	    "a filter-read failure is reported instead of empty rankings");
+
+	const auto noFilters = AnalyzeFilterRankings(rules, S_OK, AnalysisOutput::Verbose, counter);
+	Check(
+	    noFilters.byFilterCount.empty() && noFilters.byFilterConditionCount.empty() &&
+	        PrintFilterRankings(noFilters).empty(),
+	    "nothing is printed when no rule name has filters");
+
+	const auto noRules = AnalyzeFilterRankings({}, S_OK, AnalysisOutput::Summary, counter);
+	Check(
+	    noRules.byFilterCount.empty() && PrintFilterRankings(noRules).empty(),
+	    "nothing is printed for a store without rules");
+}
 } // namespace
 int
 wmain()
@@ -1044,6 +1226,8 @@ wmain()
 	TestUserOwnerAnalysisWithNoOwnerRules();
 	TestUserOwnerAnalysisWithEveryKindOfOwnerRule();
 	TestUserOwnerAnalysisWithNullFindingFields();
+	TestFilterRankingsGroupAndOrderRuleNames();
+	TestFilterRankingsWithoutFilters();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

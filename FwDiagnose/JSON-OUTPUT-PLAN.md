@@ -141,8 +141,8 @@ Proposed `data`:
 | `ruleDetails` | Total/error rule counts and nonzero partially ignored, ignored, parsing, semantic, runtime, and unknown status categories |
 | `applicationAnalysis` | Counts of application-targeted rules, rules whose executable was reported missing, and rules using service-profile variables (implemented; see Review 3) |
 | `packageAnalysis` | Package-SID/PFN reference counts and unresolved references (implemented; see Review 4) |
-| `userOwnerAnalysis` | SID-owner counts, unresolved owners, and missing local-profile findings |
-| `rankings` | Top rules by filter count and filter-condition count |
+| `userOwnerAnalysis` | SID-owner counts, unresolved owners, and missing local-profile findings (implemented; see Review 5) |
+| `filterRankings` | Top rule names by WFP filter count and filter-condition count (implemented; see Review 6) |
 | `duplicateAnalysis` | Number of duplicate groups and number of rules participating in those groups |
 
 Under `-verbose`, include the corresponding finding records and rule details, not merely their formatted names.
@@ -418,7 +418,7 @@ This document is a plan, not an implementation of the feature. The design uses s
 
 Status: approved and implemented for firewall-profile configuration.
 
-The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, and per-store SID-owner analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
+The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, per-store SID-owner analysis, and per-store filter rankings for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
 
 ```powershell
 .\FwDiagnose\x64\Debug\FwDiagnose.exe -analyze-rules -json .\firewall-profiles.json
@@ -802,3 +802,67 @@ Status: approved and implemented.
 - If the local profiles could not be read, `status` is `partial`, `localProfileCheck` is `failed`, and `diagnostics` has one entry with `code: "local_profiles_not_read"`, `operation: "read_profile_list"`, `subject.property: "localProfiles"`, and the read `error`. The unresolved-SID count and list are still present.
 - `ruleId`, `name`, `localUserOwnerSid`, `domain`, and `user` are `null` when absent. An account without a domain has `domain: ""`.
 - Field order: `status`, `localUserOwnerRuleCount`, `unresolvedSidRuleCount`, `localProfileCheck`, `missingLocalProfileRuleCount`, `unresolvedSidRules`, `missingLocalProfileRules`, `diagnostics`. Rule entries in every analysis: `ruleId`, `name`, `application`, `packageId`, `packageFamilyName`, `localUserOwnerSid`, `domain`, `user`, `reason`, `status`, `statusHex`, `error`.
+
+### Review 6: `-analyze-rules` - filter rankings per policy store
+
+Status: approved and implemented.
+
+`RankRulesByFilterCounts()` builds one ranking per store with `AnalyzeFilterRankings()`; the console and JSON are both written from it. Rules are grouped by normalized (lowercase) name, and filters are counted once per name across every WFP filter on the machine, so the counts are not limited to the store being analyzed.
+
+#### Console
+
+```text
+  * Top 3 rule names by WFP filter count:
+    [396 filters] 'microsoft edge (mdns-in)'  [33 rules match this name]
+    [192 filters] 'microsoft teams'  [20 rules match this name]
+    [108 filters] 'game bar'  [6 rules match this name]
+
+  * Top 3 rule names by WFP filter-condition count:
+    [2180 conditions] 'microsoft media foundation network source in [tcp 554]'
+    [1527 conditions] 'cast to device streaming server (rtsp-streaming-in)'  [3 rules match this name]
+    [1452 conditions] 'microsoft edge (mdns-in)'  [33 rules match this name]
+```
+
+- `-verbose` raises the limit from 3 to 10 rule names.
+- Ties are ordered by name. Previously the order was arbitrary, and counts were computed twice; the second computation skipped the last name, which could list a name twice.
+- Rule names without filters (or without filter conditions) are not ranked, and a ranking with no entries is not printed.
+- `[N rules match this name]` prints only when more than one rule has the name.
+- If the WFP filters could not be read, the console prints `  * Skipping the filter rankings: WFP filters could not be read (0x80070005)` instead of empty rankings, and the failure is recorded in the exit code.
+
+#### JSON with `-verbose`
+
+`filterRankings` is added to the store record after `userOwnerAnalysis`:
+
+```json
+"filterRankings": {
+  "status": "completed",
+  "correlationMethod": "rule_name",
+  "filterScope": "all_wfp_filters",
+  "limit": 10,
+  "byFilterCount": [
+    {
+      "ruleName": "microsoft edge (mdns-in)",
+      "ruleCount": 33,
+      "filterCount": 396,
+      "filterConditionCount": 1452,
+      "ruleIds": ["{AE310CFB-588A-46B6-8977-F3F2D55D82CC}", "..."]
+    }
+  ],
+  "byFilterConditionCount": [
+    {
+      "ruleName": "microsoft media foundation network source in [tcp 554]",
+      "ruleCount": 1,
+      "filterCount": 30,
+      "filterConditionCount": 2180,
+      "ruleIds": ["..."]
+    }
+  ]
+}
+```
+
+- `filterRankings` is present for every store whose rules were analyzed; the lists are empty when no rule name has filters.
+- The lists hold the same entries as the console, up to `limit`. Each entry has both counts, whichever list it is in.
+- `ruleName` is the normalized name that filters were matched on, as printed by the console.
+- Without `-verbose`, `ruleIds` is omitted. A rule without an ID has a `null` entry.
+- If the WFP filters could not be read, `status` is `failed`, `limit` and both lists are omitted, and `diagnostics` has one entry with `code: "wfp_filters_not_loaded"`, `operation: "enumerate_wfp_filters"`, `subject.property: "wfpFilters"`, and the read `error`.
+- Field order: `status`, `correlationMethod`, `filterScope`, `limit`, `byFilterCount`, `byFilterConditionCount`, `diagnostics`. Entries: `ruleName`, `ruleCount`, `filterCount`, `filterConditionCount`, `ruleIds`.

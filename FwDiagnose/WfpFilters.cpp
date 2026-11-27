@@ -15,6 +15,20 @@
 #include <wil/resource.h>
 
 static std::vector<FilterDetails> g_all_filters;
+static HRESULT g_filters_load_result{S_OK};
+
+//
+// WfpFiltersLoadResult
+//
+// Returns:
+//   S_OK if the last LoadWfpFilters read every filter, otherwise the error that stopped it.
+//   S_OK before LoadWfpFilters has run.
+//
+HRESULT
+WfpFiltersLoadResult() noexcept
+{
+	return g_filters_load_result;
+}
 
 /*
 *  Uncomment when needed for debugging
@@ -77,6 +91,7 @@ LoadWfpFilters() noexcept
 try
 {
 	g_all_filters.clear();
+	g_filters_load_result = S_OK;
 
 	// the counts are rebuilt below, and this function also runs when refreshing the filters
 	ResetSubLayerFilterCounts();
@@ -231,7 +246,10 @@ try
 }
 catch (...)
 {
-	std::printf("*** Exception occurred while reading filters (0x%x)\n", wil::ResultFromCaughtException());
+	g_filters_load_result = wil::ResultFromCaughtException();
+	std::printf(
+	    "*** Exception occurred while reading filters (0x%08X)\n",
+	    static_cast<uint32_t>(g_filters_load_result));
 }
 
 void

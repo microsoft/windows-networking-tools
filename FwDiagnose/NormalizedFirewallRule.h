@@ -57,10 +57,6 @@ struct NormalizedFirewallRule
 	// S_OK unless the file lookup itself failed
 	HRESULT local_application_lookup_error{S_OK};
 
-	size_t filter_count{};
-	size_t filter_condition_count{};
-	size_t duplicate_rule_count{};
-
 	bool is_rule_enabled = false;
 	bool is_rule_deleted = false;
 	bool missing_package_id = false;

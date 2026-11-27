@@ -107,6 +107,7 @@
     <ClInclude Include="..\AnalysisOutput.h" />
     <ClInclude Include="..\PackageAnalysis.h" />
     <ClInclude Include="..\UserOwnerAnalysis.h" />
+    <ClInclude Include="..\FilterRanking.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

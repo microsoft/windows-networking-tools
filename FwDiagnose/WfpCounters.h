@@ -112,6 +112,9 @@ operator==(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
 
 void
 LoadWfpFilters() noexcept;
+// S_OK, or why the last LoadWfpFilters could not read every filter
+HRESULT
+WfpFiltersLoadResult() noexcept;
 const std::vector<FilterDetails>&
 ReadWfpFilters() noexcept;
 void

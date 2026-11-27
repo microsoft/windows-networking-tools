@@ -12,7 +12,7 @@ Option names are case-insensitive and use a single leading `-`. With no argument
 
 | Option | Effect |
 |---|---|
-| `-analyze-rules` | Prints the active configuration of each firewall profile, then analyzes each of the 10 policy stores: rule status (partially ignored, ignored, parsing, semantic, runtime, and unknown errors), missing application files, missing app packages, unresolved SID owners, top rules by WFP filter count and by filter-condition count, and duplicates. |
+| `-analyze-rules` | Prints the active configuration of each firewall profile, then analyzes each of the 10 policy stores: rule status (partially ignored, ignored, parsing, semantic, runtime, and unknown errors), missing application files, missing app packages, unresolved SID owners, the top rule names by WFP filter count and by filter-condition count (3, or 10 with `-verbose`), and duplicates. |
 | `-clean-rules` | Runs the same analysis and prompts to delete problem rules. Opens stores read/write, except Group Policy, RSOP, static and configurable Windows Service Hardening, and MDM, which cannot be modified locally: those are opened read-only and skipped entirely, including their analysis. |
 | `-analyze-inbound-rules` | Classifies inbound allow rules in each store by profile. |
 
@@ -99,7 +99,7 @@ If restoration fails, the tool prints a recommendation to reboot. See [Known iss
 
 - It may appear only with `-analyze-rules`, `-clean-rules`, Shields Up commands, and `-verbose`, and needs at least one of the first three. Anything else fails before any work is done.
 - The path is the next argument and cannot begin with `-`. `-json` may appear only once.
-- It exports only firewall-profile configuration, per-store rule status, per-store application analysis, per-store app-package analysis, and per-store SID-owner analysis. Every report has a `json_export_incomplete` warning, and `run.status` is `partial` if the run reached the end, even with a nonzero exit code, or `failed` if it stopped early. `completed` is not yet produced at run level.
+- It exports only firewall-profile configuration, per-store rule status, per-store application analysis, per-store app-package analysis, per-store SID-owner analysis, and per-store filter rankings. Every report has a `json_export_incomplete` warning, and `run.status` is `partial` if the run reached the end, even with a nonzero exit code, or `failed` if it stopped early. `completed` is not yet produced at run level.
 - Each profile and store record has its own `status` and `diagnostics`, separate from the findings. Store status is `completed`, `not_present`, `not_collected`, `failed`, or `skipped` (a read-only store with rules, under `-clean-rules`).
 - The file is created and truncated at startup, held open exclusively, and written only at the end. If the process dies, the file is empty.
 - `-jsonl` appears in the plan but is not implemented.

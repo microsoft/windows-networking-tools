@@ -801,6 +801,121 @@ try
 	{
 		Check(nullMissing.GetNamedValue(key).ValueType() == JsonValueType::Null, "Absent profile field not null.");
 	}
+
+	// filter rankings: one rule name shared by two rules (one without an ID), and one single-rule name
+	FilterRankings rankings;
+	rankings.limit = 3;
+	const RankedRuleName shared{
+	    .ruleName = L"microsoft edge (mdns-in)",
+	    .ruleCount = 2,
+	    .filterCount = 396,
+	    .filterConditionCount = 1452,
+	    .ruleIds = {L"{edge-1}", nullptr}};
+	const RankedRuleName single{
+	    .ruleName = L"game bar",
+	    .ruleCount = 1,
+	    .filterCount = 108,
+	    .filterConditionCount = 0,
+	    .ruleIds = {L"{game}"}};
+	rankings.byFilterCount = {shared, single};
+	rankings.byFilterConditionCount = {shared};
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WriteUserOwnerAnalysisJson(store, UserOwnerAnalysis{}, L"analyze_rules");
+		WriteFilterRankingsJson(store, rankings, L"analyze_rules");
+		const auto rankingStore = stores.GetAt(stores.Size() - 1).GetObject();
+		const auto section = rankingStore.GetNamedObject(L"filterRankings");
+		Check(
+		    section.GetNamedString(L"status") == L"completed" &&
+		        section.GetNamedString(L"correlationMethod") == L"rule_name" &&
+		        section.GetNamedString(L"filterScope") == L"all_wfp_filters" && section.GetNamedNumber(L"limit") == 3 &&
+		        !section.HasKey(L"diagnostics"),
+		    "Filter ranking fields incorrect.");
+		const auto byFilters = section.GetNamedArray(L"byFilterCount");
+		const auto byConditions = section.GetNamedArray(L"byFilterConditionCount");
+		Check(byFilters.Size() == 2 && byConditions.Size() == 1, "Filter ranking lists incorrect.");
+		const auto sharedEntry = byFilters.GetAt(0).GetObject();
+		Check(
+		    sharedEntry.GetNamedString(L"ruleName") == L"microsoft edge (mdns-in)" &&
+		        sharedEntry.GetNamedNumber(L"ruleCount") == 2 && sharedEntry.GetNamedNumber(L"filterCount") == 396 &&
+		        sharedEntry.GetNamedNumber(L"filterConditionCount") == 1452 &&
+		        sharedEntry.Size() == (verbose ? 5u : 4u),
+		    "Ranked rule name entry incorrect.");
+		Check(
+		    byFilters.GetAt(1).GetObject().GetNamedNumber(L"filterConditionCount") == 0,
+		    "A rule name without conditions does not report a zero condition count.");
+		Check(sharedEntry.HasKey(L"ruleIds") == verbose, "Ranked rule IDs not limited to verbose output.");
+		if (verbose)
+		{
+			const auto ruleIds = sharedEntry.GetNamedArray(L"ruleIds");
+			Check(
+			    ruleIds.Size() == 2 && ruleIds.GetAt(0).GetString() == L"{edge-1}" &&
+			        ruleIds.GetAt(1).ValueType() == JsonValueType::Null,
+			    "Ranked rule IDs incorrect; an absent ID must be null.");
+		}
+
+		size_t nextStoreKey = 0;
+		const auto rankingStoreText = PrettifyJson(rankingStore);
+		for (const auto* key : {L"store", L"displayName", L"userOwnerAnalysis", L"filterRankings", L"status"})
+		{
+			const auto position = rankingStoreText.find(std::wstring(L"\n  \"") + key + L"\":", nextStoreKey);
+			Check(position != std::wstring::npos, "Filter rankings are not after userOwnerAnalysis.");
+			nextStoreKey = position + 1;
+		}
+
+		size_t nextKey = 0;
+		const auto sectionText = PrettifyJson(section);
+		for (const auto* key :
+		     {L"status", L"correlationMethod", L"filterScope", L"limit", L"byFilterCount", L"byFilterConditionCount"})
+		{
+			const auto position = sectionText.find(std::wstring(L"\n  \"") + key + L"\":", nextKey);
+			Check(position != std::wstring::npos, "Filter ranking fields are missing or not in the required order.");
+			nextKey = position + 1;
+		}
+		Check(
+		    JsonObject::Parse(sectionText).Size() == section.Size(),
+		    "Ordered formatting lost filter ranking fields.");
+		const auto entryText = PrettifyJson(sharedEntry);
+		Check(
+		    entryText.find(L"\"ruleName\"") < entryText.find(L"\"ruleCount\"") &&
+		        entryText.find(L"\"ruleCount\"") < entryText.find(L"\"filterCount\"") &&
+		        entryText.find(L"\"filterCount\"") < entryText.find(L"\"filterConditionCount\"") &&
+		        (!verbose || entryText.find(L"\"filterConditionCount\"") < entryText.find(L"\"ruleIds\"")),
+		    "Ranked rule name fields are not in the required order.");
+	}
+
+	// no rule name has filters: the lists are present and empty
+	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteFilterRankingsJson(store, FilterRankings{.limit = 10}, L"analyze_rules");
+	const auto emptyRankings = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"filterRankings");
+	Check(
+	    emptyRankings.GetNamedString(L"status") == L"completed" && emptyRankings.GetNamedNumber(L"limit") == 10 &&
+	        emptyRankings.GetNamedArray(L"byFilterCount").Size() == 0 &&
+	        emptyRankings.GetNamedArray(L"byFilterConditionCount").Size() == 0,
+	    "Empty filter rankings incorrect.");
+
+	// the WFP filters could not be read: nothing was ranked
+	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteFilterRankingsJson(store, FilterRankings{.filtersLoadResult = E_ACCESSDENIED, .limit = 3}, L"analyze_rules");
+	const auto failedRankings = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"filterRankings");
+	Check(
+	    failedRankings.GetNamedString(L"status") == L"failed" &&
+	        failedRankings.GetNamedString(L"correlationMethod") == L"rule_name" && !failedRankings.HasKey(L"limit") &&
+	        !failedRankings.HasKey(L"byFilterCount") && !failedRankings.HasKey(L"byFilterConditionCount"),
+	    "Failed filter rankings incorrect.");
+	const auto filterDiagnostic = failedRankings.GetNamedArray(L"diagnostics").GetAt(0).GetObject();
+	Check(
+	    filterDiagnostic.GetNamedString(L"code") == L"wfp_filters_not_loaded" &&
+	        filterDiagnostic.GetNamedString(L"operation") == L"enumerate_wfp_filters" &&
+	        filterDiagnostic.GetNamedObject(L"subject").GetNamedString(L"property") == L"wfpFilters" &&
+	        filterDiagnostic.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070005",
+	    "WFP filter read failure diagnostic incorrect.");
+	const auto failedRankingText = PrettifyJson(failedRankings);
+	Check(
+	    failedRankingText.find(L"\"filterScope\"") < failedRankingText.find(L"\"diagnostics\""),
+	    "Failed filter ranking fields out of order.");
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
 	const auto readRunStatus = [&]()
@@ -821,7 +936,8 @@ try
 	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
 
 	std::printf(
-	    "Profile, rule-status, application-analysis, package-analysis, and SID-owner-analysis JSON tests passed.\n");
+	    "Profile, rule-status, application-analysis, package-analysis, SID-owner-analysis, and filter-ranking JSON "
+	    "tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)

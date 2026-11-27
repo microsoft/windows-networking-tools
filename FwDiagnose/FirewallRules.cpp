@@ -265,144 +265,36 @@ LoadFirewallRulesFromStore(FirewallPolicyObjects& policy)
 	return S_OK;
 }
 
+//
+// RankRulesByFilterCounts
+//
+// Ranks one store's rule names by WFP filter and filter-condition counts, writes the rankings
+// to the JSON report, and prints them. Records a failure for the exit code when the WFP filters
+// could not be read.
+//
+// Parameters:
+//   policy [in] - the store whose rules are ranked; LoadWfpFilters must already have run
+//
 static void
-PrintRulesSortedOnFilterCounts(std::vector<NormalizedFirewallRule>& normalized_rules)
+RankRulesByFilterCounts(const FirewallPolicyObjects& policy)
 {
-	if (!normalized_rules.empty())
+	// the only link from filters to rules is the display name
+	SortFilterDetailsByName();
+	const auto rankings = AnalyzeFilterRankings(
+	    policy.normalizedRules,
+	    WfpFiltersLoadResult(),
+	    VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary,
+	    [](const NormalizedString& rule_name)
+	    {
+		    return FilterCounts{CountFiltersByName(rule_name), CountFilterConditionsByName(rule_name)};
+	    });
+	if (FAILED(rankings.filtersLoadResult))
 	{
-		// sort vectors of rules/filters by name so can do a binary search for rules by name
-		// this is because the only tie from filters to rules is the rule name
-		std::ranges::sort(
-		    normalized_rules,
-		    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-		    {
-			    return lhs.rule_name < rhs.rule_name;
-		    });
-		SortFilterDetailsByName();
-
-		size_t rule_name_count = 0;
-		decltype(normalized_rules.begin()) previous_iter{};
-		for (auto iter = normalized_rules.begin(); iter != normalized_rules.end(); ++iter)
-		{
-			if (iter == normalized_rules.begin())
-			{
-				previous_iter = iter;
-				continue;
-			}
-
-			const auto& rule_name = iter->rule_name;
-			const auto& previous_rule_name = previous_iter->rule_name;
-			if (rule_name == previous_rule_name)
-			{
-				if (rule_name_count == 0)
-				{
-					// first time we have seen this duplicate
-					rule_name_count = 2;
-				}
-				else
-				{
-					// have already seen this duplicate before
-					++rule_name_count;
-				}
-			}
-			else
-			{
-				// found a new unique firewall rule - check how many filters exist for the previous rule name
-				previous_iter->filter_count = CountFiltersByName(previous_rule_name);
-				previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
-				previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
-				rule_name_count = 0;
-			}
-
-			previous_iter = iter;
-		}
-
-		// resort rules by # of filters
-		std::ranges::sort(
-		    normalized_rules,
-		    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-		    {
-			    return lhs.filter_count > rhs.filter_count;
-		    });
-
-		// write out the top x rules referenced by filters
-		const auto rule_count = VerboseOutputEnabled() ? 10u : 3u;
-
-		std::printf("\n");
-		std::printf("  * Top %u rules based off of total numbers of filters\n", rule_count);
-		size_t rules_printed = 0;
-		for (const auto& rule_details : normalized_rules)
-		{
-			if (rule_details.filter_count == 0)
-			{
-				// remaining rules are not referenced by any filters
-				break;
-			}
-
-			if (rule_details.duplicate_rule_count > 1)
-			{
-				std::printf(
-				    "    [%zu filters] '%ls' [ %zu rules match this name ]\n",
-				    rule_details.filter_count,
-				    rule_details.rule_name.value.c_str(),
-				    rule_details.duplicate_rule_count);
-			}
-			else
-			{
-				std::printf(
-				    "    [%zu filters] '%ls'\n",
-				    rule_details.filter_count,
-				    rule_details.rule_name.value.c_str());
-			}
-
-			++rules_printed;
-			if (rules_printed >= rule_count)
-			{
-				break;
-			}
-		}
-
-		// resort rules by # of filters conditions
-		std::ranges::sort(
-		    normalized_rules,
-		    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-		    {
-			    return lhs.filter_condition_count > rhs.filter_condition_count;
-		    });
-		// write out the top 10 rules referenced by filters
-		std::printf("\n");
-		std::printf("  * Top %u Firewall rules based off of filter conditions/rule\n", rule_count);
-		rules_printed = 0;
-		for (const auto& rule_details : normalized_rules)
-		{
-			if (rule_details.filter_condition_count == 0)
-			{
-				// remaining rules are not referenced by any filters
-				break;
-			}
-
-			if (rule_details.duplicate_rule_count > 1)
-			{
-				std::printf(
-				    "    [%zu] '%ls' [ %zu rules match this name ]\n",
-				    rule_details.filter_condition_count,
-				    rule_details.rule_name.value.c_str(),
-				    rule_details.duplicate_rule_count);
-			}
-			else
-			{
-				std::printf(
-				    "    [%zu] '%ls'\n",
-				    rule_details.filter_condition_count,
-				    rule_details.rule_name.value.c_str());
-			}
-			++rules_printed;
-			if (rules_printed >= rule_count)
-			{
-				break;
-			}
-		}
+		RecordOperationFailure(rankings.filtersLoadResult);
 	}
+
+	WriteFilterRankingsJson(policy, rankings, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
+	std::printf("%ls", PrintFilterRankings(rankings).c_str());
 }
 
 namespace
@@ -1663,62 +1555,24 @@ DeleteUnresolvedUserAccountRules(
 	}
 }
 
+//
+// SortRulesByName
+//
+// Sorts rules by normalized (lowercase) name, the order the later analyses report them in.
+//
+// Parameters:
+//   normalized_rules [in, out] - the store's rules, sorted in place
+//
 static void
-FillRulesWithFilterDetails(std::vector<NormalizedFirewallRule>& normalized_rules)
+SortRulesByName(std::vector<NormalizedFirewallRule>& normalized_rules)
 {
-	// sort vectors of rules/filters by name so can do a binary search for rules by name
+	// the analyses that follow report rules in name order
 	std::ranges::sort(
 	    normalized_rules,
 	    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
 	    {
 		    return lhs.rule_name < rhs.rule_name;
 	    });
-	SortFilterDetailsByName();
-
-	size_t rule_name_count = 0;
-	decltype(normalized_rules.begin()) previous_iter{};
-	for (auto iter = normalized_rules.begin(); iter != normalized_rules.end(); ++iter)
-	{
-		if (iter == normalized_rules.begin())
-		{
-			previous_iter = iter;
-			continue;
-		}
-
-		const auto& rule_name = iter->rule_name;
-		const auto& previous_rule_name = previous_iter->rule_name;
-		if (rule_name == previous_rule_name)
-		{
-			if (rule_name_count == 0)
-			{
-				// first time we have seen this duplicate
-				rule_name_count = 2;
-			}
-			else
-			{
-				// have already seen this duplicate before
-				++rule_name_count;
-			}
-		}
-		else
-		{
-			// found a new unique firewall rule - check how many filters exist for the previous rule name
-			previous_iter->filter_count = CountFiltersByName(previous_rule_name);
-			previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
-			previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
-			rule_name_count = 0;
-		}
-
-		previous_iter = iter;
-	}
-
-	if (previous_iter != normalized_rules.end())
-	{
-		const auto& previous_rule_name = previous_iter->rule_name;
-		previous_iter->filter_count = CountFiltersByName(previous_rule_name);
-		previous_iter->filter_condition_count = CountFilterConditionsByName(previous_rule_name);
-		previous_iter->duplicate_rule_count = rule_name_count == 0 ? 1 : rule_name_count;
-	}
 }
 
 static void
@@ -2437,8 +2291,8 @@ ProcessFirewallRules()
 			}
 
 			ChronoTimer timer;
-			timer.start("FillRulesWithFilterDetails");
-			details::FillRulesWithFilterDetails(policy.normalizedRules);
+			timer.start("SortRulesByName");
+			details::SortRulesByName(policy.normalizedRules);
 			timer.end();
 
 			timer.start("CheckForRulesWithErrorStatus");
@@ -2486,8 +2340,8 @@ ProcessFirewallRules()
 				std::printf("\n");
 			}
 
-			timer.start("PrintRulesSortedOnFilterCounts");
-			details::PrintRulesSortedOnFilterCounts(policy.normalizedRules);
+			timer.start("RankRulesByFilterCounts");
+			details::RankRulesByFilterCounts(policy);
 			timer.end();
 
 			timer.start("Counting duplicate rules");

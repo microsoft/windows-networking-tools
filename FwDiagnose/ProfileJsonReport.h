@@ -11,6 +11,7 @@
 #include "ApplicationAnalysis.h"
 #include "PackageAnalysis.h"
 #include "UserOwnerAnalysis.h"
+#include "FilterRanking.h"
 
 struct FirewallPolicyObjects;
 struct NormalizedFirewallRule;
@@ -95,3 +96,7 @@ WritePackageAnalysisJson(const FirewallPolicyObjects& policy, const PackageAnaly
 // adds userOwnerAnalysis to the store record that WriteFirewallRuleStatusJson already wrote for this command
 void
 WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerAnalysis& analysis, PCWSTR command);
+
+// adds filterRankings to the store record that WriteFirewallRuleStatusJson already wrote for this command
+void
+WriteFilterRankingsJson(const FirewallPolicyObjects& policy, const FilterRankings& rankings, PCWSTR command);

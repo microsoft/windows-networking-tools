@@ -181,8 +181,9 @@ ReturnJsonResultObject(PCWSTR command)
 	pending.SetNamedValue(
 	    L"message",
 	    String(
-	        L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, and "
-	        L"SID-owner analysis are exported. Other console output for this command is not yet exported."));
+	        L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, "
+	        L"SID-owner "
+	        L"analysis, and filter rankings are exported. Other console output for this command is not yet exported."));
 
 	JsonArray diagnostics;
 	diagnostics.Append(pending);
@@ -300,6 +301,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                         L"applicationAnalysis",
 		                                         L"packageAnalysis",
 		                                         L"userOwnerAnalysis",
+		                                         L"filterRankings",
 		                                         L"ruleCount",
 		                                         L"status",
 		                                         L"reason",
@@ -332,6 +334,17 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                                     L"unresolvedSidRules",
 		                                                     L"missingLocalProfileRules",
 		                                                     L"diagnostics"};
+
+		constexpr std::wstring_view filterRankingsOrder[]{L"status",
+		                                                  L"correlationMethod",
+		                                                  L"filterScope",
+		                                                  L"limit",
+		                                                  L"byFilterCount",
+		                                                  L"byFilterConditionCount",
+		                                                  L"diagnostics"};
+
+		constexpr std::wstring_view rankedRuleNameOrder[]{
+		    L"ruleName", L"ruleCount", L"filterCount", L"filterConditionCount", L"ruleIds"};
 
 		constexpr std::wstring_view ruleEntryOrder[]{L"ruleId",
 		                                             L"name",
@@ -370,6 +383,14 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		else if (object.HasKey(L"applicationRuleCount"))
 		{
 			fieldOrder = applicationAnalysisOrder;
+		}
+		else if (object.HasKey(L"correlationMethod"))
+		{
+			fieldOrder = filterRankingsOrder;
+		}
+		else if (object.HasKey(L"filterConditionCount"))
+		{
+			fieldOrder = rankedRuleNameOrder;
 		}
 		else if (object.HasKey(L"localUserOwnerRuleCount"))
 		{
@@ -1025,4 +1046,80 @@ WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerA
 	}
 
 	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"userOwnerAnalysis", section);
+}
+
+//
+// WriteFilterRankingsJson
+//
+// Adds the filterRankings section to the store's record in the JSON report. Does nothing when
+// JSON output is not enabled.
+//
+// Parameters:
+//   policy   [in] - the store the rankings are for; selects the store record
+//   rankings [in] - the result of AnalyzeFilterRankings
+//   command  [in] - the JSON command the store record belongs to, e.g. L"analyze_rules"
+//
+// Rule IDs are written only for verbose reports. On failure the section has a diagnostic
+// instead of the rankings.
+//
+void
+WriteFilterRankingsJson(const FirewallPolicyObjects& policy, const FilterRankings& rankings, PCWSTR command)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	JsonObject section;
+	section.SetNamedValue(L"status", String(FAILED(rankings.filtersLoadResult) ? L"failed" : L"completed"));
+	// rules are linked to filters only by display name, and the filters come from every store
+	section.SetNamedValue(L"correlationMethod", String(L"rule_name"));
+	section.SetNamedValue(L"filterScope", String(L"all_wfp_filters"));
+	if (FAILED(rankings.filtersLoadResult))
+	{
+		auto diagnostic = ReturnJsonDiagnosticObject(
+		    L"wfpFilters",
+		    L"enumerate_wfp_filters",
+		    rankings.filtersLoadResult,
+		    L"The WFP filters could not be read, so no rule was ranked by filter count.");
+		diagnostic.SetNamedValue(L"code", String(L"wfp_filters_not_loaded"));
+		JsonArray diagnostics;
+		diagnostics.Append(diagnostic);
+		section.SetNamedValue(L"diagnostics", diagnostics);
+		ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"filterRankings", section);
+		return;
+	}
+
+	const bool verbose = g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose");
+	const auto ranking = [verbose](const std::vector<RankedRuleName>& ruleNames)
+	{
+		JsonArray entries;
+		for (const auto& ruleName : ruleNames)
+		{
+			JsonObject entry;
+			entry.SetNamedValue(L"ruleName", String(ruleName.ruleName));
+			entry.SetNamedValue(L"ruleCount", JsonValue::CreateNumberValue(static_cast<double>(ruleName.ruleCount)));
+			entry.SetNamedValue(
+			    L"filterCount",
+			    JsonValue::CreateNumberValue(static_cast<double>(ruleName.filterCount)));
+			entry.SetNamedValue(
+			    L"filterConditionCount",
+			    JsonValue::CreateNumberValue(static_cast<double>(ruleName.filterConditionCount)));
+			if (verbose)
+			{
+				JsonArray ruleIds;
+				for (const auto ruleId : ruleName.ruleIds)
+				{
+					ruleIds.Append(ruleId ? String(ruleId) : JsonValue::CreateNullValue());
+				}
+				entry.SetNamedValue(L"ruleIds", ruleIds);
+			}
+			entries.Append(entry);
+		}
+		return entries;
+	};
+	section.SetNamedValue(L"limit", JsonValue::CreateNumberValue(static_cast<double>(rankings.limit)));
+	section.SetNamedValue(L"byFilterCount", ranking(rankings.byFilterCount));
+	section.SetNamedValue(L"byFilterConditionCount", ranking(rankings.byFilterConditionCount));
+	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"filterRankings", section);
 }

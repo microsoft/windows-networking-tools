@@ -12,7 +12,7 @@ FwDiagnose is a single-process C++ console application. It takes a snapshot of s
 | `FirewallRules.*` | Loads rules from all stores; all rule analyses and deletion; profile policy; Shields Up. |
 | `NormalizedFirewallRule.*` | Canonical per-rule record and comparison functions. |
 | `NormalizedString.h` | Case-insensitive string with an ASCII fast path. |
-| `ApplicationAnalysis.*`, `PackageAnalysis.*`, `UserOwnerAnalysis.*` | Per-store application, app-package, and SID-owner analyses. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups are passed in, keeping WinRT out of these files. |
+| `ApplicationAnalysis.*`, `PackageAnalysis.*`, `UserOwnerAnalysis.*`, `FilterRanking.*` | Per-store application, app-package, and SID-owner analyses, and filter rankings. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups and filter counts are passed in, keeping WinRT and WFP out of these files. |
 | `AnalysisOutput.h` | Summary/verbose selector and the rule label shared by analysis console output. |
 | `AppContainers.*` | Installed-package inventory and SID derivation. |
 | `WfpCounters.*` | Shared WFP engine handle, layer names and ordering, shared WFP types. |
@@ -124,7 +124,7 @@ The rule ID, name, description, and schema version are **excluded**, which is wh
 
 ### Rules and filters
 
-The only link from a firewall rule to its WFP filters is the display name, so filter counts are by name and not exact. Several rules with one name share one count, stored on the last rule in that name's run, and `duplicate_rule_count` records how many share it.
+The only link from a firewall rule to its WFP filters is the display name, so filter counts are by name and not exact. `AnalyzeFilterRankings` groups rules by normalized name and counts filters once per name. The counts span every WFP filter on the machine, not only the store being analyzed. `WfpFiltersLoadResult` reports whether the last `LoadWfpFilters` read every filter, so a failure is reported rather than producing empty rankings.
 
 ### WFP notes
 
@@ -159,7 +159,7 @@ Restoration uses `FwpmFilterAdd0` with the original security descriptor. If that
 
 ## Testing
 
-The solution includes three test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly and checks the JSON report using synthetic data. `FirewallRulePrintTests` compiles `NormalizedFirewallRule.cpp` and checks that `PrintRule` and `PrintRuleContents` print the same labels for every schema version and protocol, that values common to every version match, and that a resolved user name has no embedded null. It also checks the console text and findings of the application, app-package, and SID-owner analyses. It resolves the well-known SYSTEM SID but otherwise does not touch the system. None changes system state. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
+The solution includes three test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly and checks the JSON report using synthetic data. `FirewallRulePrintTests` compiles `NormalizedFirewallRule.cpp` and checks that `PrintRule` and `PrintRuleContents` print the same labels for every schema version and protocol, that values common to every version match, and that a resolved user name has no embedded null. It also checks the console text and findings of the application, app-package, and SID-owner analyses and the filter rankings. It resolves the well-known SYSTEM SID but otherwise does not touch the system. None changes system state. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
 
 ```powershell
 msbuild WindowsNetworkingTools.sln /m /p:Configuration=Debug /p:Platform=x64
