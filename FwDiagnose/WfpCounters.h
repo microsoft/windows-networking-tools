@@ -88,28 +88,6 @@ struct FilterDetails
 	}
 };
 
-// allow searching FilterDetails by name
-inline bool
-operator<(const FilterDetails& lhs, const NormalizedString& rhs) noexcept
-{
-	return lhs.name.value < rhs.value;
-}
-inline bool
-operator<(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
-{
-	return lhs.value < rhs.name.value;
-}
-inline bool
-operator==(const FilterDetails& lhs, const NormalizedString& rhs) noexcept
-{
-	return lhs.name.value == rhs.value;
-}
-inline bool
-operator==(const NormalizedString& lhs, const FilterDetails& rhs) noexcept
-{
-	return lhs.value == rhs.name.value;
-}
-
 void
 LoadWfpFilters() noexcept;
 // S_OK, or why the last LoadWfpFilters could not read every filter

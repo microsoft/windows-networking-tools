@@ -244,6 +244,7 @@
     <ClCompile Include="PackageAnalysis.cpp" />
     <ClCompile Include="UserOwnerAnalysis.cpp" />
     <ClCompile Include="FilterRanking.cpp" />
+    <ClCompile Include="DuplicateAnalysis.cpp" />
     <ClCompile Include="FirewallRules.cpp" />
     <ClCompile Include="FwDiagnose.cpp" />
     <ClCompile Include="IpProperties.cpp" />
@@ -275,6 +276,7 @@
     <ClInclude Include="PackageAnalysis.h" />
     <ClInclude Include="UserOwnerAnalysis.h" />
     <ClInclude Include="FilterRanking.h" />
+    <ClInclude Include="DuplicateAnalysis.h" />
     <ClInclude Include="TcpipEvents.h" />
     <ClInclude Include="WfpCounters.h" />
     <ClInclude Include="WfpEvents.h" />

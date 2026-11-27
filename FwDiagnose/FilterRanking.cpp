@@ -15,14 +15,15 @@ namespace
 // Ranks rule names by one of their counts and keeps the highest ones.
 //
 // Parameters:
-//   ruleNames [in] - every rule name in the store, with both of its counts
+//   ruleNames [in] - every rule name in the store, with both of its counts, in alphabetical
+//                    order (NormalizedString::AlphabeticalCompare)
 //   limit     [in] - the most rule names to keep
 //   count     [in] - which count to rank by: &RankedRuleName::filterCount or
 //                    &RankedRuleName::filterConditionCount
 //
 // Returns:
 //   Up to limit copies of the entries in ruleNames whose count is above zero, highest count
-//   first; ties are ordered by rule name so the output is the same on every run.
+//   first; ties keep the alphabetical order of ruleNames so the output is the same on every run.
 //
 // About the type of count, "size_t RankedRuleName::*":
 //   This is a pointer to a data member. It does not point at a value in memory; it names one
@@ -42,15 +43,12 @@ TopRuleNames(const std::vector<RankedRuleName>& ruleNames, size_t limit, size_t 
 			ranked.push_back(ruleName);
 		}
 	}
-	std::ranges::sort(
+	// a stable sort keeps tied entries in the alphabetical order of ruleNames
+	std::ranges::stable_sort(
 	    ranked,
 	    [count](const RankedRuleName& lhs, const RankedRuleName& rhs)
 	    {
-		    if (lhs.*count != rhs.*count)
-		    {
-			    return lhs.*count > rhs.*count;
-		    }
-		    return lhs.ruleName < rhs.ruleName;
+		    return lhs.*count > rhs.*count;
 	    });
 	if (ranked.size() > limit)
 	{
@@ -150,7 +148,7 @@ AnalyzeFilterRankings(
 	    byName,
 	    [](const NormalizedFirewallRule* lhs, const NormalizedFirewallRule* rhs)
 	    {
-		    return lhs->rule_name < rhs->rule_name;
+		    return NormalizedString::AlphabeticalCompare(lhs->rule_name, rhs->rule_name) < 0;
 	    });
 
 	std::vector<RankedRuleName> ruleNames;

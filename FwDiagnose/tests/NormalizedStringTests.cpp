@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-// Unit tests for NormalizedString::StrStrComparison.
+// Unit tests for NormalizedString::StrStrComparison and NormalizedString::AlphabeticalCompare.
 // Built by NormalizedStringTests.vcxproj, which is part of the solution. The exit code is nonzero if any test fails.
 // Must be compiled with /utf-8 for the non-ASCII string literals to have the expected values.
 //
@@ -206,6 +206,110 @@ TestAllShortStrings()
 	}
 	return combinations;
 }
+
+//
+// ExpectOrder
+//
+// Checks AlphabeticalCompare in both directions.
+//
+// Parameters:
+//   lhs         [in] - a string
+//   rhs         [in] - another string
+//   expected    [in] - -1, 0, or 1: how lhs should compare with rhs
+//   description [in] - printed when the check fails
+//
+void
+ExpectOrder(const std::wstring& lhs, const std::wstring& rhs, int expected, const char* description)
+{
+	++g_table_cases;
+	const auto normalized_lhs = NormalizedString::Create(lhs);
+	const auto normalized_rhs = NormalizedString::Create(rhs);
+	const auto forward = NormalizedString::AlphabeticalCompare(normalized_lhs, normalized_rhs);
+	const auto reverse = NormalizedString::AlphabeticalCompare(normalized_rhs, normalized_lhs);
+	if (forward != expected || reverse != -expected)
+	{
+		++g_failures;
+		std::printf("FAIL: %s (expected %d, got %d and reversed %d)\n", description, expected, forward, reverse);
+	}
+}
+
+//
+// TestAlphabeticalOrder
+//
+// Checks the cases where alphabetical order differs from StringCompare's shorter-first order.
+//
+void
+TestAlphabeticalOrder()
+{
+	ExpectOrder(L"zz", L"aaa", 1, "a shorter string is not ordered first");
+	ExpectOrder(L"alpha", L"Beta", -1, "case is ignored when ordering");
+	ExpectOrder(L"ABC", L"abc", 0, "strings differing only in case are equal");
+	ExpectOrder(L"ab", L"abc", -1, "a string sorts before a longer string that begins with it");
+	ExpectOrder(L"", L"a", -1, "the empty string sorts first");
+	ExpectOrder(L"", L"", 0, "empty strings are equal");
+	ExpectOrder(L"a_", L"az", 1, "'_' sorts after the letters, as in CompareStringOrdinal");
+	ExpectOrder(L"_é", L"a", 1, "'_' sorts after the letters in a non-ASCII string too");
+	ExpectOrder(L"café", L"cafz", 1, "a non-ASCII character sorts after the ASCII letters");
+	ExpectOrder(L"CAFÉ", L"café", 0, "non-ASCII strings differing only in case are equal");
+}
+
+//
+// TestAllShortStringOrders
+//
+// Compares every pair of short strings, ASCII-only and not, with CompareStringOrdinal (ignoring
+// case) on the original strings. Agreeing for every pair also means the order is consistent
+// enough to sort with.
+//
+// Returns:
+//   The number of pairs compared.
+//
+size_t
+TestAllShortStringOrders()
+{
+	static constexpr wchar_t alphabet[]{L'a', L'A', L'_', lower_e_acute, upper_e_acute};
+	std::vector<std::wstring> strings{L""};
+	for (size_t begin = 0, length = 1; length <= 3; ++length)
+	{
+		const auto end = strings.size();
+		for (auto index = begin; index < end; ++index)
+		{
+			for (const auto character : alphabet)
+			{
+				strings.push_back(strings[index] + character);
+			}
+		}
+		begin = end;
+	}
+
+	size_t pairs = 0;
+	for (const auto& lhs : strings)
+	{
+		const auto normalized_lhs = NormalizedString::Create(lhs);
+		for (const auto& rhs : strings)
+		{
+			++pairs;
+			const auto reference = CompareStringOrdinal(
+			                           lhs.c_str(),
+			                           static_cast<int>(lhs.size()),
+			                           rhs.c_str(),
+			                           static_cast<int>(rhs.size()),
+			                           TRUE) -
+			                       CSTR_EQUAL;
+			const auto normalized_rhs = NormalizedString::Create(rhs);
+			const auto actual = NormalizedString::AlphabeticalCompare(normalized_lhs, normalized_rhs);
+			const auto equal = NormalizedString::StringCompare(normalized_lhs, normalized_rhs) == 0;
+			if (actual != reference || (actual == 0) != equal)
+			{
+				++g_failures;
+				if (g_failures <= 20)
+				{
+					std::printf("FAIL: ordering pair %zu did not match CompareStringOrdinal or StringCompare\n", pairs);
+				}
+			}
+		}
+	}
+	return pairs;
+}
 } // namespace
 
 int
@@ -219,7 +323,14 @@ wmain()
 	TestSurrogatePairs();
 	TestLongStrings();
 	const auto combinations = TestAllShortStrings();
+	TestAlphabeticalOrder();
+	const auto pairs = TestAllShortStringOrders();
 
-	std::printf("%d table cases, %zu exhaustive combinations, %d failures\n", g_table_cases, combinations, g_failures);
+	std::printf(
+	    "%d table cases, %zu exhaustive combinations, %zu exhaustive ordering pairs, %d failures\n",
+	    g_table_cases,
+	    combinations,
+	    pairs,
+	    g_failures);
 	return g_failures == 0 ? 0 : 1;
 }

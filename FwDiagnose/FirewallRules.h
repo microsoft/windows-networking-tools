@@ -5,12 +5,6 @@
 #include <vector>
 #include "NormalizedFirewallRule.h"
 
-struct DuplicateRuleDetails
-{
-	const std::vector<NormalizedFirewallRule>::iterator duplicate_rule_begin;
-	const std::vector<NormalizedFirewallRule>::iterator duplicate_rule_end;
-};
-
 struct FirewallPolicyObjects
 {
 	FW_RULE* parent_rule{};

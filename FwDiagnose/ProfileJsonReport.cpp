@@ -182,8 +182,8 @@ ReturnJsonResultObject(PCWSTR command)
 	    L"message",
 	    String(
 	        L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, "
-	        L"SID-owner "
-	        L"analysis, and filter rankings are exported. Other console output for this command is not yet exported."));
+	        L"SID-owner analysis, filter rankings, and duplicate analysis are exported. Other console output for this "
+	        L"command is not yet exported."));
 
 	JsonArray diagnostics;
 	diagnostics.Append(pending);
@@ -302,6 +302,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                         L"packageAnalysis",
 		                                         L"userOwnerAnalysis",
 		                                         L"filterRankings",
+		                                         L"duplicateAnalysis",
 		                                         L"ruleCount",
 		                                         L"status",
 		                                         L"reason",
@@ -345,6 +346,11 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 
 		constexpr std::wstring_view rankedRuleNameOrder[]{
 		    L"ruleName", L"ruleCount", L"filterCount", L"filterConditionCount", L"ruleIds"};
+
+		constexpr std::wstring_view duplicateAnalysisOrder[]{
+		    L"status", L"ignoredFields", L"duplicateSetCount", L"duplicateRuleCount", L"duplicateSets"};
+
+		constexpr std::wstring_view duplicateSetOrder[]{L"ruleCount", L"application", L"rules"};
 
 		constexpr std::wstring_view ruleEntryOrder[]{L"ruleId",
 		                                             L"name",
@@ -391,6 +397,14 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		else if (object.HasKey(L"filterConditionCount"))
 		{
 			fieldOrder = rankedRuleNameOrder;
+		}
+		else if (object.HasKey(L"duplicateSetCount"))
+		{
+			fieldOrder = duplicateAnalysisOrder;
+		}
+		else if (object.HasKey(L"rules") && object.HasKey(L"ruleCount"))
+		{
+			fieldOrder = duplicateSetOrder;
 		}
 		else if (object.HasKey(L"localUserOwnerRuleCount"))
 		{
@@ -1122,4 +1136,75 @@ WriteFilterRankingsJson(const FirewallPolicyObjects& policy, const FilterRanking
 	section.SetNamedValue(L"byFilterCount", ranking(rankings.byFilterCount));
 	section.SetNamedValue(L"byFilterConditionCount", ranking(rankings.byFilterConditionCount));
 	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"filterRankings", section);
+}
+
+//
+// WriteDuplicateAnalysisJson
+//
+// Adds the duplicateAnalysis section to the store's record in the JSON report. Does nothing when
+// JSON output is not enabled.
+//
+// Parameters:
+//   policy   [in] - the store the analysis is for; selects the store record
+//   analysis [in] - the result of AnalyzeDuplicateRules
+//   command  [in] - the JSON command the store record belongs to, e.g. L"analyze_rules"
+//
+// The sets of duplicate rules are written only for verbose reports.
+//
+void
+WriteDuplicateAnalysisJson(const FirewallPolicyObjects& policy, const DuplicateAnalysis& analysis, PCWSTR command)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	const auto nullableString = [](PCWSTR value)
+	{
+		return value ? String(value) : JsonValue::CreateNullValue();
+	};
+	const auto count = [](size_t value)
+	{
+		return JsonValue::CreateNumberValue(static_cast<double>(value));
+	};
+
+	JsonObject section;
+	section.SetNamedValue(L"status", String(L"completed"));
+	// the fields RuleDetailsComparison does not compare
+	JsonArray ignoredFields;
+	for (const auto* field : {L"ruleId", L"name", L"description", L"schemaVersion"})
+	{
+		ignoredFields.Append(String(field));
+	}
+	section.SetNamedValue(L"ignoredFields", ignoredFields);
+	section.SetNamedValue(L"duplicateSetCount", count(analysis.duplicateSets.size()));
+	section.SetNamedValue(L"duplicateRuleCount", count(analysis.duplicateRuleCount));
+	if (g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose"))
+	{
+		JsonArray sets;
+		for (const auto& set : analysis.duplicateSets)
+		{
+			const auto application = set.duplicate_rule_begin->fw_rule->wszLocalApplication;
+			JsonObject entry;
+			entry.SetNamedValue(
+			    L"ruleCount",
+			    count(static_cast<size_t>(set.duplicate_rule_end - set.duplicate_rule_begin)));
+			// every rule in a set has the same application
+			entry.SetNamedValue(
+			    L"application",
+			    application && application[0] != L'\0' ? String(application) : JsonValue::CreateNullValue());
+			JsonArray rules;
+			for (auto rule = set.duplicate_rule_begin; rule != set.duplicate_rule_end; ++rule)
+			{
+				JsonObject ruleEntry;
+				ruleEntry.SetNamedValue(L"ruleId", nullableString(rule->fw_rule->wszRuleId));
+				ruleEntry.SetNamedValue(L"name", nullableString(rule->fw_rule->wszName));
+				rules.Append(ruleEntry);
+			}
+			entry.SetNamedValue(L"rules", rules);
+			sets.Append(entry);
+		}
+		section.SetNamedValue(L"duplicateSets", sets);
+	}
+	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"duplicateAnalysis", section);
 }

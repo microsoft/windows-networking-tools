@@ -799,128 +799,38 @@ PrintInboundRuleAnalysis(const InboundRuleAnalysis& inbound_rule_analysis)
 	    inbound_rule_analysis.duplicate_of_public_profile);
 }
 
-static std::vector<DuplicateRuleDetails>
-CheckForDuplicateRules(std::vector<NormalizedFirewallRule>& normalized_rules)
+//
+// CheckForDuplicateRules
+//
+// Finds one store's sets of duplicate rules, writes them to the JSON report, and prints them.
+//
+// Parameters:
+//   policy  [in, out] - the store whose rules are checked; its rules are reordered so each set is adjacent
+//   command [in]      - the JSON command the store record belongs to, e.g. L"analyze_rules"
+//
+// Returns:
+//   The sets of duplicate rules, which refer into policy.normalizedRules; DeleteDuplicateRules
+//   deletes all but one rule of each set.
+//
+static DuplicateAnalysis
+CheckForDuplicateRules(FirewallPolicyObjects& policy, PCWSTR command)
 {
-	// duplicates are found by comparing adjacent rules, and earlier reports re-sort this vector
-	std::ranges::sort(
-	    normalized_rules,
-	    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-	    {
-		    return RuleDetailsComparison(lhs, rhs, comparison_policy_compare_all) < 0;
-	    });
-
-	std::vector<std::wstring> verbose_output_of_duplicate_strings;
-	std::vector<DuplicateRuleDetails> duplicate_rules;
-	for (auto currentIterator = normalized_rules.begin(); currentIterator != normalized_rules.end();)
-	{
-		// the predicate used for adjacent_find is pivoted on whether the user asked for an exact match or not
-		currentIterator = std::adjacent_find(
-		    currentIterator,
-		    normalized_rules.end(),
-		    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
-		    {
-			    return RuleDetailsComparison(lhs, rhs) == 0;
-		    });
-
-		if (currentIterator == normalized_rules.end())
-		{
-			// if adjacent_find returns the end iterator, there are no more adjacent entries that match
-			// in which case we should break out of the for loop
-			break;
-		}
-
-		const auto duplicate_rule_begin = currentIterator;
-
-		// currentIterator is currently pointing to the first of x number of duplicate rules
-		// iterate through normalized_rules until we hit the end of the vector
-		// or until RuleDetailsComparison returns false (i.e., we found the iterator past the last duplicate)
-		while (currentIterator != normalized_rules.end())
-		{
-			if (currentIterator + 1 == normalized_rules.end())
-			{
-				break;
-			}
-
-			if (RuleDetailsComparison(*currentIterator, *(currentIterator + 1)) != 0)
-			{
-				break;
-			}
-
-			++currentIterator;
-		}
-
-		// incrementing currentIterator so it points to next-rule-past the one that matched
-		// unless we hit the end of the vector
-		if (currentIterator != normalized_rules.end())
-		{
-			++currentIterator;
-		}
-
-		const auto duplicate_rule_end = currentIterator;
-
-		duplicate_rules.emplace_back(
-		    DuplicateRuleDetails{
-		        .duplicate_rule_begin = duplicate_rule_begin,
-		        .duplicate_rule_end = duplicate_rule_end});
-
-		std::wstring verbose_string;
-		if (duplicate_rule_begin->fw_rule->wszLocalApplication &&
-		    duplicate_rule_begin->fw_rule->wszLocalApplication[0] != L'\0')
-		{
-			verbose_string = wil::str_printf<std::wstring>(
-			    L"%ls:  %ls (Application-exe: '%ls')\n",
-			    duplicate_rule_begin->rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-			    duplicate_rule_begin->rule_name.value.empty() ? duplicate_rule_begin->fw_rule->wszRuleId
-			                                                  : duplicate_rule_begin->rule_name.value.c_str(),
-			    duplicate_rule_begin->fw_rule->wszLocalApplication);
-		}
-		else
-		{
-			verbose_string = wil::str_printf<std::wstring>(
-			    L"%ls:  %ls\n",
-			    duplicate_rule_begin->rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-			    duplicate_rule_begin->rule_name.value.empty() ? duplicate_rule_begin->fw_rule->wszRuleId
-			                                                  : duplicate_rule_begin->rule_name.value.c_str());
-		}
-
-		if (std::ranges::find(verbose_output_of_duplicate_strings, verbose_string) ==
-		    verbose_output_of_duplicate_strings.end())
-		{
-			verbose_output_of_duplicate_strings.emplace_back(std::move(verbose_string));
-		}
-	}
-
-	size_t duplicate_rule_total = 0;
-	for (const auto& rule : duplicate_rules)
-	{
-		duplicate_rule_total += rule.duplicate_rule_end - rule.duplicate_rule_begin;
-	}
-
-	if (VerboseOutputEnabled() || !duplicate_rules.empty())
-	{
-		std::printf("  * Summary of duplicate analysis of firewall rules:\n");
-		std::printf("   - count of all duplicate rules: %zu\n", duplicate_rule_total);
-		std::printf("   - count of unique rules with duplicates: %zu\n", duplicate_rules.size());
-		if (VerboseOutputEnabled() && !verbose_output_of_duplicate_strings.empty())
-		{
-			std::printf("   - unique rule names of duplicate rules:\n");
-			for (const auto& verbose_output : verbose_output_of_duplicate_strings)
-			{
-				std::printf("       %ls", verbose_output.c_str());
-			}
-		}
-	}
-	return duplicate_rules;
+	auto analysis = AnalyzeDuplicateRules(policy.normalizedRules);
+	WriteDuplicateAnalysisJson(policy, analysis, command);
+	std::printf(
+	    "%ls",
+	    PrintDuplicateAnalysis(analysis, VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary)
+	        .c_str());
+	return analysis;
 }
 
 static void
-DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<DuplicateRuleDetails>& duplicate_rules)
+DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const DuplicateAnalysis& duplicate_rules)
 {
 	bool printed_deletion_header = false;
 	bool delete_all_with_no_more_prompts = false;
 
-	for (const auto& duplicate_rule : duplicate_rules)
+	for (const auto& duplicate_rule : duplicate_rules.duplicateSets)
 	{
 		const auto duplicate_rule_total =
 		    std::distance(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end);
@@ -1035,7 +945,7 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 			    duplicate_rule_details,
 			    [](const DuplicateRuleDetails& lhs, const DuplicateRuleDetails& rhs)
 			    {
-				    return lhs.rule_name < rhs.rule_name;
+				    return NormalizedString::AlphabeticalCompare(lhs.rule_name, rhs.rule_name) < 0;
 			    });
 
 			// after sorting by name, renumber them
@@ -1558,7 +1468,7 @@ DeleteUnresolvedUserAccountRules(
 //
 // SortRulesByName
 //
-// Sorts rules by normalized (lowercase) name, the order the later analyses report them in.
+// Sorts rules alphabetically by name, ignoring case, the order the later analyses report them in.
 //
 // Parameters:
 //   normalized_rules [in, out] - the store's rules, sorted in place
@@ -1571,7 +1481,7 @@ SortRulesByName(std::vector<NormalizedFirewallRule>& normalized_rules)
 	    normalized_rules,
 	    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
 	    {
-		    return lhs.rule_name < rhs.rule_name;
+		    return NormalizedString::AlphabeticalCompare(lhs.rule_name, rhs.rule_name) < 0;
 	    });
 }
 
@@ -2345,7 +2255,8 @@ ProcessFirewallRules()
 			timer.end();
 
 			timer.start("Counting duplicate rules");
-			const auto duplicateRules = details::CheckForDuplicateRules(policy.normalizedRules);
+			const auto duplicateRules =
+			    details::CheckForDuplicateRules(policy, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
 			timer.end();
 
 			if (CleanBrokenRulesEnabled())

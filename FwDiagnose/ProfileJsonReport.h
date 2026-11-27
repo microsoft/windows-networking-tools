@@ -12,6 +12,7 @@
 #include "PackageAnalysis.h"
 #include "UserOwnerAnalysis.h"
 #include "FilterRanking.h"
+#include "DuplicateAnalysis.h"
 
 struct FirewallPolicyObjects;
 struct NormalizedFirewallRule;
@@ -100,3 +101,7 @@ WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerA
 // adds filterRankings to the store record that WriteFirewallRuleStatusJson already wrote for this command
 void
 WriteFilterRankingsJson(const FirewallPolicyObjects& policy, const FilterRankings& rankings, PCWSTR command);
+
+// adds duplicateAnalysis to the store record that WriteFirewallRuleStatusJson already wrote for this command
+void
+WriteDuplicateAnalysisJson(const FirewallPolicyObjects& policy, const DuplicateAnalysis& analysis, PCWSTR command);

@@ -105,6 +105,7 @@
     <ClCompile Include="..\PackageAnalysis.cpp" />
     <ClCompile Include="..\UserOwnerAnalysis.cpp" />
     <ClCompile Include="..\FilterRanking.cpp" />
+    <ClCompile Include="..\DuplicateAnalysis.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ApplicationAnalysis.h" />
@@ -112,6 +113,7 @@
     <ClInclude Include="..\PackageAnalysis.h" />
     <ClInclude Include="..\UserOwnerAnalysis.h" />
     <ClInclude Include="..\FilterRanking.h" />
+    <ClInclude Include="..\DuplicateAnalysis.h" />
     <ClInclude Include="..\NormalizedFirewallRule.h" />
     <ClInclude Include="..\NormalizedString.h" />
     <ClInclude Include="..\firewall.h" />

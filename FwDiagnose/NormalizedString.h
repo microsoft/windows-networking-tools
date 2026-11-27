@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cassert>
 #include <string>
 #include <windows.h>
@@ -130,6 +131,66 @@ struct NormalizedString
 		return lhs ? 1 : -1;
 	}
 
+	//
+	// AlphabeticalCompare
+	//
+	// Orders two strings for display. StringCompare orders shorter strings first, which is faster
+	// but not alphabetical; this compares character by character, ignoring case.
+	//
+	// Parameters:
+	//   lhs [in] - a normalized string
+	//   rhs [in] - another normalized string
+	//
+	// Returns:
+	//   -1 if lhs sorts before rhs, 0 if they are equal ignoring case, 1 if lhs sorts after rhs.
+	//   The order is the same as CompareStringOrdinal with bIgnoreCase: characters are compared as
+	//   uppercase, so punctuation such as '_' sorts after the letters. A string sorts before any
+	//   longer string that begins with it. Two strings are equal exactly when StringCompare finds
+	//   them equal.
+	//
+	static int
+	AlphabeticalCompare(const NormalizedString& lhs, const NormalizedString& rhs) noexcept
+	{
+		if (!lhs.containsNonAsciiCharacters && !rhs.containsNonAsciiCharacters)
+		{
+			// compare as uppercase so the ASCII-only order matches CompareStringOrdinal's order for
+			// the other strings; otherwise a mix of the two would not sort consistently
+			const auto length = (std::min)(lhs.value.size(), rhs.value.size());
+			for (size_t index = 0; index < length; ++index)
+			{
+				const auto left = towupper(lhs.value[index]);
+				const auto right = towupper(rhs.value[index]);
+				if (left != right)
+				{
+					return left < right ? -1 : 1;
+				}
+			}
+			if (lhs.value.size() == rhs.value.size())
+			{
+				return 0;
+			}
+			return lhs.value.size() < rhs.value.size() ? -1 : 1;
+		}
+
+		constexpr BOOL bIgnoreCase = TRUE;
+		switch (CompareStringOrdinal(
+		    lhs.value.c_str(),
+		    static_cast<int>(lhs.value.size()),
+		    rhs.value.c_str(),
+		    static_cast<int>(rhs.value.size()),
+		    bIgnoreCase))
+		{
+		case CSTR_LESS_THAN:
+			return -1;
+		case CSTR_EQUAL:
+			return 0;
+		case CSTR_GREATER_THAN:
+			return 1;
+		default:
+			assert(false);
+			return 1; // CompareStringOrdinal failed - report the strings as not equal
+		}
+	}
 	static bool
 	StrStrComparison(const NormalizedString& haystack, const NormalizedString& needle) noexcept
 	{
