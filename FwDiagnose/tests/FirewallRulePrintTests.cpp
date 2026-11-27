@@ -336,7 +336,7 @@ TestHexValues()
 	rule.Status = static_cast<FW_RULE_STATUS>(0x20000);
 	const auto printed = Print(rule, FW_BINARY_VERSION_33);
 	Check(ValueOf(printed, L"Profiles") == L"0x10", "0x-prefixed values are hexadecimal");
-	Check(ValueOf(printed, L"Status") == L"0x20000", "non-OK status prints as hexadecimal");
+	Check(ValueOf(printed, L"Status") == L"0x00020000", "non-OK status prints as 8-digit hexadecimal, matching JSON");
 }
 
 PrintedFields

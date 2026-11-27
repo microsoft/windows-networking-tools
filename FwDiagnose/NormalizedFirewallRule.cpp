@@ -979,7 +979,7 @@ NormalizedFirewallRule::PrintRule() const
 	append_line(
 	    L"Status",
 	    fw_rule->Status == FW_RULE_STATUS_OK ? std::wstring{L"FW_RULE_STATUS_OK"}
-	                                         : details::HexToString(fw_rule->Status));
+	                                         : std::format(L"0x{:08X}", static_cast<uint32_t>(fw_rule->Status)));
 	append_line(L"Origin", details::ToString(fw_rule->Origin));
 	append_line(L"GPO Name", FirewallRuleTextToString(fw_rule->wszGPOName));
 	append_line(

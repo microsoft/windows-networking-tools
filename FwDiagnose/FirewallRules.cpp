@@ -1973,7 +1973,7 @@ CheckForRulesWithErrorStatus(const FirewallPolicyObjects& policy)
 			status_categories.parsingError.rules.push_back(&rule);
 			verbose_rules_with_parsing_errors_error_strings.emplace_back(
 			    wil::str_printf<std::wstring>(
-			        L"A rule has parsing error (0x%x):  %ls:  %ls\n",
+			        L"A rule has parsing error (0x%08X):  %ls:  %ls\n",
 			        rule.fw_rule->Status,
 			        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
@@ -1983,7 +1983,7 @@ CheckForRulesWithErrorStatus(const FirewallPolicyObjects& policy)
 			status_categories.semanticError.rules.push_back(&rule);
 			verbose_rules_with_semantic_errors_error_strings.emplace_back(
 			    wil::str_printf<std::wstring>(
-			        L"A rule has semantic error (0x%x):  %ls:  %ls\n",
+			        L"A rule has semantic error (0x%08X):  %ls:  %ls\n",
 			        rule.fw_rule->Status,
 			        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
@@ -1993,7 +1993,7 @@ CheckForRulesWithErrorStatus(const FirewallPolicyObjects& policy)
 			status_categories.runtimeError.rules.push_back(&rule);
 			verbose_rules_with_runtime_errors_error_strings.emplace_back(
 			    wil::str_printf<std::wstring>(
-			        L"A rule has runtime error (0x%x):  %ls:  %ls\n",
+			        L"A rule has runtime error (0x%08X):  %ls:  %ls\n",
 			        rule.fw_rule->Status,
 			        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
@@ -2003,7 +2003,7 @@ CheckForRulesWithErrorStatus(const FirewallPolicyObjects& policy)
 			status_categories.unknown.rules.push_back(&rule);
 			verbose_rules_with_unknown_errors_error_strings.emplace_back(
 			    wil::str_printf<std::wstring>(
-			        L"    A rule has unknown error status (0x%x):  %ls:  %ls\n",
+			        L"    A rule has unknown error status (0x%08X):  %ls:  %ls\n",
 			        rule.fw_rule->Status,
 			        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
 			        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));

@@ -573,7 +573,7 @@ The store's `status` describes collection/processing, not whether its rules have
    - count of rules with partially ignored (some fields not understood): 0
    - count of rules with completely ignored (newer schema with unknown fields): 0
    - count of rules with parsing errors: 1
-       A rule has parsing error (0x80003):  Rule Name:  Example App
+       A rule has parsing error (0x00080003):  Rule Name:  Example App
    - count of rules with semantic errors: 0
    - count of rules with runtime errors: 0
    - count of rules with unknown errors: 0
