@@ -102,9 +102,12 @@
     <ClCompile Include="FirewallRulePrintTests.cpp" />
     <ClCompile Include="..\NormalizedFirewallRule.cpp" />
     <ClCompile Include="..\ApplicationAnalysis.cpp" />
+    <ClCompile Include="..\PackageAnalysis.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ApplicationAnalysis.h" />
+    <ClInclude Include="..\AnalysisOutput.h" />
+    <ClInclude Include="..\PackageAnalysis.h" />
     <ClInclude Include="..\NormalizedFirewallRule.h" />
     <ClInclude Include="..\NormalizedString.h" />
     <ClInclude Include="..\firewall.h" />

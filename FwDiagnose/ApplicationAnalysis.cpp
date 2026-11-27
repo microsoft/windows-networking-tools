@@ -22,16 +22,6 @@ MakeFinding(const NormalizedFirewallRule& rule, ApplicationFindingReason reason)
 }
 
 std::wstring
-RuleLabel(const ApplicationRuleFinding& finding)
-{
-	const bool hasName = finding.displayName && finding.displayName[0] != L'\0';
-	return std::format(
-	    L"[{}:  {}]",
-	    hasName ? L"Rule Name" : L"(no Rule Name) RuleId",
-	    hasName ? finding.displayName : FirewallRuleTextToString(finding.ruleId));
-}
-
-std::wstring
 Widen(PCSTR text)
 {
 	// failure text is ASCII
@@ -74,9 +64,9 @@ AnalyzeApplicationRules(const std::vector<NormalizedFirewallRule>& rules, Applic
 }
 
 std::wstring
-PrintApplicationAnalysis(const ApplicationAnalysis& analysis, ApplicationAnalysisOutput output)
+PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput output)
 {
-	const bool verbose = output == ApplicationAnalysisOutput::Verbose;
+	const bool verbose = output == AnalysisOutput::Verbose;
 	std::wstring text;
 	if (analysis.fileCheck == ApplicationFileCheck::SkippedWow64Redirection)
 	{
@@ -113,7 +103,7 @@ PrintApplicationAnalysis(const ApplicationAnalysis& analysis, ApplicationAnalysi
 			text += std::format(
 			    L"     WARNING: Application-exe:  '{}'  {}\n",
 			    FirewallRuleTextToString(finding.application),
-			    RuleLabel(finding));
+			    RuleConsoleLabel(finding.displayName, finding.ruleId));
 		}
 	}
 
@@ -127,7 +117,7 @@ PrintApplicationAnalysis(const ApplicationAnalysis& analysis, ApplicationAnalysi
 			    FirewallRuleTextToString(finding.application),
 			    finding.reason == ApplicationFindingReason::PerUserEnvironmentVariable ? PerUserVariableNote : L"",
 			    Widen(finding.failureText),
-			    RuleLabel(finding));
+			    RuleConsoleLabel(finding.displayName, finding.ruleId));
 		}
 	}
 	return text;

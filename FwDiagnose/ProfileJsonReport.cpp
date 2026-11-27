@@ -181,8 +181,8 @@ ReturnJsonResultObject(PCWSTR command)
 	pending.SetNamedValue(
 	    L"message",
 	    String(
-	        L"Firewall-profile configuration, rule-status analysis, and application analysis are exported. "
-	        L"Other console output for this command is not yet exported."));
+	        L"Firewall-profile configuration, rule-status analysis, application analysis, and app-package analysis are "
+	        	        L"exported. Other console output for this command is not yet exported."));
 
 	JsonArray diagnostics;
 	diagnostics.Append(pending);
@@ -298,6 +298,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                         L"displayName",
 		                                         L"ruleDetails",
 		                                         L"applicationAnalysis",
+		                                         L"packageAnalysis",
 		                                         L"ruleCount",
 		                                         L"status",
 		                                         L"reason",
@@ -312,11 +313,25 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                                       L"serviceProfileVariableRules",
 		                                                       L"missingApplicationRules"};
 
-		constexpr std::wstring_view applicationRuleOrder[]{L"ruleId",
-		                                                   L"name",
-		                                                   L"application",
+		constexpr std::wstring_view packageAnalysisOrder[]{L"status",
 		                                                   L"reason",
-		                                                   L"error"};
+		                                                   L"packageIdRuleCount",
+		                                                   L"missingPackageIdRuleCount",
+		                                                   L"packageFamilyNameRuleCount",
+		                                                   L"missingPackageFamilyNameRuleCount",
+		                                                   L"missingPackageIdRules",
+		                                                   L"missingPackageFamilyNameRules",
+		                                                   L"diagnostics"};
+
+		constexpr std::wstring_view ruleEntryOrder[]{L"ruleId",
+		                                             L"name",
+		                                             L"application",
+		                                             L"packageId",
+		                                             L"packageFamilyName",
+		                                             L"reason",
+		                                             L"status",
+		                                             L"statusHex",
+		                                             L"error"};
 
 		constexpr std::wstring_view errorOrder[]{L"domain",
 		                                         L"code",
@@ -343,9 +358,16 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		{
 			fieldOrder = applicationAnalysisOrder;
 		}
-		else if (object.HasKey(L"ruleId") && object.HasKey(L"application"))
+		else if (
+		    object.HasKey(L"packageIdRuleCount") ||
+		    (object.Size() == 2 && object.HasKey(L"status") && object.HasKey(L"diagnostics")))
 		{
-			fieldOrder = applicationRuleOrder;
+			// also orders a failed package analysis, which has only status and diagnostics
+			fieldOrder = packageAnalysisOrder;
+		}
+		else if (object.HasKey(L"ruleId"))
+		{
+			fieldOrder = ruleEntryOrder;
 		}
 		else if (object.HasKey(L"domain") && object.HasKey(L"code") && object.HasKey(L"hex"))
 		{
@@ -828,4 +850,72 @@ WriteApplicationAnalysisJson(const FirewallPolicyObjects& policy, const Applicat
 	}
 
 	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"applicationAnalysis", section);
+}
+
+void
+WritePackageAnalysisJson(const FirewallPolicyObjects& policy, const PackageAnalysis& analysis, PCWSTR command)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	JsonObject section;
+	if (FAILED(analysis.packagesLoadResult))
+	{
+		section.SetNamedValue(L"status", String(L"failed"));
+		auto diagnostic = ReturnJsonDiagnosticObject(
+		    L"installedPackages",
+		    L"load_app_packages",
+		    analysis.packagesLoadResult,
+		    L"Installed app packages could not be loaded, so no rule's package references were checked.");
+		diagnostic.SetNamedValue(L"code", String(L"app_packages_not_loaded"));
+		JsonArray diagnostics;
+		diagnostics.Append(diagnostic);
+		section.SetNamedValue(L"diagnostics", diagnostics);
+		ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"packageAnalysis", section);
+		return;
+	}
+
+	const auto nullableString = [](PCWSTR value)
+	{
+		return value ? String(value) : JsonValue::CreateNullValue();
+	};
+	const auto count = [](size_t value)
+	{
+		return JsonValue::CreateNumberValue(static_cast<double>(value));
+	};
+	const auto ruleEntries = [&](PackageReference reference, PCWSTR packageKey)
+	{
+		JsonArray entries;
+		for (const auto& finding : analysis.missingPackageRules)
+		{
+			if (finding.reference == reference)
+			{
+				JsonObject entry;
+				entry.SetNamedValue(L"ruleId", nullableString(finding.ruleId));
+				entry.SetNamedValue(L"name", nullableString(finding.name));
+				entry.SetNamedValue(packageKey, nullableString(finding.package));
+				entries.Append(entry);
+			}
+		}
+		return entries;
+	};
+
+	section.SetNamedValue(L"status", String(L"completed"));
+	section.SetNamedValue(L"packageIdRuleCount", count(analysis.packageIdRuleCount));
+	section.SetNamedValue(L"missingPackageIdRuleCount", count(analysis.MissingCount(PackageReference::PackageId)));
+	section.SetNamedValue(L"packageFamilyNameRuleCount", count(analysis.packageFamilyNameRuleCount));
+	section.SetNamedValue(
+	    L"missingPackageFamilyNameRuleCount",
+	    count(analysis.MissingCount(PackageReference::PackageFamilyName)));
+	if (g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose"))
+	{
+		section.SetNamedValue(L"missingPackageIdRules", ruleEntries(PackageReference::PackageId, L"packageId"));
+		section.SetNamedValue(
+		    L"missingPackageFamilyNameRules",
+		    ruleEntries(PackageReference::PackageFamilyName, L"packageFamilyName"));
+	}
+
+	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"packageAnalysis", section);
 }

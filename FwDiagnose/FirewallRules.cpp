@@ -1247,102 +1247,33 @@ CheckForMissingAppRules(const FirewallPolicyObjects& policy)
 	WriteApplicationAnalysisJson(policy, analysis, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
 	std::printf(
 	    "%ls",
-	    PrintApplicationAnalysis(
-	        analysis,
-	        VerboseOutputEnabled() ? ApplicationAnalysisOutput::Verbose : ApplicationAnalysisOutput::Summary)
+	    PrintApplicationAnalysis(analysis, VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary)
 	        .c_str());
 }
 
-enum class PrintSummary : std::uint8_t
-{
-	Print,
-	DoNotPrint
-};
 static void
-CheckForMissingAppPackage(
-    std::vector<NormalizedFirewallRule>& normalized_rules, PrintSummary print_summary = PrintSummary::Print)
+CheckForMissingAppPackage(FirewallPolicyObjects& policy)
 {
-	// without the list of installed packages, every package would look like it does not exist
-	const auto packages_load_result = GetAppPackagesLoadResult();
-	if (FAILED(packages_load_result))
+	const PackageLookups lookups{
+	    [](PCWSTR package_sid)
+	    {
+		    return std::get<1>(FindPackageSid(package_sid)) != AppContainerName::None;
+	    },
+	    [](const NormalizedString& package_family_name)
+	    {
+		    return std::get<1>(FindPackageFamilyName(package_family_name)) != AppContainerName::None;
+	    }};
+	const auto analysis = AnalyzePackageRules(policy.normalizedRules, GetAppPackagesLoadResult(), lookups);
+	if (FAILED(analysis.packagesLoadResult))
 	{
-		std::printf(
-		    "  * Skipping the app-package analysis: installed packages could not be loaded (0x%lx)\n",
-		    packages_load_result);
-		RecordOperationFailure(packages_load_result);
-		return;
+		RecordOperationFailure(analysis.packagesLoadResult);
 	}
 
-	size_t count_of_rules_with_package_id = 0;
-	size_t count_of_rules_with_missing_package_id = 0;
-	size_t count_of_rules_with_package_family_name = 0;
-	size_t count_of_rules_with_missing_package_family_name = 0;
-
-	std::vector<std::wstring> verbose_output_of_error_strings;
-
-	for (auto& rule : normalized_rules)
-	{
-		if (rule.fw_rule->wszPackageId && rule.fw_rule->wszPackageId[0] != L'\0') // wszPackageId == the Package ID SID
-		{
-			++count_of_rules_with_package_id;
-
-			const auto [name, exists] = FindPackageSid(rule.fw_rule->wszPackageId);
-			if (exists == AppContainerName::None)
-			{
-				rule.missing_package_id = true;
-				++count_of_rules_with_missing_package_id;
-
-				verbose_output_of_error_strings.emplace_back(
-				    wil::str_printf<std::wstring>(
-				        L"     Package-ID:  '%ls'  [%ls:  %ls]\n",
-				        rule.fw_rule->wszPackageId,
-				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				        rule.rule_name.value.empty() ? rule.rule_id.c_str() : rule.rule_name.value.c_str()));
-			}
-		}
-
-		// PackageFamilyName() is nullptr unless both the requested version and the rule's schema version support it
-		const auto package_family_name = rule.PackageFamilyName();
-		if (package_family_name && package_family_name[0] != L'\0')
-		{
-			++count_of_rules_with_package_family_name;
-
-			const auto [name, exists] = FindPackageFamilyName(rule.normalized_package_family_name);
-			if (exists == AppContainerName::None)
-			{
-				rule.missing_package_family_name = true;
-				++count_of_rules_with_missing_package_family_name;
-
-				verbose_output_of_error_strings.emplace_back(
-				    wil::str_printf<std::wstring>(
-				        L"     Package-Family-Name:  '%ls'  [%ls:  %ls]\n",
-				        package_family_name,
-				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				        rule.rule_name.value.empty() ? rule.rule_id.c_str() : rule.rule_name.value.c_str()));
-			}
-		}
-	}
-
-	if (VerboseOutputEnabled() || print_summary == PrintSummary::Print)
-	{
-		std::printf("  * Summary of app-package analysis of firewall rules:\n");
-		std::printf("   - count of rules with a package ID: %zu\n", count_of_rules_with_package_id);
-		std::printf(
-		    "   - count of rules with a package ID referencing a non-existing package: %zu\n",
-		    count_of_rules_with_missing_package_id);
-		std::printf("   - count of rules with a package family name: %zu\n", count_of_rules_with_package_family_name);
-		std::printf(
-		    "   - count of rules with a package family name referencing a non-existing package: %zu\n",
-		    count_of_rules_with_missing_package_family_name);
-		if (VerboseOutputEnabled() && !verbose_output_of_error_strings.empty())
-		{
-			std::printf("   - unique rule names of rules with a package ID referencing a non-existing package:\n");
-			for (const auto& error_string : verbose_output_of_error_strings)
-			{
-				std::printf("%ls", error_string.c_str());
-			}
-		}
-	}
+	WritePackageAnalysisJson(policy, analysis, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
+	std::printf(
+	    "%ls",
+	    PrintPackageAnalysis(analysis, VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary)
+	        .c_str());
 }
 
 static void
@@ -2590,7 +2521,7 @@ ProcessFirewallRules()
 				std::printf("\n");
 			}
 			timer.start("CheckForMissingAppPackage");
-			details::CheckForMissingAppPackage(policy.normalizedRules);
+			details::CheckForMissingAppPackage(policy);
 			timer.end();
 
 			if (CleanBrokenRulesEnabled())

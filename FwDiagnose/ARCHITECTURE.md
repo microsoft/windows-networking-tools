@@ -12,6 +12,8 @@ FwDiagnose is a single-process C++ console application. It takes a snapshot of s
 | `FirewallRules.*` | Loads rules from all stores; all rule analyses and deletion; profile policy; Shields Up. |
 | `NormalizedFirewallRule.*` | Canonical per-rule record and comparison functions. |
 | `NormalizedString.h` | Case-insensitive string with an ASCII fast path. |
+| `ApplicationAnalysis.*`, `PackageAnalysis.*` | Per-store application and app-package analyses. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups are passed in, keeping WinRT out of these files. |
+| `AnalysisOutput.h` | Summary/verbose selector and the rule label shared by analysis console output. |
 | `AppContainers.*` | Installed-package inventory and SID derivation. |
 | `WfpCounters.*` | Shared WFP engine handle, layer names and ordering, shared WFP types. |
 | `WfpCallouts.cpp` | Callout inventory, built-in list, driver names from ETW, filter removal and restoration. |
@@ -98,6 +100,8 @@ Rule memory from `FWEnumFirewallRules` is intentionally never freed. `Normalized
 Each `FirewallPolicyObjects` holds its store handle, which stays open until the process exits. `-clean-rules` opens stores read/write and deletes rules through the handle of the store being cleaned. `StoreAllowsOnlyReadAccess` lists the stores that cannot be modified locally: Group Policy, RSOP, static and configurable Windows Service Hardening, and MDM. They are always opened read-only, and `-clean-rules` skips them entirely, without analysis. The comment on `StoreAllowsOnlyReadAccess` says they are opened "to report issues", but no analysis runs for them under `-clean-rules`.
 
 A rule's application file is checked only when the result is meaningful: `System` and packaged apps are skipped, and any failure of the file lookup (`FindFirstFileExW`) counts as missing; the error is kept with the rule and reported. A path using a per-user variable such as `%HOMEPATH%` is treated as broken without a file lookup, because the Firewall service (`mpssvc`) resolves rule paths as LocalService rather than as the user. A path using `%USERPROFILE%`, `%APPDATA%`, `%LOCALAPPDATA%`, `%TEMP%`, or `%TMP%` resolves within that account's profile, which may be deliberate, so it is reported as a warning and is never a deletion candidate. A 32-bit process on 64-bit Windows does not look up files at all, because file system and environment redirection would make existing files look missing.
+
+A rule's package ID (an AppContainer SID) and package family name are each checked against the installed packages. A rule missing both is reported once for each. A 2.27 rule cannot carry a package family name, so only its package ID is checked. If the installed packages could not be loaded, no rule is checked or flagged, because every package would look missing.
 
 ### Rule normalization and comparison
 

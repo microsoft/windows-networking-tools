@@ -16,6 +16,7 @@
 
 #include "..\NormalizedFirewallRule.h"
 #include "..\ApplicationAnalysis.h"
+#include "..\PackageAnalysis.h"
 
 bool
 VerboseOutputEnabled() noexcept
@@ -561,10 +562,10 @@ TestApplicationAnalysisWithNoApplicationRules()
 	    empty.missingApplicationRules.empty() && empty.serviceProfileVariableRules.empty(),
 	    "no rules have no findings");
 	Check(
-	    PrintApplicationAnalysis(empty, ApplicationAnalysisOutput::Summary).empty(),
+	    PrintApplicationAnalysis(empty, AnalysisOutput::Summary).empty(),
 	    "the summary prints nothing when there is nothing to report");
 	Check(
-	    PrintApplicationAnalysis(empty, ApplicationAnalysisOutput::Verbose) ==
+	    PrintApplicationAnalysis(empty, AnalysisOutput::Verbose) ==
 	        std::wstring{ApplicationSummaryHeader} + L"   - count of rules with an application exe: 0\n" +
 	            L"   - count of rules with an application exe referencing non-existing file: 0\n" + PerUserCountLine +
 	            L"0\n",
@@ -581,7 +582,7 @@ TestApplicationAnalysisWithNoApplicationRules()
 	Check(
 	    PrintApplicationAnalysis(
 	        AnalyzeApplicationRules({}, ApplicationFileCheck::SkippedWow64Redirection),
-	        ApplicationAnalysisOutput::Summary) == Wow64SkipLine,
+	        AnalysisOutput::Summary) == Wow64SkipLine,
 	    "the WOW64 skip is printed even when there is nothing else to report");
 }
 
@@ -647,10 +648,10 @@ TestApplicationAnalysisWithEveryKindOfApplicationRule()
 	                            PerUserCountLine + L"1\n" + ServiceProfileCountLine + L"1\n" +
 	                            L"     WARNING: Application-exe:  '%APPDATA%\\app.exe'  [Rule Name:  service rule]\n";
 	Check(
-	    PrintApplicationAnalysis(analysis, ApplicationAnalysisOutput::Summary) == counts,
+	    PrintApplicationAnalysis(analysis, AnalysisOutput::Summary) == counts,
 	    "the summary prints counts and warnings without the missing-file list");
 	Check(
-	    PrintApplicationAnalysis(analysis, ApplicationAnalysisOutput::Verbose) ==
+	    PrintApplicationAnalysis(analysis, AnalysisOutput::Verbose) ==
 	        counts + L"   - rules with an application exe referencing non-existing file:\n" +
 	            L"     Application-exe:  '%HOMEPATH%\\app.exe' (per-user environment variable)  (Contains per-user "
 	            L"environment variable) [Rule Name:  per-user rule]\n" +
@@ -669,14 +670,172 @@ TestApplicationAnalysisWithNullFindingFields()
 	     .error = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),
 	     .failureText = "Failed to find the file (0x80070002)"});
 	Check(
-	    PrintApplicationAnalysis(analysis, ApplicationAnalysisOutput::Verbose)
+	    PrintApplicationAnalysis(analysis, AnalysisOutput::Verbose)
 	        .ends_with(
 	            L"     Application-exe:  '(none)'  (Failed to find the file (0x80070002)) [(no Rule Name) RuleId:  "
 	            L"(none)]\n"),
 	    "a finding without a rule ID or application prints placeholders");
 }
-} // namespace
 
+wchar_t g_package_rule_ids[6][16]{
+    L"{PKG-RULE-0}", L"{PKG-RULE-1}", L"{PKG-RULE-2}", L"{PKG-RULE-3}", L"{PKG-RULE-4}", L"{PKG-RULE-5}"};
+wchar_t g_installed_package_id[] = L"S-1-15-2-1";
+wchar_t g_missing_package_id[] = L"S-1-15-2-999";
+wchar_t g_missing_package_family_name[] = L"Missing.App_x";
+wchar_t g_both_missing_rule_name[] = L"Both Missing";
+
+constexpr PCWSTR PackageSummaryHeader = L"  * Summary of app-package analysis of firewall rules:\n";
+
+std::wstring
+PackageCounts(size_t idRules, size_t missingIdRules, size_t familyNameRules, size_t missingFamilyNameRules)
+{
+	return std::wstring{PackageSummaryHeader} + std::format(L"   - count of rules with a package ID: {}\n", idRules) +
+	       std::format(
+	           L"   - count of rules with a package ID referencing a non-existing package: {}\n",
+	           missingIdRules) +
+	       std::format(L"   - count of rules with a package family name: {}\n", familyNameRules) +
+	       std::format(
+	           L"   - count of rules with a package family name referencing a non-existing package: {}\n",
+	           missingFamilyNameRules);
+}
+
+PackageLookups
+InstalledPackageLookups(size_t& lookupCount)
+{
+	return {
+	    [&lookupCount](PCWSTR package_sid)
+	    {
+		    ++lookupCount;
+		    return std::wstring_view{package_sid} == g_installed_package_id;
+	    },
+	    [&lookupCount](const NormalizedString& package_family_name)
+	    {
+		    ++lookupCount;
+		    return package_family_name == NormalizedString::Create(std::wstring{g_package_family_name});
+	    }};
+}
+
+void
+TestPackageAnalysisWithNoPackageRules()
+{
+	size_t lookupCount = 0;
+	std::vector<NormalizedFirewallRule> none;
+	const auto empty = AnalyzePackageRules(none, S_OK, InstalledPackageLookups(lookupCount));
+	Check(empty.packageIdRuleCount == 0 && empty.packageFamilyNameRuleCount == 0, "no rules have no package rules");
+	Check(
+	    PrintPackageAnalysis(empty, AnalysisOutput::Summary) == PackageCounts(0, 0, 0, 0),
+	    "the summary always prints its counts, even when they are zero");
+	Check(
+	    PrintPackageAnalysis(empty, AnalysisOutput::Verbose) == PackageCounts(0, 0, 0, 0),
+	    "verbose output prints no list header when nothing is missing");
+
+	auto rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+	rule.wszPackageId = g_missing_package_id;
+	std::vector<NormalizedFirewallRule> rules;
+	rules.emplace_back(&rule, FW_BINARY_VERSION_33);
+	const auto failed = AnalyzePackageRules(rules, E_ACCESSDENIED, InstalledPackageLookups(lookupCount));
+	Check(lookupCount == 0, "no package is looked up when the installed packages could not be loaded");
+	Check(
+	    failed.packageIdRuleCount == 0 && failed.missingPackageRules.empty() && !rules[0].missing_package_id &&
+	        !rules[0].missing_package_family_name,
+	    "no rule is counted or flagged when the installed packages could not be loaded");
+	Check(
+	    PrintPackageAnalysis(failed, AnalysisOutput::Verbose) ==
+	        L"  * Skipping the app-package analysis: installed packages could not be loaded (0x80070005)\n",
+	    "a load failure prints only the skip line with an 8-digit error code");
+}
+
+void
+TestPackageAnalysisWithEveryKindOfPackageRule()
+{
+	FW_RULE fw_rules[6]{};
+	for (size_t index = 0; index < std::size(fw_rules); ++index)
+	{
+		fw_rules[index] = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rules[index].wszRuleId = g_package_rule_ids[index];
+	}
+	// fw_rules[0] has no package ID and no package family name
+	fw_rules[0].wszPackageFamilyName = nullptr;
+	// fw_rules[1] references an installed package by both
+	fw_rules[1].wszPackageId = g_installed_package_id;
+	// fw_rules[2] references a missing package by both
+	fw_rules[2].wszPackageId = g_missing_package_id;
+	fw_rules[2].wszPackageFamilyName = g_missing_package_family_name;
+	fw_rules[2].wszName = g_both_missing_rule_name;
+	// fw_rules[3] is a 2.27 rule, which cannot carry a package family name
+	fw_rules[3].wSchemaVersion = FW_BINARY_VERSION_27;
+	fw_rules[3].wszPackageFamilyName = g_missing_package_family_name;
+	// fw_rules[4] references a missing package family name and has no name
+	fw_rules[4].wszPackageFamilyName = g_missing_package_family_name;
+	// fw_rules[5] has an empty package ID
+	fw_rules[5].wszPackageId = g_empty_string;
+	fw_rules[5].wszPackageFamilyName = nullptr;
+
+	std::vector<NormalizedFirewallRule> rules;
+	for (const auto& fw_rule : fw_rules)
+	{
+		rules.emplace_back(&fw_rule, FW_BINARY_VERSION_33);
+	}
+
+	size_t lookupCount = 0;
+	const auto analysis = AnalyzePackageRules(rules, S_OK, InstalledPackageLookups(lookupCount));
+	Check(analysis.packageIdRuleCount == 2, "only non-empty package IDs are counted");
+	Check(analysis.packageFamilyNameRuleCount == 3, "the 2.27 rule's package family name is not counted");
+	Check(analysis.MissingCount(PackageReference::PackageId) == 1, "one package ID is missing");
+	Check(analysis.MissingCount(PackageReference::PackageFamilyName) == 2, "two package family names are missing");
+	Check(lookupCount == 5, "every counted reference is looked up once");
+	Check(
+	    rules[2].missing_package_id && rules[2].missing_package_family_name && !rules[4].missing_package_id &&
+	        rules[4].missing_package_family_name,
+	    "missing references are flagged on the rules");
+	Check(
+	    !rules[0].missing_package_id && !rules[1].missing_package_id && !rules[1].missing_package_family_name &&
+	        !rules[3].missing_package_family_name && !rules[5].missing_package_id,
+	    "installed, absent, and unreadable references are not flagged");
+	if (analysis.missingPackageRules.size() == 3)
+	{
+		const auto& first = analysis.missingPackageRules[0];
+		Check(
+		    first.reference == PackageReference::PackageId &&
+		        std::wstring_view{first.package} == g_missing_package_id &&
+		        std::wstring_view{first.name} == g_both_missing_rule_name,
+		    "the finding keeps the package ID and the stored rule name");
+		const auto& last = analysis.missingPackageRules[2];
+		Check(
+		    last.name == nullptr && std::wstring_view{last.ruleId} == g_package_rule_ids[4],
+		    "a rule without a name keeps its ID");
+	}
+	else
+	{
+		Check(false, "a rule missing both references is reported twice");
+	}
+
+	const auto counts = PackageCounts(2, 1, 3, 2);
+	Check(
+	    PrintPackageAnalysis(analysis, AnalysisOutput::Summary) == counts,
+	    "the summary prints counts without the list");
+	// the console prints the normalized (lowercase) rule name, as it always has
+	Check(
+	    PrintPackageAnalysis(analysis, AnalysisOutput::Verbose) ==
+	        counts + L"   - rules referencing a non-existing package:\n" +
+	            L"     Package-ID:  'S-1-15-2-999'  [Rule Name:  both missing]\n" +
+	            L"     Package-Family-Name:  'Missing.App_x'  [Rule Name:  both missing]\n" +
+	            L"     Package-Family-Name:  'Missing.App_x'  [(no Rule Name) RuleId:  {PKG-RULE-4}]\n",
+	    "verbose output lists missing references in rule order");
+}
+
+void
+TestPackageAnalysisWithNullFindingFields()
+{
+	PackageAnalysis analysis;
+	analysis.packageIdRuleCount = 1;
+	analysis.missingPackageRules.push_back({.reference = PackageReference::PackageId});
+	Check(
+	    PrintPackageAnalysis(analysis, AnalysisOutput::Verbose)
+	        .ends_with(L"     Package-ID:  '(none)'  [(no Rule Name) RuleId:  (none)]\n"),
+	    "a finding without a rule ID or package prints placeholders");
+}
+} // namespace
 int
 wmain()
 {
@@ -693,6 +852,9 @@ wmain()
 	TestApplicationAnalysisWithNoApplicationRules();
 	TestApplicationAnalysisWithEveryKindOfApplicationRule();
 	TestApplicationAnalysisWithNullFindingFields();
+	TestPackageAnalysisWithNoPackageRules();
+	TestPackageAnalysisWithEveryKindOfPackageRule();
+	TestPackageAnalysisWithNullFindingFields();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

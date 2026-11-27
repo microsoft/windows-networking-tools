@@ -8,6 +8,8 @@
 #include <vector>
 #include <Windows.h>
 
+#include "AnalysisOutput.h"
+
 struct NormalizedFirewallRule;
 
 inline constexpr PCWSTR PerUserVariableNote = L" (per-user environment variable)";
@@ -49,15 +51,9 @@ struct ApplicationAnalysis
 	std::vector<ApplicationRuleFinding> serviceProfileVariableRules;
 };
 
-enum class ApplicationAnalysisOutput : uint8_t
-{
-	Summary,
-	Verbose
-};
-
 ApplicationAnalysis
 AnalyzeApplicationRules(const std::vector<NormalizedFirewallRule>& rules, ApplicationFileCheck fileCheck);
 
 // the console text for one store's application analysis; empty when there is nothing to report
 std::wstring
-PrintApplicationAnalysis(const ApplicationAnalysis& analysis, ApplicationAnalysisOutput output);
+PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput output);

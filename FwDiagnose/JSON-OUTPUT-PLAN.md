@@ -140,7 +140,7 @@ Proposed `data`:
 | `stores` | Store identity, negotiated API version, collection/analysis status |
 | `ruleDetails` | Total/error rule counts and nonzero partially ignored, ignored, parsing, semantic, runtime, and unknown status categories |
 | `applicationAnalysis` | Counts of application-targeted rules, rules whose executable was reported missing, and rules using service-profile variables (implemented; see Review 3) |
-| `packageAnalysis` | Package-SID/PFN reference counts and unresolved references |
+| `packageAnalysis` | Package-SID/PFN reference counts and unresolved references (implemented; see Review 4) |
 | `userOwnerAnalysis` | SID-owner counts, unresolved owners, and missing local-profile findings |
 | `rankings` | Top rules by filter count and filter-condition count |
 | `duplicateAnalysis` | Number of duplicate groups and number of rules participating in those groups |
@@ -418,7 +418,7 @@ This document is a plan, not an implementation of the feature. The design uses s
 
 Status: approved and implemented for firewall-profile configuration.
 
-The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, and per-store application analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
+The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, and per-store app-package analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
 
 ```powershell
 .\FwDiagnose\x64\Debug\FwDiagnose.exe -analyze-rules -json .\firewall-profiles.json
@@ -684,3 +684,53 @@ The last heading previously read "unique rule names of rules with ..."; it lists
 - Every rule is listed; nothing is de-duplicated. `ruleId` and `name` are `null` when absent.
 - A 32-bit build on 64-bit Windows does not look up files: `status` is `skipped` with `reason: "wow64_redirection"`. Rules with a per-user variable are still counted as missing because that check needs no lookup.
 - Field order: `status`, `reason`, `applicationRuleCount`, `missingApplicationRuleCount`, `perUserVariableRuleCount`, `serviceProfileVariableRuleCount`, `serviceProfileVariableRules`, `missingApplicationRules`. Rule entries: `ruleId`, `name`, `application`, `reason`, `error`. Error objects everywhere: `domain`, `code`, `hex`.
+
+### Review 4: `-analyze-rules` - app-package analysis per policy store
+
+Status: approved and implemented.
+
+`CheckForMissingAppPackage()` builds one analysis per store with `AnalyzePackageRules()`; the console and JSON are both written from it. The following values are illustrative.
+
+#### Console with `-verbose`
+
+```text
+  * Summary of app-package analysis of firewall rules:
+   - count of rules with a package ID: 2
+   - count of rules with a package ID referencing a non-existing package: 1
+   - count of rules with a package family name: 941
+   - count of rules with a package family name referencing a non-existing package: 2
+   - rules referencing a non-existing package:
+     Package-ID:  'S-1-15-2-999'  [Rule Name:  both rule]
+     Package-Family-Name:  'Missing.App_x'  [Rule Name:  both rule]
+     Package-Family-Name:  'Missing.App_x'  [(no Rule Name) RuleId:  family-rule]
+```
+
+The list heading previously read "unique rule names of rules with a package ID referencing a non-existing package"; it lists every missing reference, including package family names, so it was renamed. If the installed packages could not be loaded, the console prints only `  * Skipping the app-package analysis: installed packages could not be loaded (0x80070005)`, with the code in 8-digit form.
+
+#### JSON with `-verbose`
+
+`packageAnalysis` is added to the store record after `applicationAnalysis`:
+
+```json
+"packageAnalysis": {
+  "status": "completed",
+  "packageIdRuleCount": 2,
+  "missingPackageIdRuleCount": 1,
+  "packageFamilyNameRuleCount": 941,
+  "missingPackageFamilyNameRuleCount": 2,
+  "missingPackageIdRules": [
+    { "ruleId": "both-rule", "name": "Both rule", "packageId": "S-1-15-2-999" }
+  ],
+  "missingPackageFamilyNameRules": [
+    { "ruleId": "both-rule", "name": "Both rule", "packageFamilyName": "Missing.App_x" },
+    { "ruleId": "family-rule", "name": null, "packageFamilyName": "Missing.App_x" }
+  ]
+}
+```
+
+- `packageAnalysis` is present for every store whose rules were analyzed, even when all counts are zero.
+- Without `-verbose`, both lists are omitted.
+- A rule missing both references appears in both lists. `ruleId`, `name`, and the package are `null` when absent.
+- Only non-empty references are counted. A 2.27 rule cannot carry a package family name, so it is never counted as having one.
+- If the installed packages could not be loaded, no rule is checked: `status` is `failed`, there are no counts or lists, and `diagnostics` has one entry with `code: "app_packages_not_loaded"`, `operation: "load_app_packages"`, and the load `error`.
+- Field order: `status`, `packageIdRuleCount`, `missingPackageIdRuleCount`, `packageFamilyNameRuleCount`, `missingPackageFamilyNameRuleCount`, `missingPackageIdRules`, `missingPackageFamilyNameRules`, `diagnostics`. Rule entries in every analysis: `ruleId`, `name`, `application`, `packageId`, `packageFamilyName`, `reason`, `status`, `statusHex`, `error`. This also fixes the order of rule-status entries, which was previously arbitrary.

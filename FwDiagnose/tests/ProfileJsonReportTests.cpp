@@ -473,6 +473,151 @@ try
 	Check(
 	    JsonObject::Parse(PrettifyJson(nullEntry)).GetNamedValue(L"ruleId").ValueType() == JsonValueType::Null,
 	    "Ordered formatting lost a null rule ID.");
+	PackageAnalysis packages;
+	packages.packageIdRuleCount = 2;
+	packages.packageFamilyNameRuleCount = 3;
+	// a rule missing both references appears in both lists
+	packages.missingPackageRules.push_back(
+	    {L"both-rule", L"Both rule", PackageReference::PackageId, L"S-1-15-2-999", L"both rule"});
+	packages.missingPackageRules.push_back(
+	    {L"both-rule", L"Both rule", PackageReference::PackageFamilyName, L"Missing.App_x", L"both rule"});
+	packages.missingPackageRules.push_back(
+	    {L"family-rule", nullptr, PackageReference::PackageFamilyName, L"Missing.App_x", L""});
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WriteApplicationAnalysisJson(store, applications, L"analyze_rules");
+		WritePackageAnalysisJson(store, packages, L"analyze_rules");
+		const auto packageStore = stores.GetAt(stores.Size() - 1).GetObject();
+		const auto section = packageStore.GetNamedObject(L"packageAnalysis");
+		Check(section.GetNamedString(L"status") == L"completed", "Package analysis status incorrect.");
+		Check(section.GetNamedNumber(L"packageIdRuleCount") == 2, "Package ID rule count lost.");
+		Check(section.GetNamedNumber(L"missingPackageIdRuleCount") == 1, "Missing package ID count incorrect.");
+		Check(section.GetNamedNumber(L"packageFamilyNameRuleCount") == 3, "Package family name rule count lost.");
+		Check(
+		    section.GetNamedNumber(L"missingPackageFamilyNameRuleCount") == 2,
+		    "Missing package family name count incorrect.");
+		Check(!section.HasKey(L"diagnostics"), "Completed package analysis has diagnostics.");
+		Check(
+		    section.HasKey(L"missingPackageIdRules") == verbose &&
+		        section.HasKey(L"missingPackageFamilyNameRules") == verbose,
+		    "Missing package rules not limited to verbose output.");
+
+		size_t nextStoreKey = 0;
+		const auto packageStoreText = PrettifyJson(packageStore);
+		for (const auto* key :
+		     {L"store", L"displayName", L"ruleDetails", L"applicationAnalysis", L"packageAnalysis", L"status"})
+		{
+			const auto position = packageStoreText.find(std::wstring(L"\n  \"") + key + L"\":", nextStoreKey);
+			Check(position != std::wstring::npos, "Package analysis is not after applicationAnalysis.");
+			nextStoreKey = position + 1;
+		}
+
+		size_t nextKey = 0;
+		const auto sectionText = PrettifyJson(section);
+		for (const auto* key :
+		     {L"status",
+		      L"packageIdRuleCount",
+		      L"missingPackageIdRuleCount",
+		      L"packageFamilyNameRuleCount",
+		      L"missingPackageFamilyNameRuleCount",
+		      L"missingPackageIdRules",
+		      L"missingPackageFamilyNameRules"})
+		{
+			const auto position = sectionText.find(std::wstring(L"\n  \"") + key + L"\":", nextKey);
+			Check(
+			    position != std::wstring::npos || (!verbose && std::wstring_view(key).starts_with(L"missingPackage") &&
+			                                       std::wstring_view(key).ends_with(L"Rules")),
+			    "Package analysis fields are missing or not in the required order.");
+			if (position != std::wstring::npos)
+			{
+				nextKey = position + 1;
+			}
+		}
+		Check(JsonObject::Parse(sectionText).Size() == section.Size(), "Ordered formatting lost package fields.");
+		if (verbose)
+		{
+			const auto idRules = section.GetNamedArray(L"missingPackageIdRules");
+			Check(idRules.Size() == 1, "Missing package ID list incorrect.");
+			const auto idRule = idRules.GetAt(0).GetObject();
+			Check(
+			    idRule.GetNamedString(L"ruleId") == L"both-rule" && idRule.GetNamedString(L"name") == L"Both rule" &&
+			        idRule.GetNamedString(L"packageId") == L"S-1-15-2-999" && idRule.Size() == 3,
+			    "Missing package ID entry incorrect.");
+			const auto familyRules = section.GetNamedArray(L"missingPackageFamilyNameRules");
+			Check(familyRules.Size() == 2, "A rule missing both references is not in both lists.");
+			const auto familyRule = familyRules.GetAt(1).GetObject();
+			Check(
+			    familyRule.GetNamedString(L"ruleId") == L"family-rule" &&
+			        familyRule.GetNamedValue(L"name").ValueType() == JsonValueType::Null &&
+			        familyRule.GetNamedString(L"packageFamilyName") == L"Missing.App_x" && familyRule.Size() == 3,
+			    "Missing package family name entry incorrect.");
+			const auto familyText = PrettifyJson(familyRule);
+			Check(
+			    familyText.find(L"\"ruleId\"") < familyText.find(L"\"name\"") &&
+			        familyText.find(L"\"name\"") < familyText.find(L"\"packageFamilyName\""),
+			    "Package rule entry fields are not in the required order.");
+		}
+	}
+
+	// a store with no package rules still has the section, with zero counts and empty lists
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WritePackageAnalysisJson(store, PackageAnalysis{}, L"analyze_rules");
+		const auto empty = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"packageAnalysis");
+		Check(empty.GetNamedString(L"status") == L"completed", "Empty package analysis not completed.");
+		for (const auto* key :
+		     {L"packageIdRuleCount",
+		      L"missingPackageIdRuleCount",
+		      L"packageFamilyNameRuleCount",
+		      L"missingPackageFamilyNameRuleCount"})
+		{
+			Check(empty.GetNamedNumber(key) == 0, "Empty package analysis count not zero.");
+		}
+		Check(
+		    verbose ? empty.GetNamedArray(L"missingPackageIdRules").Size() == 0 &&
+		                  empty.GetNamedArray(L"missingPackageFamilyNameRules").Size() == 0
+		            : !empty.HasKey(L"missingPackageIdRules") && !empty.HasKey(L"missingPackageFamilyNameRules"),
+		    "Empty package lists incorrect for the verbosity.");
+	}
+
+	// the installed packages could not be loaded: no counts, one diagnostic with the error
+	PackageAnalysis notLoaded;
+	notLoaded.packagesLoadResult = E_ACCESSDENIED;
+	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WritePackageAnalysisJson(store, notLoaded, L"analyze_rules");
+	const auto failedPackages = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"packageAnalysis");
+	Check(
+	    failedPackages.GetNamedString(L"status") == L"failed" && failedPackages.Size() == 2 &&
+	        !failedPackages.HasKey(L"packageIdRuleCount"),
+	    "Failed package analysis has counts.");
+	const auto packageDiagnostic = failedPackages.GetNamedArray(L"diagnostics").GetAt(0).GetObject();
+	Check(
+	    packageDiagnostic.GetNamedString(L"code") == L"app_packages_not_loaded" &&
+	        packageDiagnostic.GetNamedString(L"operation") == L"load_app_packages" &&
+	        packageDiagnostic.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070005",
+	    "Package load failure diagnostic incorrect.");
+	const auto failedText = PrettifyJson(failedPackages);
+	Check(failedText.find(L"\"status\"") < failedText.find(L"\"diagnostics\""), "Failed package fields out of order.");
+
+	// every string field of a finding can be absent
+	PackageAnalysis nullPackageFields;
+	nullPackageFields.packageIdRuleCount = 1;
+	nullPackageFields.missingPackageRules.push_back({.reference = PackageReference::PackageId});
+	WritePackageAnalysisJson(store, nullPackageFields, L"analyze_rules");
+	const auto nullPackageEntry = stores.GetAt(stores.Size() - 1)
+	                                  .GetObject()
+	                                  .GetNamedObject(L"packageAnalysis")
+	                                  .GetNamedArray(L"missingPackageIdRules")
+	                                  .GetAt(0)
+	                                  .GetObject();
+	for (const auto* key : {L"ruleId", L"name", L"packageId"})
+	{
+		Check(nullPackageEntry.GetNamedValue(key).ValueType() == JsonValueType::Null, "Absent package field not null.");
+	}
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
 	const auto readRunStatus = [&]()
@@ -492,7 +637,7 @@ try
 	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::StoppedEarly);
 	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
 
-	std::printf("Profile, rule-status, and application-analysis JSON tests passed.\n");
+	std::printf("Profile, rule-status, application-analysis, and package-analysis JSON tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)
