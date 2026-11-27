@@ -12,7 +12,7 @@ FwDiagnose is a single-process C++ console application. It takes a snapshot of s
 | `FirewallRules.*` | Loads rules from all stores; all rule analyses and deletion; profile policy; Shields Up. |
 | `NormalizedFirewallRule.*` | Canonical per-rule record and comparison functions. |
 | `NormalizedString.h` | Case-insensitive string with an ASCII fast path. |
-| `ApplicationAnalysis.*`, `PackageAnalysis.*` | Per-store application and app-package analyses. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups are passed in, keeping WinRT out of these files. |
+| `ApplicationAnalysis.*`, `PackageAnalysis.*`, `UserOwnerAnalysis.*` | Per-store application, app-package, and SID-owner analyses. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups are passed in, keeping WinRT out of these files. |
 | `AnalysisOutput.h` | Summary/verbose selector and the rule label shared by analysis console output. |
 | `AppContainers.*` | Installed-package inventory and SID derivation. |
 | `WfpCounters.*` | Shared WFP engine handle, layer names and ordering, shared WFP types. |
@@ -103,6 +103,8 @@ A rule's application file is checked only when the result is meaningful: `System
 
 A rule's package ID (an AppContainer SID) and package family name are each checked against the installed packages. A rule missing both is reported once for each. A 2.27 rule cannot carry a package family name, so only its package ID is checked. If the installed packages could not be loaded, no rule is checked or flagged, because every package would look missing.
 
+A rule's local user owner (`wszLocalUserOwner`) is resolved to an account when the rule is normalized; a SID string that cannot be parsed and a SID with no account are both reported as unresolved, with the failing step and its error. Only Application-Isolation and Interface-Isolation rules are also checked against the local profiles in the registry (`ProfileList`), because those rules are recreated for each local profile. If the profile list could not be read, that check is skipped and recorded as a failure, and unresolved owners are still reported.
+
 ### Rule normalization and comparison
 
 `NormalizedFirewallRule` resolves `@file,-id` resource strings in names and descriptions, then builds `normalized_rule_details`, a comma-separated string of the rule's semantic fields.
@@ -157,7 +159,7 @@ Restoration uses `FwpmFilterAdd0` with the original security descriptor. If that
 
 ## Testing
 
-The solution includes three test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly and checks the JSON report using synthetic data. `FirewallRulePrintTests` compiles `NormalizedFirewallRule.cpp` and checks that `PrintRule` and `PrintRuleContents` print the same labels for every schema version and protocol, that values common to every version match, and that a resolved user name has no embedded null. It resolves the well-known SYSTEM SID but otherwise does not touch the system. None changes system state. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
+The solution includes three test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly and checks the JSON report using synthetic data. `FirewallRulePrintTests` compiles `NormalizedFirewallRule.cpp` and checks that `PrintRule` and `PrintRuleContents` print the same labels for every schema version and protocol, that values common to every version match, and that a resolved user name has no embedded null. It also checks the console text and findings of the application, app-package, and SID-owner analyses. It resolves the well-known SYSTEM SID but otherwise does not touch the system. None changes system state. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
 
 ```powershell
 msbuild WindowsNetworkingTools.sln /m /p:Configuration=Debug /p:Platform=x64

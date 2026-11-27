@@ -618,6 +618,189 @@ try
 	{
 		Check(nullPackageEntry.GetNamedValue(key).ValueType() == JsonValueType::Null, "Absent package field not null.");
 	}
+	// SID-owner analysis: two unresolved owners and two owners without a local profile
+	UserOwnerAnalysis owners;
+	owners.localProfileCheck = LocalProfileCheck::Completed;
+	owners.localUserOwnerRuleCount = 5;
+	owners.unresolvedSidRules.push_back(
+	    {L"bad-sid-rule",
+	     L"Bad SID rule",
+	     L"not-a-sid",
+	     UserOwnerResolveFailure::InvalidSidString,
+	     HRESULT_FROM_WIN32(ERROR_INVALID_SID)});
+	owners.unresolvedSidRules.push_back(
+	    {L"unknown-rule",
+	     nullptr,
+	     L"S-1-5-21-1-2-3-1001",
+	     UserOwnerResolveFailure::AccountLookupFailed,
+	     HRESULT_FROM_WIN32(ERROR_NONE_MAPPED)});
+	owners.missingLocalProfileRules.push_back(
+	    {L"no-profile-rule", L"No profile rule", L"S-1-5-21-1-2-3-1002", L"CONTOSO", L"alice"});
+	owners.missingLocalProfileRules.push_back({L"no-domain-rule", nullptr, L"S-1-5-21-1-2-3-1003", L"", L"bob"});
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WritePackageAnalysisJson(store, PackageAnalysis{}, L"analyze_rules");
+		WriteUserOwnerAnalysisJson(store, owners, L"analyze_rules");
+		const auto ownerStore = stores.GetAt(stores.Size() - 1).GetObject();
+		const auto section = ownerStore.GetNamedObject(L"userOwnerAnalysis");
+		Check(
+		    section.GetNamedString(L"status") == L"completed" &&
+		        section.GetNamedString(L"localProfileCheck") == L"completed",
+		    "SID-owner analysis status incorrect.");
+		Check(
+		    section.GetNamedNumber(L"localUserOwnerRuleCount") == 5 &&
+		        section.GetNamedNumber(L"unresolvedSidRuleCount") == 2 &&
+		        section.GetNamedNumber(L"missingLocalProfileRuleCount") == 2,
+		    "SID-owner analysis counts incorrect.");
+		Check(!section.HasKey(L"diagnostics"), "Completed SID-owner analysis has diagnostics.");
+		Check(
+		    section.HasKey(L"unresolvedSidRules") == verbose && section.HasKey(L"missingLocalProfileRules") == verbose,
+		    "SID-owner rule lists not limited to verbose output.");
+
+		size_t nextStoreKey = 0;
+		const auto ownerStoreText = PrettifyJson(ownerStore);
+		for (const auto* key : {L"store", L"displayName", L"packageAnalysis", L"userOwnerAnalysis", L"status"})
+		{
+			const auto position = ownerStoreText.find(std::wstring(L"\n  \"") + key + L"\":", nextStoreKey);
+			Check(position != std::wstring::npos, "SID-owner analysis is not after packageAnalysis.");
+			nextStoreKey = position + 1;
+		}
+
+		size_t nextKey = 0;
+		const auto sectionText = PrettifyJson(section);
+		for (const auto* key :
+		     {L"status",
+		      L"localUserOwnerRuleCount",
+		      L"unresolvedSidRuleCount",
+		      L"localProfileCheck",
+		      L"missingLocalProfileRuleCount",
+		      L"unresolvedSidRules",
+		      L"missingLocalProfileRules"})
+		{
+			const auto position = sectionText.find(std::wstring(L"\n  \"") + key + L"\":", nextKey);
+			Check(
+			    position != std::wstring::npos || (!verbose && std::wstring_view(key).ends_with(L"Rules")),
+			    "SID-owner analysis fields are missing or not in the required order.");
+			if (position != std::wstring::npos)
+			{
+				nextKey = position + 1;
+			}
+		}
+		Check(JsonObject::Parse(sectionText).Size() == section.Size(), "Ordered formatting lost SID-owner fields.");
+		if (verbose)
+		{
+			const auto unresolved = section.GetNamedArray(L"unresolvedSidRules");
+			Check(unresolved.Size() == 2, "Unresolved SID list incorrect.");
+			const auto invalid = unresolved.GetAt(0).GetObject();
+			Check(
+			    invalid.GetNamedString(L"ruleId") == L"bad-sid-rule" &&
+			        invalid.GetNamedString(L"name") == L"Bad SID rule" &&
+			        invalid.GetNamedString(L"localUserOwnerSid") == L"not-a-sid" &&
+			        invalid.GetNamedString(L"reason") == L"invalid_sid_string" &&
+			        invalid.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070539" && invalid.Size() == 5,
+			    "Invalid SID entry incorrect.");
+			const auto lookup = unresolved.GetAt(1).GetObject();
+			Check(
+			    lookup.GetNamedValue(L"name").ValueType() == JsonValueType::Null &&
+			        lookup.GetNamedString(L"reason") == L"account_lookup_failed" &&
+			        lookup.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070534",
+			    "Account lookup failure entry incorrect.");
+			const auto lookupText = PrettifyJson(lookup);
+			Check(
+			    lookupText.find(L"\"ruleId\"") < lookupText.find(L"\"name\"") &&
+			        lookupText.find(L"\"name\"") < lookupText.find(L"\"localUserOwnerSid\"") &&
+			        lookupText.find(L"\"localUserOwnerSid\"") < lookupText.find(L"\"reason\"") &&
+			        lookupText.find(L"\"reason\"") < lookupText.find(L"\"error\""),
+			    "Unresolved SID entry fields are not in the required order.");
+
+			const auto missing = section.GetNamedArray(L"missingLocalProfileRules");
+			Check(missing.Size() == 2, "Missing local profile list incorrect.");
+			const auto withDomain = missing.GetAt(0).GetObject();
+			Check(
+			    withDomain.GetNamedString(L"ruleId") == L"no-profile-rule" &&
+			        withDomain.GetNamedString(L"name") == L"No profile rule" &&
+			        withDomain.GetNamedString(L"localUserOwnerSid") == L"S-1-5-21-1-2-3-1002" &&
+			        withDomain.GetNamedString(L"domain") == L"CONTOSO" &&
+			        withDomain.GetNamedString(L"user") == L"alice" && withDomain.Size() == 5,
+			    "Missing local profile entry incorrect.");
+			const auto withoutDomain = missing.GetAt(1).GetObject();
+			Check(
+			    withoutDomain.GetNamedString(L"domain").empty() && withoutDomain.GetNamedString(L"user") == L"bob",
+			    "An account without a domain is not an empty domain.");
+			const auto missingText = PrettifyJson(withDomain);
+			Check(
+			    missingText.find(L"\"localUserOwnerSid\"") < missingText.find(L"\"domain\"") &&
+			        missingText.find(L"\"domain\"") < missingText.find(L"\"user\""),
+			    "Missing local profile entry fields are not in the required order.");
+		}
+	}
+
+	// a store with no owner rules still has the section; the local-profile check does not apply to it
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WriteUserOwnerAnalysisJson(store, UserOwnerAnalysis{}, L"analyze_rules");
+		const auto empty = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"userOwnerAnalysis");
+		Check(
+		    empty.GetNamedString(L"status") == L"completed" &&
+		        empty.GetNamedString(L"localProfileCheck") == L"not_applicable" &&
+		        empty.GetNamedNumber(L"localUserOwnerRuleCount") == 0 &&
+		        empty.GetNamedNumber(L"unresolvedSidRuleCount") == 0 && !empty.HasKey(L"missingLocalProfileRuleCount"),
+		    "Empty SID-owner analysis incorrect.");
+		Check(
+		    verbose ? empty.GetNamedArray(L"unresolvedSidRules").Size() == 0 &&
+		                  empty.GetNamedArray(L"missingLocalProfileRules").Size() == 0
+		            : !empty.HasKey(L"unresolvedSidRules") && !empty.HasKey(L"missingLocalProfileRules"),
+		    "Empty SID-owner lists incorrect for the verbosity.");
+	}
+
+	// the local profiles could not be read: the unresolved-SID check still ran
+	UserOwnerAnalysis profilesNotRead;
+	profilesNotRead.localProfileCheck = LocalProfileCheck::Failed;
+	profilesNotRead.localProfilesReadResult = E_ACCESSDENIED;
+	profilesNotRead.localUserOwnerRuleCount = 3;
+	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteUserOwnerAnalysisJson(store, profilesNotRead, L"analyze_rules");
+	const auto partialOwners = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"userOwnerAnalysis");
+	Check(
+	    partialOwners.GetNamedString(L"status") == L"partial" &&
+	        partialOwners.GetNamedString(L"localProfileCheck") == L"failed" &&
+	        partialOwners.GetNamedNumber(L"localUserOwnerRuleCount") == 3 &&
+	        !partialOwners.HasKey(L"missingLocalProfileRuleCount"),
+	    "Partial SID-owner analysis incorrect.");
+	const auto profileDiagnostic = partialOwners.GetNamedArray(L"diagnostics").GetAt(0).GetObject();
+	Check(
+	    profileDiagnostic.GetNamedString(L"code") == L"local_profiles_not_read" &&
+	        profileDiagnostic.GetNamedString(L"operation") == L"read_profile_list" &&
+	        profileDiagnostic.GetNamedObject(L"subject").GetNamedString(L"property") == L"localProfiles" &&
+	        profileDiagnostic.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070005",
+	    "Local profile read failure diagnostic incorrect.");
+	const auto partialText = PrettifyJson(partialOwners);
+	Check(
+	    partialText.find(L"\"localProfileCheck\"") < partialText.find(L"\"unresolvedSidRules\"") &&
+	        partialText.find(L"\"missingLocalProfileRules\"") < partialText.find(L"\"diagnostics\""),
+	    "Partial SID-owner fields out of order.");
+
+	// every string field of a finding can be absent
+	UserOwnerAnalysis nullOwnerFields;
+	nullOwnerFields.localProfileCheck = LocalProfileCheck::Completed;
+	nullOwnerFields.unresolvedSidRules.push_back({});
+	nullOwnerFields.missingLocalProfileRules.push_back({.domain = nullptr, .user = nullptr});
+	WriteUserOwnerAnalysisJson(store, nullOwnerFields, L"analyze_rules");
+	const auto nullOwners = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"userOwnerAnalysis");
+	const auto nullUnresolved = nullOwners.GetNamedArray(L"unresolvedSidRules").GetAt(0).GetObject();
+	for (const auto* key : {L"ruleId", L"name", L"localUserOwnerSid"})
+	{
+		Check(nullUnresolved.GetNamedValue(key).ValueType() == JsonValueType::Null, "Absent SID-owner field not null.");
+	}
+	const auto nullMissing = nullOwners.GetNamedArray(L"missingLocalProfileRules").GetAt(0).GetObject();
+	for (const auto* key : {L"ruleId", L"name", L"localUserOwnerSid", L"domain", L"user"})
+	{
+		Check(nullMissing.GetNamedValue(key).ValueType() == JsonValueType::Null, "Absent profile field not null.");
+	}
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
 	const auto readRunStatus = [&]()
@@ -637,7 +820,8 @@ try
 	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::StoppedEarly);
 	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
 
-	std::printf("Profile, rule-status, application-analysis, and package-analysis JSON tests passed.\n");
+	std::printf(
+	    "Profile, rule-status, application-analysis, package-analysis, and SID-owner-analysis JSON tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)

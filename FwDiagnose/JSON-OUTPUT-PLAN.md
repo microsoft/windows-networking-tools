@@ -418,7 +418,7 @@ This document is a plan, not an implementation of the feature. The design uses s
 
 Status: approved and implemented for firewall-profile configuration.
 
-The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, and per-store app-package analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
+The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, and per-store SID-owner analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
 
 ```powershell
 .\FwDiagnose\x64\Debug\FwDiagnose.exe -analyze-rules -json .\firewall-profiles.json
@@ -734,3 +734,71 @@ The list heading previously read "unique rule names of rules with a package ID r
 - Only non-empty references are counted. A 2.27 rule cannot carry a package family name, so it is never counted as having one.
 - If the installed packages could not be loaded, no rule is checked: `status` is `failed`, there are no counts or lists, and `diagnostics` has one entry with `code: "app_packages_not_loaded"`, `operation: "load_app_packages"`, and the load `error`.
 - Field order: `status`, `packageIdRuleCount`, `missingPackageIdRuleCount`, `packageFamilyNameRuleCount`, `missingPackageFamilyNameRuleCount`, `missingPackageIdRules`, `missingPackageFamilyNameRules`, `diagnostics`. Rule entries in every analysis: `ruleId`, `name`, `application`, `packageId`, `packageFamilyName`, `reason`, `status`, `statusHex`, `error`. This also fixes the order of rule-status entries, which was previously arbitrary.
+
+### Review 5: `-analyze-rules` - SID-owner analysis per policy store
+
+Status: approved and implemented.
+
+`CheckUnresolvedUserAccountRules()` builds one analysis per store with `AnalyzeUserOwnerRules()`; the console and JSON are both written from it. The following values are illustrative.
+
+#### Console with `-verbose`
+
+```text
+  * Summary of SID owner analysis of firewall rules:
+   - count of rules with LocalUserOwner SID: 3690
+   - count of rules with LocalUserOwner SID referencing unresolved SID: 2
+   - count of rules with LocalUserOwner SID referencing non-existing local profile: 2
+   - rules with unresolved SIDs:
+     Unresolved SID:  'not-a-sid'  (Failed to convert string SID to SID (0x80070539))  [Rule Name:  bad sid rule]
+     Unresolved SID:  'S-1-5-21-1-2-3-1001'  (Failed to lookup account SID (0x80070534))  [(no Rule Name) RuleId:  unknown-rule]
+   - rules with no local profile:
+     SID:  'S-1-5-21-1-2-3-1002' (CONTOSO\alice)  [Rule Name:  no profile rule]
+     SID:  'S-1-5-21-1-2-3-1003' (bob)  [(no Rule Name) RuleId:  no-domain-rule]
+```
+
+- Failure codes print in 8-digit form, and the failure text no longer has padding spaces. The `-clean-rules` deletion prompt uses the same text.
+- List headings are indented like the counts, and each missing-profile finding is on one line. The domain is omitted when the account has none.
+- The local-profile count prints only for stores where the check ran (Application-Isolation and Interface-Isolation).
+- Without `-verbose`, the summary prints only when something was found.
+- If the local profiles could not be read, the console prints `  * Skipping the local-profile check: local profiles could not be read (0x80070005)` and the run continues; previously the error ended the run. Unresolved owners are still reported.
+
+#### JSON with `-verbose`
+
+`userOwnerAnalysis` is added to the store record after `packageAnalysis`:
+
+```json
+"userOwnerAnalysis": {
+  "status": "completed",
+  "localUserOwnerRuleCount": 3690,
+  "unresolvedSidRuleCount": 2,
+  "localProfileCheck": "completed",
+  "missingLocalProfileRuleCount": 2,
+  "unresolvedSidRules": [
+    {
+      "ruleId": "bad-sid-rule",
+      "name": "Bad SID rule",
+      "localUserOwnerSid": "not-a-sid",
+      "reason": "invalid_sid_string",
+      "error": { "domain": "hresult", "code": 2147943737, "hex": "0x80070539" }
+    },
+    {
+      "ruleId": "unknown-rule",
+      "name": null,
+      "localUserOwnerSid": "S-1-5-21-1-2-3-1001",
+      "reason": "account_lookup_failed",
+      "error": { "domain": "hresult", "code": 2147943732, "hex": "0x80070534" }
+    }
+  ],
+  "missingLocalProfileRules": [
+    { "ruleId": "no-profile-rule", "name": "No profile rule", "localUserOwnerSid": "S-1-5-21-1-2-3-1002", "domain": "CONTOSO", "user": "alice" },
+    { "ruleId": "no-domain-rule", "name": null, "localUserOwnerSid": "S-1-5-21-1-2-3-1003", "domain": "", "user": "bob" }
+  ]
+}
+```
+
+- `userOwnerAnalysis` is present for every store whose rules were analyzed, even when all counts are zero.
+- Without `-verbose`, both lists are omitted.
+- `localProfileCheck` is `completed`, `not_applicable` (stores other than Application-Isolation and Interface-Isolation), or `failed`. `missingLocalProfileRuleCount` is present only when it is `completed`.
+- If the local profiles could not be read, `status` is `partial`, `localProfileCheck` is `failed`, and `diagnostics` has one entry with `code: "local_profiles_not_read"`, `operation: "read_profile_list"`, `subject.property: "localProfiles"`, and the read `error`. The unresolved-SID count and list are still present.
+- `ruleId`, `name`, `localUserOwnerSid`, `domain`, and `user` are `null` when absent. An account without a domain has `domain: ""`.
+- Field order: `status`, `localUserOwnerRuleCount`, `unresolvedSidRuleCount`, `localProfileCheck`, `missingLocalProfileRuleCount`, `unresolvedSidRules`, `missingLocalProfileRules`, `diagnostics`. Rule entries in every analysis: `ruleId`, `name`, `application`, `packageId`, `packageFamilyName`, `localUserOwnerSid`, `domain`, `user`, `reason`, `status`, `statusHex`, `error`.

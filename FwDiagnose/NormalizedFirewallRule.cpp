@@ -1152,7 +1152,7 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 		local_application_exists = false;
 		local_application_lookup_error = HRESULT_FROM_WIN32(gle);
 		local_application_failure_string =
-		    std::format("Failed to find the file (0x{:x})", static_cast<uint32_t>(local_application_lookup_error));
+		    std::format("Failed to find the file (0x{:08X})", static_cast<uint32_t>(local_application_lookup_error));
 	}
 
 	else
@@ -1183,9 +1183,10 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 			    HRESULT_FROM_WIN32(gle));
 		}
 		successfully_resolved_user_name = false;
-		resolve_name_failure_string = std::format(
-		    " Failed to convert string SID to SID (0x{:x}) ",
-		    static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
+		resolve_name_failure = UserOwnerResolveFailure::InvalidSidString;
+		resolve_name_error = HRESULT_FROM_WIN32(gle);
+		resolve_name_failure_string =
+		    std::format("Failed to convert string SID to SID (0x{:08X})", static_cast<uint32_t>(resolve_name_error));
 		return;
 	}
 
@@ -1225,9 +1226,10 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 				}
 
 				successfully_resolved_user_name = false;
-				resolve_name_failure_string = std::format(
-				    " Failed to lookup account SID (0x{:x}) ",
-				    static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
+				resolve_name_failure = UserOwnerResolveFailure::AccountLookupFailed;
+				resolve_name_error = HRESULT_FROM_WIN32(gle);
+				resolve_name_failure_string =
+				    std::format("Failed to lookup account SID (0x{:08X})", static_cast<uint32_t>(resolve_name_error));
 				return;
 			}
 
@@ -1267,8 +1269,10 @@ NormalizedFirewallRule::ProcessLocalUserSid()
 			}
 
 			successfully_resolved_user_name = false;
+			resolve_name_failure = UserOwnerResolveFailure::AccountLookupFailed;
+			resolve_name_error = HRESULT_FROM_WIN32(gle);
 			resolve_name_failure_string =
-			    std::format(" Failed to lookup account SID (0x{:x}) ", static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
+			    std::format("Failed to lookup account SID (0x{:08X})", static_cast<uint32_t>(resolve_name_error));
 		}
 	}
 	else

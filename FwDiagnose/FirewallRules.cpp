@@ -1355,9 +1355,10 @@ DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Nor
 }
 
 static void
-CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_rules, FW_STORE_TYPE store_type)
+CheckUnresolvedUserAccountRules(FirewallPolicyObjects& policy)
 {
-	const bool check_for_local_profile = store_type == FW_STORE_TYPE_APP_ISO || store_type == FW_STORE_TYPE_IF_ISO;
+	const bool check_for_local_profile =
+	    policy.store_type == FW_STORE_TYPE_APP_ISO || policy.store_type == FW_STORE_TYPE_IF_ISO;
 
 	/*
 		 * If a SID references a non-existing user account for an App-Isolation or Interface-Isolation rule, flag it to be deleted
@@ -1470,7 +1471,7 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 		return std::make_tuple(localUserDomainName, localUserOwnerName);
 	};
 
-	std::vector<std::wstring> local_profile_sids;
+	LocalProfiles local_profiles;
 	if (check_for_local_profile)
 	{
 		if (VerboseOutputEnabled())
@@ -1487,34 +1488,46 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 			std::printf("  * Querying local user profiles from the registry...\n");
 		}
 
-		const auto profile_key = wil::reg::open_unique_key(
-		    HKEY_LOCAL_MACHINE,
-		    LR"(Software\Microsoft\Windows NT\CurrentVersion\ProfileList)");
-		for (const auto& key_data :
-		     wil::make_range(wil::reg::key_iterator{profile_key.get()}, wil::reg::key_iterator{}))
+		try
 		{
-			auto profile_sid = key_data.name;
-			const auto optional_name_conversion = convert_sid_to_name(profile_sid.c_str());
-			if (optional_name_conversion.has_value())
+			const auto profile_key = wil::reg::open_unique_key(
+			    HKEY_LOCAL_MACHINE,
+			    LR"(Software\Microsoft\Windows NT\CurrentVersion\ProfileList)");
+			for (const auto& key_data :
+			     wil::make_range(wil::reg::key_iterator{profile_key.get()}, wil::reg::key_iterator{}))
 			{
-				const auto& [domain_name, user_name] = optional_name_conversion.value();
-				if (DebugOutputEnabled())
+				auto profile_sid = key_data.name;
+				const auto optional_name_conversion = convert_sid_to_name(profile_sid.c_str());
+				if (optional_name_conversion.has_value())
 				{
-					std::printf(
-					    "    Local profile SID: %ls  (%ls\\%ls)\n",
-					    profile_sid.c_str(),
-					    domain_name.c_str(),
-					    user_name.c_str());
+					const auto& [domain_name, user_name] = optional_name_conversion.value();
+					if (DebugOutputEnabled())
+					{
+						std::printf(
+						    "    Local profile SID: %ls  (%ls\\%ls)\n",
+						    profile_sid.c_str(),
+						    domain_name.c_str(),
+						    user_name.c_str());
+					}
+					local_profiles.sids.emplace_back(std::move(profile_sid));
 				}
-				local_profile_sids.emplace_back(std::move(profile_sid));
-			}
-			else
-			{
-				if (DebugOutputEnabled())
+				else
 				{
-					std::printf("    Local profile SID: %ls  (Failed to resolve the SID)\n", profile_sid.c_str());
+					if (DebugOutputEnabled())
+					{
+						std::printf("    Local profile SID: %ls  (Failed to resolve the SID)\n", profile_sid.c_str());
+					}
 				}
 			}
+			local_profiles.check = LocalProfileCheck::Completed;
+		}
+		catch (...)
+		{
+			// without the profile list, every owner would look like it has no local profile
+			local_profiles.check = LocalProfileCheck::Failed;
+			local_profiles.readResult = wil::ResultFromCaughtException();
+			local_profiles.sids.clear();
+			RecordOperationFailure(local_profiles.readResult);
 		}
 
 		if (DebugOutputEnabled())
@@ -1523,106 +1536,30 @@ CheckUnresolvedUserAccountRules(std::vector<NormalizedFirewallRule>& normalized_
 		}
 	}
 
-	size_t count_of_rules_with_local_user_owner = 0;
-	std::vector<std::wstring> rules_with_unknown_sid_owners;
-	std::vector<std::wstring> rules_with_no_local_profile;
-	for (auto& rule : normalized_rules)
+	const auto analysis = AnalyzeUserOwnerRules(policy.normalizedRules, local_profiles);
+	if (DebugOutputEnabled())
 	{
-		if (!rule.successfully_resolved_user_name.has_value())
+		for (const auto& rule : policy.normalizedRules)
 		{
-			continue;
-		}
-
-		++count_of_rules_with_local_user_owner;
-
-		if (!rule.successfully_resolved_user_name.value())
-		{
-			rule.unresolve_user_sid = true;
-			rules_with_unknown_sid_owners.emplace_back(
-			    wil::str_printf<std::wstring>(
-			        L"    Unresolved SID:  '%ls'%hs[%ls:  %ls]\n",
-			        rule.fw_rule->wszLocalUserOwner,
-			        rule.resolve_name_failure_string.c_str(),
-			        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-			        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
-		}
-		else if (check_for_local_profile)
-		{
-			// name resolved - check if there's a matching local profile
-			const auto found_local_user_owner_profile = std::ranges::find_if(
-			    local_profile_sids,
-			    [&](const std::wstring& sid)
-			    {
-				    return _wcsicmp(sid.c_str(), rule.fw_rule->wszLocalUserOwner) == 0;
-			    });
-
-			if (found_local_user_owner_profile == local_profile_sids.cend())
+			if (rule.successfully_resolved_user_name_with_local_profile.value_or(false))
 			{
-				rule.successfully_resolved_user_name_with_local_profile = false;
-				rules_with_no_local_profile.emplace_back(
-				    wil::str_printf<std::wstring>(
-				        L"    Rule with a SID that failed to verify its local profile:  '%ls' (%ls\\%ls)\n"
-				        L"      [%ls:  %ls]\n",
-				        rule.fw_rule->wszLocalUserOwner,
-				        rule.local_user_domain_name.c_str(),
-				        rule.local_user_owner_name.c_str(),
-				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
-			}
-			else
-			{
-				rule.successfully_resolved_user_name_with_local_profile = true;
-				if (DebugOutputEnabled())
-				{
-					std::printf(
-					    "    Rule with a SID matching a local profile:  '%ls' (%ls\\%ls)\n"
-					    "      [%ls:  %ls]\n",
-					    rule.fw_rule->wszLocalUserOwner,
-					    rule.local_user_domain_name.c_str(),
-					    rule.local_user_owner_name.c_str(),
-					    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-					    rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str());
-				}
+				std::printf(
+				    "    Rule with a SID matching a local profile:  '%ls' (%ls\\%ls)\n"
+				    "      [%ls:  %ls]\n",
+				    rule.fw_rule->wszLocalUserOwner,
+				    rule.local_user_domain_name.c_str(),
+				    rule.local_user_owner_name.c_str(),
+				    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+				    rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str());
 			}
 		}
 	}
 
-	if (VerboseOutputEnabled() || !rules_with_unknown_sid_owners.empty() || !rules_with_no_local_profile.empty())
-	{
-		std::printf("  * Summary of SID owner analysis of firewall rules:\n");
-		std::printf("   - count of rules with LocalUserOwner SID: %zu\n", count_of_rules_with_local_user_owner);
-		std::printf(
-		    "   - count of rules with LocalUserOwner SID referencing unresolved SID: %zu\n",
-		    rules_with_unknown_sid_owners.size());
-
-		if (check_for_local_profile)
-		{
-			std::printf(
-			    "   - count of rules with LocalUserOwner SID referencing non-existing local profile: %zu\n",
-			    rules_with_no_local_profile.size());
-		}
-
-		if (VerboseOutputEnabled())
-		{
-			if (!rules_with_unknown_sid_owners.empty())
-			{
-				std::printf("     - rules with unresolved SIDs:\n");
-			}
-			for (const auto& error_string : rules_with_unknown_sid_owners)
-			{
-				std::printf("     %ls", error_string.c_str());
-			}
-
-			if (!rules_with_no_local_profile.empty())
-			{
-				std::printf("     - rules with no local profile:\n");
-			}
-			for (const auto& error_string : rules_with_no_local_profile)
-			{
-				std::printf("     %ls", error_string.c_str());
-			}
-		}
-	}
+	WriteUserOwnerAnalysisJson(policy, analysis, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
+	std::printf(
+	    "%ls",
+	    PrintUserOwnerAnalysis(analysis, VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary)
+	        .c_str());
 }
 
 static void
@@ -1653,7 +1590,7 @@ DeleteUnresolvedUserAccountRules(
 		{
 			rule_to_delete = wil::str_printf<std::wstring>(
 			    L"\n"
-			    L"  - Unresolved SID '%ls'%hs[%ls:  %ls]\n",
+			    L"  - Unresolved SID '%ls'  (%hs)  [%ls:  %ls]\n",
 			    rule.fw_rule->wszLocalUserOwner,
 			    rule.resolve_name_failure_string.c_str(),
 			    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
@@ -2535,7 +2472,7 @@ ProcessFirewallRules()
 				std::printf("\n");
 			}
 			timer.start("CheckUnresolvedUserAccountRules");
-			details::CheckUnresolvedUserAccountRules(policy.normalizedRules, policy.store_type);
+			details::CheckUnresolvedUserAccountRules(policy);
 			timer.end();
 
 			if (CleanBrokenRulesEnabled())

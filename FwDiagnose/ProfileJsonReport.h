@@ -10,6 +10,7 @@
 
 #include "ApplicationAnalysis.h"
 #include "PackageAnalysis.h"
+#include "UserOwnerAnalysis.h"
 
 struct FirewallPolicyObjects;
 struct NormalizedFirewallRule;
@@ -91,3 +92,6 @@ WriteApplicationAnalysisJson(const FirewallPolicyObjects& policy, const Applicat
 // adds packageAnalysis to the store record that WriteFirewallRuleStatusJson already wrote for this command
 void
 WritePackageAnalysisJson(const FirewallPolicyObjects& policy, const PackageAnalysis& analysis, PCWSTR command);
+// adds userOwnerAnalysis to the store record that WriteFirewallRuleStatusJson already wrote for this command
+void
+WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerAnalysis& analysis, PCWSTR command);

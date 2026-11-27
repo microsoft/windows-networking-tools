@@ -181,8 +181,8 @@ ReturnJsonResultObject(PCWSTR command)
 	pending.SetNamedValue(
 	    L"message",
 	    String(
-	        L"Firewall-profile configuration, rule-status analysis, application analysis, and app-package analysis are "
-	        	        L"exported. Other console output for this command is not yet exported."));
+	        L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, and "
+	        L"SID-owner analysis are exported. Other console output for this command is not yet exported."));
 
 	JsonArray diagnostics;
 	diagnostics.Append(pending);
@@ -299,6 +299,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                         L"ruleDetails",
 		                                         L"applicationAnalysis",
 		                                         L"packageAnalysis",
+		                                         L"userOwnerAnalysis",
 		                                         L"ruleCount",
 		                                         L"status",
 		                                         L"reason",
@@ -323,11 +324,23 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                                   L"missingPackageFamilyNameRules",
 		                                                   L"diagnostics"};
 
+		constexpr std::wstring_view userOwnerAnalysisOrder[]{L"status",
+		                                                     L"localUserOwnerRuleCount",
+		                                                     L"unresolvedSidRuleCount",
+		                                                     L"localProfileCheck",
+		                                                     L"missingLocalProfileRuleCount",
+		                                                     L"unresolvedSidRules",
+		                                                     L"missingLocalProfileRules",
+		                                                     L"diagnostics"};
+
 		constexpr std::wstring_view ruleEntryOrder[]{L"ruleId",
 		                                             L"name",
 		                                             L"application",
 		                                             L"packageId",
 		                                             L"packageFamilyName",
+		                                             L"localUserOwnerSid",
+		                                             L"domain",
+		                                             L"user",
 		                                             L"reason",
 		                                             L"status",
 		                                             L"statusHex",
@@ -357,6 +370,10 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		else if (object.HasKey(L"applicationRuleCount"))
 		{
 			fieldOrder = applicationAnalysisOrder;
+		}
+		else if (object.HasKey(L"localUserOwnerRuleCount"))
+		{
+			fieldOrder = userOwnerAnalysisOrder;
 		}
 		else if (
 		    object.HasKey(L"packageIdRuleCount") ||
@@ -918,4 +935,94 @@ WritePackageAnalysisJson(const FirewallPolicyObjects& policy, const PackageAnaly
 	}
 
 	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"packageAnalysis", section);
+}
+
+void
+WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerAnalysis& analysis, PCWSTR command)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	const auto nullableString = [](PCWSTR value)
+	{
+		return value ? String(value) : JsonValue::CreateNullValue();
+	};
+	const auto count = [](size_t value)
+	{
+		return JsonValue::CreateNumberValue(static_cast<double>(value));
+	};
+
+	JsonObject section;
+	// a failed local-profile check leaves part of the analysis undone
+	section.SetNamedValue(
+	    L"status",
+	    String(analysis.localProfileCheck == LocalProfileCheck::Failed ? L"partial" : L"completed"));
+	section.SetNamedValue(L"localUserOwnerRuleCount", count(analysis.localUserOwnerRuleCount));
+	section.SetNamedValue(L"unresolvedSidRuleCount", count(analysis.unresolvedSidRules.size()));
+	switch (analysis.localProfileCheck)
+	{
+	case LocalProfileCheck::NotApplicable:
+	{
+		section.SetNamedValue(L"localProfileCheck", String(L"not_applicable"));
+		break;
+	}
+	case LocalProfileCheck::Completed:
+	{
+		section.SetNamedValue(L"localProfileCheck", String(L"completed"));
+		section.SetNamedValue(L"missingLocalProfileRuleCount", count(analysis.missingLocalProfileRules.size()));
+		break;
+	}
+	case LocalProfileCheck::Failed:
+	{
+		section.SetNamedValue(L"localProfileCheck", String(L"failed"));
+		auto diagnostic = ReturnJsonDiagnosticObject(
+		    L"localProfiles",
+		    L"read_profile_list",
+		    analysis.localProfilesReadResult,
+		    L"The local profile list could not be read from the registry, so no rule owner was checked for a local "
+		    L"profile.");
+		diagnostic.SetNamedValue(L"code", String(L"local_profiles_not_read"));
+		JsonArray diagnostics;
+		diagnostics.Append(diagnostic);
+		section.SetNamedValue(L"diagnostics", diagnostics);
+		break;
+	}
+	}
+
+	if (g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose"))
+	{
+		JsonArray unresolved;
+		for (const auto& finding : analysis.unresolvedSidRules)
+		{
+			JsonObject entry;
+			entry.SetNamedValue(L"ruleId", nullableString(finding.ruleId));
+			entry.SetNamedValue(L"name", nullableString(finding.name));
+			entry.SetNamedValue(L"localUserOwnerSid", nullableString(finding.localUserOwnerSid));
+			entry.SetNamedValue(
+			    L"reason",
+			    String(
+			        finding.reason == UserOwnerResolveFailure::InvalidSidString ? L"invalid_sid_string"
+			                                                                    : L"account_lookup_failed"));
+			entry.SetNamedValue(L"error", ReturnJsonErrorObject(finding.error));
+			unresolved.Append(entry);
+		}
+		section.SetNamedValue(L"unresolvedSidRules", unresolved);
+
+		JsonArray missing;
+		for (const auto& finding : analysis.missingLocalProfileRules)
+		{
+			JsonObject entry;
+			entry.SetNamedValue(L"ruleId", nullableString(finding.ruleId));
+			entry.SetNamedValue(L"name", nullableString(finding.name));
+			entry.SetNamedValue(L"localUserOwnerSid", nullableString(finding.localUserOwnerSid));
+			entry.SetNamedValue(L"domain", nullableString(finding.domain));
+			entry.SetNamedValue(L"user", nullableString(finding.user));
+			missing.Append(entry);
+		}
+		section.SetNamedValue(L"missingLocalProfileRules", missing);
+	}
+
+	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"userOwnerAnalysis", section);
 }

@@ -17,6 +17,7 @@
 #include "..\NormalizedFirewallRule.h"
 #include "..\ApplicationAnalysis.h"
 #include "..\PackageAnalysis.h"
+#include "..\UserOwnerAnalysis.h"
 
 bool
 VerboseOutputEnabled() noexcept
@@ -835,6 +836,191 @@ TestPackageAnalysisWithNullFindingFields()
 	        .ends_with(L"     Package-ID:  '(none)'  [(no Rule Name) RuleId:  (none)]\n"),
 	    "a finding without a rule ID or package prints placeholders");
 }
+wchar_t g_user_rule_ids[6][16]{
+    L"{USER-RULE-0}", L"{USER-RULE-1}", L"{USER-RULE-2}", L"{USER-RULE-3}", L"{USER-RULE-4}", L"{USER-RULE-5}"};
+wchar_t g_invalid_sid[] = L"not-a-sid";
+wchar_t g_unmapped_sid[] = L"S-1-5-21-1-2-3-1001";
+wchar_t g_no_profile_sid[] = L"S-1-5-21-1-2-3-1002";
+wchar_t g_no_profile_no_domain_sid[] = L"S-1-5-21-1-2-3-1003";
+wchar_t g_invalid_sid_rule_name[] = L"Bad SID rule";
+wchar_t g_no_profile_rule_name[] = L"No profile rule";
+
+constexpr PCWSTR UserOwnerSummaryHeader = L"  * Summary of SID owner analysis of firewall rules:\n";
+constexpr PCWSTR UserOwnerSkipLine =
+    L"  * Skipping the local-profile check: local profiles could not be read (0x80070005)\n";
+
+std::wstring
+UserOwnerCounts(size_t ownerRules, size_t unresolvedRules)
+{
+	return std::wstring{UserOwnerSummaryHeader} +
+	       std::format(L"   - count of rules with LocalUserOwner SID: {}\n", ownerRules) +
+	       std::format(
+	           L"   - count of rules with LocalUserOwner SID referencing unresolved SID: {}\n",
+	           unresolvedRules);
+}
+
+std::wstring
+MissingProfileCount(size_t missingRules)
+{
+	return std::format(
+	    L"   - count of rules with LocalUserOwner SID referencing non-existing local profile: {}\n",
+	    missingRules);
+}
+
+void
+TestUserOwnerAnalysisWithNoOwnerRules()
+{
+	auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+	std::vector<NormalizedFirewallRule> rules;
+	rules.emplace_back(&fw_rule, FW_BINARY_VERSION_33);
+
+	const auto notApplicable = AnalyzeUserOwnerRules(rules, {});
+	Check(
+	    notApplicable.localUserOwnerRuleCount == 0 && notApplicable.unresolvedSidRules.empty() &&
+	        notApplicable.missingLocalProfileRules.empty(),
+	    "a rule without an owner is not counted");
+	Check(PrintUserOwnerAnalysis(notApplicable, AnalysisOutput::Summary).empty(), "the summary prints nothing");
+	Check(
+	    PrintUserOwnerAnalysis(notApplicable, AnalysisOutput::Verbose) == UserOwnerCounts(0, 0),
+	    "verbose output prints zero counts without the local-profile count when the check does not apply");
+
+	const auto completed = AnalyzeUserOwnerRules(rules, {.check = LocalProfileCheck::Completed});
+	Check(
+	    PrintUserOwnerAnalysis(completed, AnalysisOutput::Verbose) == UserOwnerCounts(0, 0) + MissingProfileCount(0),
+	    "verbose output prints the local-profile count when the check completed");
+	Check(
+	    !rules[0].successfully_resolved_user_name_with_local_profile.has_value() && !rules[0].unresolve_user_sid,
+	    "a rule without an owner is not flagged");
+
+	const auto failed =
+	    AnalyzeUserOwnerRules(rules, {.check = LocalProfileCheck::Failed, .readResult = E_ACCESSDENIED});
+	Check(
+	    PrintUserOwnerAnalysis(failed, AnalysisOutput::Summary) == UserOwnerSkipLine,
+	    "the summary prints only the skip line when the profiles could not be read");
+	Check(
+	    PrintUserOwnerAnalysis(failed, AnalysisOutput::Verbose) == UserOwnerSkipLine + UserOwnerCounts(0, 0),
+	    "verbose output prints the skip line and counts without the local-profile count");
+}
+
+void
+TestUserOwnerAnalysisWithEveryKindOfOwnerRule()
+{
+	FW_RULE fw_rules[6]{};
+	for (size_t index = 0; index < std::size(fw_rules); ++index)
+	{
+		fw_rules[index] = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rules[index].wszRuleId = g_user_rule_ids[index];
+	}
+	// fw_rules[0] has no owner; fw_rules[1] has an owner that is not a SID string
+	fw_rules[1].wszLocalUserOwner = g_invalid_sid;
+	fw_rules[1].wszName = g_invalid_sid_rule_name;
+	fw_rules[4].wszName = g_no_profile_rule_name;
+
+	std::vector<NormalizedFirewallRule> rules;
+	for (const auto& fw_rule : fw_rules)
+	{
+		rules.emplace_back(&fw_rule, FW_BINARY_VERSION_33);
+	}
+	Check(
+	    rules[1].resolve_name_failure == UserOwnerResolveFailure::InvalidSidString &&
+	        rules[1].resolve_name_error == HRESULT_FROM_WIN32(ERROR_INVALID_SID),
+	    "an owner that is not a SID string records why it was not resolved");
+
+	// the remaining owners are set after normalization so the test does not depend on account lookups
+	const auto setOwner = [&](size_t index, PWSTR sid, bool resolved, PCWSTR domain, PCWSTR user)
+	{
+		fw_rules[index].wszLocalUserOwner = sid;
+		rules[index].successfully_resolved_user_name = resolved;
+		rules[index].local_user_domain_name = domain;
+		rules[index].local_user_owner_name = user;
+	};
+	// fw_rules[2] has a SID with no account, and no name
+	setOwner(2, g_unmapped_sid, false, L"", L"");
+	rules[2].resolve_name_failure = UserOwnerResolveFailure::AccountLookupFailed;
+	rules[2].resolve_name_error = HRESULT_FROM_WIN32(ERROR_NONE_MAPPED);
+	rules[2].resolve_name_failure_string = "Failed to lookup account SID (0x80070534)";
+	// fw_rules[3] has a local profile; fw_rules[4] and fw_rules[5] do not
+	setOwner(3, g_system_sid, true, L"NT AUTHORITY", L"SYSTEM");
+	setOwner(4, g_no_profile_sid, true, L"CONTOSO", L"alice");
+	setOwner(5, g_no_profile_no_domain_sid, true, L"", L"bob");
+
+	// profile SIDs compare case-insensitively
+	const LocalProfiles profiles{.check = LocalProfileCheck::Completed, .sids = {L"s-1-5-18"}};
+	const auto analysis = AnalyzeUserOwnerRules(rules, profiles);
+	Check(analysis.localUserOwnerRuleCount == 5, "every rule with an owner is counted");
+	Check(
+	    rules[1].unresolve_user_sid && rules[2].unresolve_user_sid && !rules[3].unresolve_user_sid,
+	    "unresolved owners are flagged on the rules");
+	Check(
+	    rules[3].successfully_resolved_user_name_with_local_profile == true &&
+	        rules[4].successfully_resolved_user_name_with_local_profile == false &&
+	        rules[5].successfully_resolved_user_name_with_local_profile == false &&
+	        !rules[1].successfully_resolved_user_name_with_local_profile.has_value(),
+	    "resolved owners are flagged with whether they have a local profile");
+	if (analysis.unresolvedSidRules.size() == 2 && analysis.missingLocalProfileRules.size() == 2)
+	{
+		const auto& invalid = analysis.unresolvedSidRules[0];
+		Check(
+		    std::wstring_view{invalid.name} == g_invalid_sid_rule_name &&
+		        invalid.reason == UserOwnerResolveFailure::InvalidSidString,
+		    "the finding keeps the stored rule name and the reason");
+		const auto& lookup = analysis.unresolvedSidRules[1];
+		Check(
+		    lookup.name == nullptr && lookup.reason == UserOwnerResolveFailure::AccountLookupFailed &&
+		        lookup.error == HRESULT_FROM_WIN32(ERROR_NONE_MAPPED),
+		    "a failed lookup keeps its error");
+		const auto& missing = analysis.missingLocalProfileRules[0];
+		Check(
+		    std::wstring_view{missing.localUserOwnerSid} == g_no_profile_sid &&
+		        std::wstring_view{missing.domain} == L"CONTOSO" && std::wstring_view{missing.user} == L"alice",
+		    "the finding keeps the SID and account");
+	}
+	else
+	{
+		Check(false, "two unresolved owners and two owners without a local profile are reported");
+	}
+
+	const auto counts = UserOwnerCounts(5, 2) + MissingProfileCount(2);
+	Check(
+	    PrintUserOwnerAnalysis(analysis, AnalysisOutput::Summary) == counts,
+	    "the summary prints counts without the lists");
+	Check(
+	    PrintUserOwnerAnalysis(analysis, AnalysisOutput::Verbose) ==
+	        counts + L"   - rules with unresolved SIDs:\n" +
+	            L"     Unresolved SID:  'not-a-sid'  (Failed to convert string SID to SID (0x80070539))  "
+	            L"[Rule Name:  bad sid rule]\n" +
+	            L"     Unresolved SID:  'S-1-5-21-1-2-3-1001'  (Failed to lookup account SID (0x80070534))  "
+	            L"[(no Rule Name) RuleId:  {USER-RULE-2}]\n" +
+	            L"   - rules with no local profile:\n" +
+	            L"     SID:  'S-1-5-21-1-2-3-1002' (CONTOSO\\alice)  [Rule Name:  no profile rule]\n" +
+	            L"     SID:  'S-1-5-21-1-2-3-1003' (bob)  [(no Rule Name) RuleId:  {USER-RULE-5}]\n",
+	    "verbose output lists unresolved owners, then owners without a local profile");
+
+	const auto failed =
+	    AnalyzeUserOwnerRules(rules, {.check = LocalProfileCheck::Failed, .readResult = E_ACCESSDENIED});
+	Check(
+	    failed.unresolvedSidRules.size() == 2 && failed.missingLocalProfileRules.empty(),
+	    "unresolved owners are still reported when the profiles could not be read");
+	Check(
+	    PrintUserOwnerAnalysis(failed, AnalysisOutput::Summary) == UserOwnerSkipLine + UserOwnerCounts(5, 2),
+	    "the summary prints the skip line and counts without the local-profile count");
+}
+
+void
+TestUserOwnerAnalysisWithNullFindingFields()
+{
+	UserOwnerAnalysis analysis;
+	analysis.localProfileCheck = LocalProfileCheck::Completed;
+	analysis.unresolvedSidRules.push_back({});
+	analysis.missingLocalProfileRules.push_back({});
+	const auto printed = PrintUserOwnerAnalysis(analysis, AnalysisOutput::Verbose);
+	Check(
+	    printed.find(L"     Unresolved SID:  '(none)'  ()  [(no Rule Name) RuleId:  (none)]\n") != std::wstring::npos,
+	    "an unresolved finding without a rule ID or SID prints placeholders");
+	Check(
+	    printed.ends_with(L"     SID:  '(none)' ((empty))  [(no Rule Name) RuleId:  (none)]\n"),
+	    "a missing-profile finding without a rule ID, SID, or account prints placeholders");
+}
 } // namespace
 int
 wmain()
@@ -855,6 +1041,9 @@ wmain()
 	TestPackageAnalysisWithNoPackageRules();
 	TestPackageAnalysisWithEveryKindOfPackageRule();
 	TestPackageAnalysisWithNullFindingFields();
+	TestUserOwnerAnalysisWithNoOwnerRules();
+	TestUserOwnerAnalysisWithEveryKindOfOwnerRule();
+	TestUserOwnerAnalysisWithNullFindingFields();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

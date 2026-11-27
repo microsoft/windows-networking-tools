@@ -22,6 +22,14 @@ inline constexpr PCWSTR FirewallRuleEmptyText = L"(empty)";
 std::wstring
 FirewallRuleTextToString(PCWSTR value);
 
+// the step that failed when a rule's local user owner SID was not resolved to an account
+enum class UserOwnerResolveFailure : uint8_t
+{
+	None,
+	InvalidSidString,
+	AccountLookupFailed
+};
+
 struct NormalizedFirewallRule
 {
 	NormalizedFirewallRule(const FW_RULE* fwRule, WORD requestedRuleVersion);
@@ -39,6 +47,8 @@ struct NormalizedFirewallRule
 	std::wstring local_user_domain_name{};
 
 	std::string resolve_name_failure_string;
+	UserOwnerResolveFailure resolve_name_failure{UserOwnerResolveFailure::None};
+	HRESULT resolve_name_error{S_OK};
 	std::optional<bool> successfully_resolved_user_name{std::nullopt};
 	std::optional<bool> successfully_resolved_user_name_with_local_profile{std::nullopt};
 
