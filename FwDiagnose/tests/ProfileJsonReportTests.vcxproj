@@ -103,6 +103,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ProfileJsonReport.h" />
+    <ClInclude Include="..\ApplicationAnalysis.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

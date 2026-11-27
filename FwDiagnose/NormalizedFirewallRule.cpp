@@ -1150,8 +1150,9 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 		}
 
 		local_application_exists = false;
+		local_application_lookup_error = HRESULT_FROM_WIN32(gle);
 		local_application_failure_string =
-		    std::format("Failed to find the file (0x{:x})", static_cast<uint32_t>(HRESULT_FROM_WIN32(gle)));
+		    std::format("Failed to find the file (0x{:x})", static_cast<uint32_t>(local_application_lookup_error));
 	}
 
 	else

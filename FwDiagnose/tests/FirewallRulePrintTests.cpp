@@ -15,6 +15,7 @@
 #include <Windows.h>
 
 #include "..\NormalizedFirewallRule.h"
+#include "..\ApplicationAnalysis.h"
 
 bool
 VerboseOutputEnabled() noexcept
@@ -530,6 +531,150 @@ TestResolvedUserNameHasNoEmbeddedNull()
 	    "the resolved user prints as domain\\name");
 	Check(Labels(contents).back() == L"ICMP Type/Code Constraints", "fields after the user still print");
 }
+
+wchar_t g_app_rule_ids[6][16]{
+    L"{APP-RULE-0}", L"{APP-RULE-1}", L"{APP-RULE-2}", L"{APP-RULE-3}", L"{APP-RULE-4}", L"{APP-RULE-5}"};
+wchar_t g_system_application[] = L"System";
+wchar_t g_existing_application[] = L"%SystemRoot%\\System32\\svchost.exe";
+wchar_t g_per_user_application[] = L"%HOMEPATH%\\app.exe";
+wchar_t g_missing_application[] = L"C:\\FwDiagnoseTest-missing\\app.exe";
+wchar_t g_service_profile_application[] = L"%APPDATA%\\app.exe";
+wchar_t g_per_user_rule_name[] = L"Per-user rule";
+wchar_t g_service_rule_name[] = L"Service rule";
+
+constexpr PCWSTR ApplicationSummaryHeader = L"  * Summary of application analysis of firewall rules:\n";
+constexpr PCWSTR PerUserCountLine =
+    L"     - of those, using a per-user environment variable (the Firewall service resolves it as LocalService): ";
+constexpr PCWSTR ServiceProfileCountLine =
+    L"   - WARNING: count of rules with an application exe using %USERPROFILE%, %APPDATA%, %LOCALAPPDATA%, %TEMP%, "
+    L"or %TMP% (resolves within the profile of the Firewall service account): ";
+constexpr PCWSTR Wow64SkipLine =
+    L"  * Skipping the check for missing application files: this 32-bit build cannot see the same paths as the "
+    L"Firewall on 64-bit Windows - use the 64-bit build\n";
+
+void
+TestApplicationAnalysisWithNoApplicationRules()
+{
+	const auto empty = AnalyzeApplicationRules({}, ApplicationFileCheck::Completed);
+	Check(empty.applicationRuleCount == 0 && empty.perUserVariableRuleCount == 0, "no rules have no counts");
+	Check(
+	    empty.missingApplicationRules.empty() && empty.serviceProfileVariableRules.empty(),
+	    "no rules have no findings");
+	Check(
+	    PrintApplicationAnalysis(empty, ApplicationAnalysisOutput::Summary).empty(),
+	    "the summary prints nothing when there is nothing to report");
+	Check(
+	    PrintApplicationAnalysis(empty, ApplicationAnalysisOutput::Verbose) ==
+	        std::wstring{ApplicationSummaryHeader} + L"   - count of rules with an application exe: 0\n" +
+	            L"   - count of rules with an application exe referencing non-existing file: 0\n" + PerUserCountLine +
+	            L"0\n",
+	    "verbose output prints zero counts and no lists");
+
+	// a rule without an application is not an application rule
+	auto rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+	std::vector<NormalizedFirewallRule> rules;
+	rules.emplace_back(&rule, FW_BINARY_VERSION_33);
+	Check(
+	    AnalyzeApplicationRules(rules, ApplicationFileCheck::Completed).applicationRuleCount == 0,
+	    "a rule without an application is not counted");
+
+	Check(
+	    PrintApplicationAnalysis(
+	        AnalyzeApplicationRules({}, ApplicationFileCheck::SkippedWow64Redirection),
+	        ApplicationAnalysisOutput::Summary) == Wow64SkipLine,
+	    "the WOW64 skip is printed even when there is nothing else to report");
+}
+
+void
+TestApplicationAnalysisWithEveryKindOfApplicationRule()
+{
+	FW_RULE fw_rules[6]{};
+	for (size_t index = 0; index < std::size(fw_rules); ++index)
+	{
+		fw_rules[index] = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rules[index].wszRuleId = g_app_rule_ids[index];
+	}
+	// fw_rules[0] has no application
+	fw_rules[1].wszLocalApplication = g_system_application;
+	fw_rules[2].wszLocalApplication = g_existing_application;
+	fw_rules[3].wszLocalApplication = g_per_user_application;
+	fw_rules[3].wszName = g_per_user_rule_name;
+	fw_rules[4].wszLocalApplication = g_missing_application;
+	fw_rules[5].wszLocalApplication = g_service_profile_application;
+	fw_rules[5].wszName = g_service_rule_name;
+
+	std::vector<NormalizedFirewallRule> rules;
+	for (const auto& fw_rule : fw_rules)
+	{
+		rules.emplace_back(&fw_rule, FW_BINARY_VERSION_33);
+	}
+
+	if (RunningUnderWow64())
+	{
+		std::printf("SKIP: file lookups are not performed by a 32-bit build on 64-bit Windows\n");
+		return;
+	}
+
+	const auto analysis = AnalyzeApplicationRules(rules, ApplicationFileCheck::Completed);
+	Check(analysis.applicationRuleCount == 5, "every rule with an application is counted, including System");
+	Check(analysis.perUserVariableRuleCount == 1, "the per-user variable rule is counted");
+	Check(analysis.missingApplicationRules.size() == 2, "only the per-user and missing files are missing");
+	Check(analysis.serviceProfileVariableRules.size() == 1, "the service-profile variable rule is a warning");
+	if (analysis.missingApplicationRules.size() == 2 && analysis.serviceProfileVariableRules.size() == 1)
+	{
+		const auto& per_user = analysis.missingApplicationRules[0];
+		Check(
+		    per_user.reason == ApplicationFindingReason::PerUserEnvironmentVariable && per_user.error == S_OK,
+		    "a per-user variable is reported without a file lookup");
+		Check(std::wstring_view{per_user.name} == g_per_user_rule_name, "the finding keeps the rule name");
+		const auto& missing = analysis.missingApplicationRules[1];
+		Check(
+		    missing.reason == ApplicationFindingReason::FileLookupFailed &&
+		        missing.error == HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND),
+		    "a failed lookup keeps its error");
+		Check(
+		    missing.name == nullptr && std::wstring_view{missing.ruleId} == g_app_rule_ids[4],
+		    "a rule without a name keeps its ID");
+		Check(
+		    std::wstring_view{analysis.serviceProfileVariableRules[0].application} == g_service_profile_application,
+		    "the warning keeps the application path");
+	}
+
+	// the console prints the normalized (lowercase) rule name, as it always has
+	const std::wstring counts = std::wstring{ApplicationSummaryHeader} +
+	                            L"   - count of rules with an application exe: 5\n" +
+	                            L"   - count of rules with an application exe referencing non-existing file: 2\n" +
+	                            PerUserCountLine + L"1\n" + ServiceProfileCountLine + L"1\n" +
+	                            L"     WARNING: Application-exe:  '%APPDATA%\\app.exe'  [Rule Name:  service rule]\n";
+	Check(
+	    PrintApplicationAnalysis(analysis, ApplicationAnalysisOutput::Summary) == counts,
+	    "the summary prints counts and warnings without the missing-file list");
+	Check(
+	    PrintApplicationAnalysis(analysis, ApplicationAnalysisOutput::Verbose) ==
+	        counts + L"   - rules with an application exe referencing non-existing file:\n" +
+	            L"     Application-exe:  '%HOMEPATH%\\app.exe' (per-user environment variable)  (Contains per-user "
+	            L"environment variable) [Rule Name:  per-user rule]\n" +
+	            L"     Application-exe:  'C:\\FwDiagnoseTest-missing\\app.exe'  (Failed to find the file (0x80070003)) "
+	            L"[(no Rule Name) RuleId:  {APP-RULE-4}]\n",
+	    "verbose output lists every missing file");
+}
+
+void
+TestApplicationAnalysisWithNullFindingFields()
+{
+	ApplicationAnalysis analysis;
+	analysis.applicationRuleCount = 1;
+	analysis.missingApplicationRules.push_back(
+	    {.reason = ApplicationFindingReason::FileLookupFailed,
+	     .error = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),
+	     .failureText = "Failed to find the file (0x80070002)"});
+	Check(
+	    PrintApplicationAnalysis(analysis, ApplicationAnalysisOutput::Verbose)
+	        .ends_with(
+	            L"     Application-exe:  '(none)'  (Failed to find the file (0x80070002)) [(no Rule Name) RuleId:  "
+	            L"(none)]\n"),
+	    "a finding without a rule ID or application prints placeholders");
+}
 } // namespace
 
 int
@@ -545,6 +690,9 @@ wmain()
 	TestPopulatedRulesPrintTheSameAcrossSchemaVersions();
 	TestPrintRuleContentsValues();
 	TestResolvedUserNameHasNoEmbeddedNull();
+	TestApplicationAnalysisWithNoApplicationRules();
+	TestApplicationAnalysisWithEveryKindOfApplicationRule();
+	TestApplicationAnalysisWithNullFindingFields();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

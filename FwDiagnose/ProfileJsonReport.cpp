@@ -48,6 +48,17 @@ Timestamp()
 
 // Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
 JsonObject
+ReturnJsonErrorObject(HRESULT error)
+{
+	JsonObject details;
+	details.SetNamedValue(L"domain", String(L"hresult"));
+	details.SetNamedValue(L"code", JsonValue::CreateNumberValue(static_cast<uint32_t>(error)));
+	details.SetNamedValue(L"hex", String(std::format(L"0x{:08X}", static_cast<uint32_t>(error))));
+	return details;
+}
+
+// Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
+JsonObject
 ReturnJsonDiagnosticObject(PCWSTR property, PCWSTR operation, HRESULT error, std::wstring_view message)
 {
 	JsonObject diagnostic;
@@ -60,11 +71,7 @@ ReturnJsonDiagnosticObject(PCWSTR property, PCWSTR operation, HRESULT error, std
 	subject.SetNamedValue(L"property", String(property));
 	diagnostic.SetNamedValue(L"subject", subject);
 
-	JsonObject details;
-	details.SetNamedValue(L"domain", String(L"hresult"));
-	details.SetNamedValue(L"code", JsonValue::CreateNumberValue(static_cast<uint32_t>(error)));
-	details.SetNamedValue(L"hex", String(std::format(L"0x{:08X}", static_cast<uint32_t>(error))));
-	diagnostic.SetNamedValue(L"error", details);
+	diagnostic.SetNamedValue(L"error", ReturnJsonErrorObject(error));
 
 	return diagnostic;
 }
@@ -174,7 +181,7 @@ ReturnJsonResultObject(PCWSTR command)
 	pending.SetNamedValue(
 	    L"message",
 	    String(
-	        L"Firewall-profile configuration and rule-status analysis are exported. "
+	        L"Firewall-profile configuration, rule-status analysis, and application analysis are exported. "
 	        L"Other console output for this command is not yet exported."));
 
 	JsonArray diagnostics;
@@ -183,6 +190,53 @@ ReturnJsonResultObject(PCWSTR command)
 	result.SetNamedValue(L"diagnostics", diagnostics);
 	g_jsonResults.Append(result);
 	return result;
+}
+
+PCWSTR
+StoreJsonName(FW_STORE_TYPE storeType)
+{
+	switch (storeType)
+	{
+	case FW_STORE_TYPE_LOCAL:
+		return L"local";
+	case FW_STORE_TYPE_GPO:
+		return L"group_policy";
+	case FW_STORE_TYPE_GP_RSOP:
+		return L"group_policy_rsop";
+	case FW_STORE_TYPE_WSH_STATIC:
+		return L"service_hardening_static";
+	case FW_STORE_TYPE_WSH_CONFIGURABLE:
+		return L"service_hardening_configurable";
+	case FW_STORE_TYPE_IF_ISO:
+		return L"interface_isolation";
+	case FW_STORE_TYPE_IF_ISO_DYNAMIC:
+		return L"interface_isolation_dynamic";
+	case FW_STORE_TYPE_APP_ISO:
+		return L"application_isolation";
+	case FW_STORE_TYPE_MDM:
+		return L"mdm";
+	case FW_STORE_TYPE_TENANT_RESTRICTIONS:
+		return L"tenant_restrictions";
+	default:
+		THROW_HR_MSG(E_UNEXPECTED, "Unknown firewall policy store type.");
+	}
+}
+
+// the most recent record for the store, which WriteFirewallRuleStatusJson writes before any other store analysis
+JsonObject
+ReturnJsonStoreObject(PCWSTR command, FW_STORE_TYPE storeType)
+{
+	const auto stores = ReturnJsonResultObject(command).GetNamedObject(L"data").GetNamedArray(L"stores");
+	const std::wstring_view storeName = StoreJsonName(storeType);
+	for (auto index = stores.Size(); index > 0; --index)
+	{
+		auto store = stores.GetAt(index - 1).GetObject();
+		if (store.GetNamedString(L"store") == storeName)
+		{
+			return store;
+		}
+	}
+	THROW_HR_MSG(E_UNEXPECTED, "The store record must be written before its analyses.");
 }
 
 std::wstring
@@ -243,10 +297,30 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		constexpr std::wstring_view storeOrder[]{L"store",
 		                                         L"displayName",
 		                                         L"ruleDetails",
+		                                         L"applicationAnalysis",
 		                                         L"ruleCount",
 		                                         L"status",
 		                                         L"reason",
 		                                         L"diagnostics"};
+
+		constexpr std::wstring_view applicationAnalysisOrder[]{L"status",
+		                                                       L"reason",
+		                                                       L"applicationRuleCount",
+		                                                       L"missingApplicationRuleCount",
+		                                                       L"perUserVariableRuleCount",
+		                                                       L"serviceProfileVariableRuleCount",
+		                                                       L"serviceProfileVariableRules",
+		                                                       L"missingApplicationRules"};
+
+		constexpr std::wstring_view applicationRuleOrder[]{L"ruleId",
+		                                                   L"name",
+		                                                   L"application",
+		                                                   L"reason",
+		                                                   L"error"};
+
+		constexpr std::wstring_view errorOrder[]{L"domain",
+		                                         L"code",
+		                                         L"hex"};
 		// clang-format on
 		std::span<const std::wstring_view> fieldOrder;
 		if (isProfile)
@@ -264,6 +338,18 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		else if (object.HasKey(L"store") && object.HasKey(L"displayName") && object.HasKey(L"status"))
 		{
 			fieldOrder = storeOrder;
+		}
+		else if (object.HasKey(L"applicationRuleCount"))
+		{
+			fieldOrder = applicationAnalysisOrder;
+		}
+		else if (object.HasKey(L"ruleId") && object.HasKey(L"application"))
+		{
+			fieldOrder = applicationRuleOrder;
+		}
+		else if (object.HasKey(L"domain") && object.HasKey(L"code") && object.HasKey(L"hex"))
+		{
+			fieldOrder = errorOrder;
 		}
 
 		for (const auto key : fieldOrder)
@@ -562,42 +648,7 @@ WriteFirewallRuleStatusJson(
 		return;
 	}
 
-	PCWSTR storeName = nullptr;
-	switch (policy.store_type)
-	{
-	case FW_STORE_TYPE_LOCAL:
-		storeName = L"local";
-		break;
-	case FW_STORE_TYPE_GPO:
-		storeName = L"group_policy";
-		break;
-	case FW_STORE_TYPE_GP_RSOP:
-		storeName = L"group_policy_rsop";
-		break;
-	case FW_STORE_TYPE_WSH_STATIC:
-		storeName = L"service_hardening_static";
-		break;
-	case FW_STORE_TYPE_WSH_CONFIGURABLE:
-		storeName = L"service_hardening_configurable";
-		break;
-	case FW_STORE_TYPE_IF_ISO:
-		storeName = L"interface_isolation";
-		break;
-	case FW_STORE_TYPE_IF_ISO_DYNAMIC:
-		storeName = L"interface_isolation_dynamic";
-		break;
-	case FW_STORE_TYPE_APP_ISO:
-		storeName = L"application_isolation";
-		break;
-	case FW_STORE_TYPE_MDM:
-		storeName = L"mdm";
-		break;
-	case FW_STORE_TYPE_TENANT_RESTRICTIONS:
-		storeName = L"tenant_restrictions";
-		break;
-	default:
-		THROW_HR_MSG(E_UNEXPECTED, "Unknown firewall policy store type.");
-	}
+	PCWSTR storeName = StoreJsonName(policy.store_type);
 
 	JsonObject store;
 	store.SetNamedValue(L"store", String(storeName));
@@ -704,4 +755,77 @@ WriteFirewallRuleStatusJson(
 		}
 	}
 	ReturnJsonResultObject(command).GetNamedObject(L"data").GetNamedArray(L"stores").Append(store);
+}
+
+void
+WriteApplicationAnalysisJson(const FirewallPolicyObjects& policy, const ApplicationAnalysis& analysis, PCWSTR command)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	const auto nullableString = [](PCWSTR value)
+	{
+		return value ? String(value) : JsonValue::CreateNullValue();
+	};
+	const auto count = [](size_t value)
+	{
+		return JsonValue::CreateNumberValue(static_cast<double>(value));
+	};
+	const auto ruleEntries = [&](const std::vector<ApplicationRuleFinding>& findings)
+	{
+		JsonArray entries;
+		for (const auto& finding : findings)
+		{
+			JsonObject entry;
+			entry.SetNamedValue(L"ruleId", nullableString(finding.ruleId));
+			entry.SetNamedValue(L"name", nullableString(finding.name));
+			entry.SetNamedValue(L"application", nullableString(finding.application));
+			switch (finding.reason)
+			{
+			case ApplicationFindingReason::PerUserEnvironmentVariable:
+			{
+				entry.SetNamedValue(L"reason", String(L"per_user_environment_variable"));
+				break;
+			}
+			case ApplicationFindingReason::FileLookupFailed:
+			{
+				entry.SetNamedValue(L"reason", String(L"file_lookup_failed"));
+				entry.SetNamedValue(L"error", ReturnJsonErrorObject(finding.error));
+				break;
+			}
+			case ApplicationFindingReason::ServiceProfileEnvironmentVariable:
+			{
+				// the list name already states why these rules are reported
+				break;
+			}
+			}
+			entries.Append(entry);
+		}
+		return entries;
+	};
+
+	JsonObject section;
+	if (analysis.fileCheck == ApplicationFileCheck::SkippedWow64Redirection)
+	{
+		section.SetNamedValue(L"status", String(L"skipped"));
+		section.SetNamedValue(L"reason", String(L"wow64_redirection"));
+	}
+	else
+	{
+		section.SetNamedValue(L"status", String(L"completed"));
+	}
+
+	section.SetNamedValue(L"applicationRuleCount", count(analysis.applicationRuleCount));
+	section.SetNamedValue(L"missingApplicationRuleCount", count(analysis.missingApplicationRules.size()));
+	section.SetNamedValue(L"perUserVariableRuleCount", count(analysis.perUserVariableRuleCount));
+	section.SetNamedValue(L"serviceProfileVariableRuleCount", count(analysis.serviceProfileVariableRules.size()));
+	section.SetNamedValue(L"serviceProfileVariableRules", ruleEntries(analysis.serviceProfileVariableRules));
+	if (g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose"))
+	{
+		section.SetNamedValue(L"missingApplicationRules", ruleEntries(analysis.missingApplicationRules));
+	}
+
+	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"applicationAnalysis", section);
 }

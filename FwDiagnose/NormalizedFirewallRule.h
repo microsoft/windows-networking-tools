@@ -44,6 +44,8 @@ struct NormalizedFirewallRule
 
 	std::string local_application_failure_string;
 	std::optional<bool> local_application_exists{std::nullopt};
+	// S_OK unless the file lookup itself failed
+	HRESULT local_application_lookup_error{S_OK};
 
 	size_t filter_count{};
 	size_t filter_condition_count{};

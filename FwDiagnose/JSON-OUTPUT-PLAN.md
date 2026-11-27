@@ -139,7 +139,7 @@ Proposed `data`:
 | `firewallProfiles` | Shared policy-profile records |
 | `stores` | Store identity, negotiated API version, collection/analysis status |
 | `ruleDetails` | Total/error rule counts and nonzero partially ignored, ignored, parsing, semantic, runtime, and unknown status categories |
-| `applicationAnalysis` | Counts of application-targeted rules and rules whose executable was reported missing |
+| `applicationAnalysis` | Counts of application-targeted rules, rules whose executable was reported missing, and rules using service-profile variables (implemented; see Review 3) |
 | `packageAnalysis` | Package-SID/PFN reference counts and unresolved references |
 | `userOwnerAnalysis` | SID-owner counts, unresolved owners, and missing local-profile findings |
 | `rankings` | Top rules by filter count and filter-condition count |
@@ -418,7 +418,7 @@ This document is a plan, not an implementation of the feature. The design uses s
 
 Status: approved and implemented for firewall-profile configuration.
 
-The current `-json <path>` implementation exports firewall-profile configuration and per-store rule-status analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
+The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, and per-store application analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
 
 ```powershell
 .\FwDiagnose\x64\Debug\FwDiagnose.exe -analyze-rules -json .\firewall-profiles.json
@@ -621,3 +621,66 @@ The example status code is `FW_RULE_STATUS_PARSING_ERROR_APP`, retaining the spe
 - A successfully empty store has zero rules, not a collection failure. The existing "No Rules in this store" output is represented at store scope rather than inventing an analysis that did not run.
 
 Store collection outcomes are retained during firewall enumeration. Successfully empty stores contain `status: "completed"` and `ruleCount: 0`, without `ruleDetails`. Missing stores use `not_present`; unattempted stores use `not_collected`; Other collection errors use `failed`. These unavailable-store records include the collection error in `diagnostics`, rather than reporting zero rules, except that `ERROR_FILE_NOT_FOUND` for `group_policy_rsop` is expected: retain its identity and `status: "not_present"` without `diagnostics`, `ruleCount`, or `ruleDetails`, at both verbosity levels. Other RSOP failures still include diagnostics. Under `-clean-rules`, a read-only store that loaded with rules uses `skipped` with `reason: "store_cannot_be_modified_locally"`; a read-only store that loaded empty is `completed` with `ruleCount: 0`, and one that failed to load keeps its load status.
+
+### Review 3: `-analyze-rules` - application analysis per policy store
+
+Status: approved and implemented.
+
+`CheckForMissingAppRules()` builds one analysis per store; the console and JSON are both written from it. The following values are illustrative.
+
+#### Console with `-verbose`
+
+```text
+  * Summary of application analysis of firewall rules:
+   - count of rules with an application exe: 479
+   - count of rules with an application exe referencing non-existing file: 2
+     - of those, using a per-user environment variable (the Firewall service resolves it as LocalService): 1
+   - WARNING: count of rules with an application exe using %USERPROFILE%, %APPDATA%, %LOCALAPPDATA%, %TEMP%, or %TMP% (resolves within the profile of the Firewall service account): 1
+     WARNING: Application-exe:  '%APPDATA%\app.exe'  [Rule Name:  Service rule]
+   - rules with an application exe referencing non-existing file:
+     Application-exe:  '%HOMEPATH%\app.exe' (per-user environment variable)  (Contains per-user environment variable) [Rule Name:  Per-user rule]
+     Application-exe:  'C:\missing\app.exe'  (Failed to find the file (0x80070003)) [(no Rule Name) RuleId:  missing-rule]
+```
+
+The last heading previously read "unique rule names of rules with ..."; it lists every rule, so "unique rule names" was removed.
+
+#### JSON with `-verbose`
+
+`applicationAnalysis` is added to the store record after `ruleDetails`:
+
+```json
+"applicationAnalysis": {
+  "status": "completed",
+  "applicationRuleCount": 479,
+  "missingApplicationRuleCount": 2,
+  "perUserVariableRuleCount": 1,
+  "serviceProfileVariableRuleCount": 1,
+  "serviceProfileVariableRules": [
+    { "ruleId": "service-rule", "name": "Service rule", "application": "%APPDATA%\\app.exe" }
+  ],
+  "missingApplicationRules": [
+    {
+      "ruleId": "per-user-rule",
+      "name": "Per-user rule",
+      "application": "%HOMEPATH%\\app.exe",
+      "reason": "per_user_environment_variable"
+    },
+    {
+      "ruleId": "missing-rule",
+      "name": null,
+      "application": "C:\\missing\\app.exe",
+      "reason": "file_lookup_failed",
+      "error": { "domain": "hresult", "code": 2147942403, "hex": "0x80070003" }
+    }
+  ]
+}
+```
+
+- `applicationAnalysis` is present for every store whose rules were analyzed, even when all counts are zero. Empty, absent, failed, and skipped stores do not have it.
+- Without `-verbose`, `missingApplicationRules` is omitted. `serviceProfileVariableRules` is present at both verbosity levels, matching the console's warnings, which always print.
+- `missingApplicationRuleCount` counts every rule whose file was reported missing: a per-user environment variable, or any `FindFirstFileExW` failure. `perUserVariableRuleCount` is the subset with a per-user variable.
+- `reason` is `per_user_environment_variable` (no file lookup, so no `error`) or `file_lookup_failed` with the lookup's `error`, converted with `HRESULT_FROM_WIN32`.
+- Service-profile-variable rules (`%USERPROFILE%`, `%APPDATA%`, `%LOCALAPPDATA%`, `%TEMP%`, `%TMP%`) are warnings: they are not looked up and are never counted as missing.
+- Every rule is listed; nothing is de-duplicated. `ruleId` and `name` are `null` when absent.
+- A 32-bit build on 64-bit Windows does not look up files: `status` is `skipped` with `reason: "wow64_redirection"`. Rules with a per-user variable are still counted as missing because that check needs no lookup.
+- Field order: `status`, `reason`, `applicationRuleCount`, `missingApplicationRuleCount`, `perUserVariableRuleCount`, `serviceProfileVariableRuleCount`, `serviceProfileVariableRules`, `missingApplicationRules`. Rule entries: `ruleId`, `name`, `application`, `reason`, `error`. Error objects everywhere: `domain`, `code`, `hex`.

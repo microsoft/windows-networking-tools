@@ -320,6 +320,159 @@ try
 		            .GetNamedNumber(L"code") == static_cast<uint32_t>(E_ACCESSDENIED),
 		    "RSOP access denial diagnostic lost.");
 	}
+
+	store.store_type = FW_STORE_TYPE_LOCAL;
+	store.store_type_string = "Local";
+	store.load_result = S_OK;
+	ApplicationAnalysis applications;
+	applications.applicationRuleCount = 5;
+	applications.perUserVariableRuleCount = 1;
+	applications.missingApplicationRules.push_back(
+	    {L"per-user-rule",
+	     L"Per-user rule",
+	     L"%LOCALUSERPROFILE%\\app.exe",
+	     ApplicationFindingReason::PerUserEnvironmentVariable,
+	     S_OK});
+	applications.missingApplicationRules.push_back(
+	    {L"missing-rule",
+	     nullptr,
+	     L"C:\\missing\\app.exe",
+	     ApplicationFindingReason::FileLookupFailed,
+	     HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND)});
+	applications.serviceProfileVariableRules.push_back(
+	    {L"service-rule",
+	     L"Service rule",
+	     L"%APPDATA%\\app.exe",
+	     ApplicationFindingReason::ServiceProfileEnvironmentVariable,
+	     S_OK});
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WriteApplicationAnalysisJson(store, applications, L"analyze_rules");
+		const auto applicationStore = stores.GetAt(stores.Size() - 1).GetObject();
+		const auto section = applicationStore.GetNamedObject(L"applicationAnalysis");
+		Check(section.GetNamedString(L"status") == L"completed" && !section.HasKey(L"reason"), "File check status.");
+		Check(section.GetNamedNumber(L"applicationRuleCount") == 5, "Application rule count lost.");
+		Check(section.GetNamedNumber(L"missingApplicationRuleCount") == 2, "Missing application count lost.");
+		Check(section.GetNamedNumber(L"perUserVariableRuleCount") == 1, "Per-user count lost.");
+		Check(section.GetNamedNumber(L"serviceProfileVariableRuleCount") == 1, "Service-profile count lost.");
+		const auto serviceRule = section.GetNamedArray(L"serviceProfileVariableRules").GetAt(0).GetObject();
+		Check(
+		    serviceRule.GetNamedString(L"application") == L"%APPDATA%\\app.exe" && !serviceRule.HasKey(L"reason"),
+		    "Service-profile rule entry incorrect.");
+		Check(section.HasKey(L"missingApplicationRules") == verbose, "Missing rules not limited to verbose output.");
+
+		size_t nextStoreKey = 0;
+		const auto applicationStoreText = PrettifyJson(applicationStore);
+		for (const auto* key : {L"store", L"displayName", L"ruleDetails", L"applicationAnalysis", L"status"})
+		{
+			const auto position = applicationStoreText.find(std::wstring(L"\n  \"") + key + L"\":", nextStoreKey);
+			Check(position != std::wstring::npos, "Application analysis is not after ruleDetails.");
+			nextStoreKey = position + 1;
+		}
+
+		size_t nextKey = 0;
+		const auto sectionText = PrettifyJson(section);
+		for (const auto* key :
+		     {L"status",
+		      L"applicationRuleCount",
+		      L"missingApplicationRuleCount",
+		      L"perUserVariableRuleCount",
+		      L"serviceProfileVariableRuleCount",
+		      L"serviceProfileVariableRules",
+		      L"missingApplicationRules"})
+		{
+			const auto position = sectionText.find(std::wstring(L"\n  \"") + key + L"\":", nextKey);
+			Check(
+			    position != std::wstring::npos || (!verbose && std::wstring_view(key) == L"missingApplicationRules"),
+			    "Application analysis fields are missing or not in the required order.");
+			if (position != std::wstring::npos)
+			{
+				nextKey = position + 1;
+			}
+		}
+		Check(JsonObject::Parse(sectionText).Size() == section.Size(), "Ordered formatting lost analysis fields.");
+		if (verbose)
+		{
+			const auto missing = section.GetNamedArray(L"missingApplicationRules");
+			const auto perUser = missing.GetAt(0).GetObject();
+			Check(
+			    perUser.GetNamedString(L"reason") == L"per_user_environment_variable" && !perUser.HasKey(L"error"),
+			    "Per-user missing rule entry incorrect.");
+			const auto lookup = missing.GetAt(1).GetObject();
+			Check(lookup.GetNamedValue(L"name").ValueType() == JsonValueType::Null, "Absent rule name not null.");
+			Check(lookup.GetNamedString(L"reason") == L"file_lookup_failed", "Lookup failure reason incorrect.");
+			Check(
+			    lookup.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070003",
+			    "Lookup failure error lost.");
+			const auto lookupText = PrettifyJson(lookup);
+			Check(
+			    lookupText.find(L"\"ruleId\"") < lookupText.find(L"\"name\"") &&
+			        lookupText.find(L"\"name\"") < lookupText.find(L"\"application\"") &&
+			        lookupText.find(L"\"application\"") < lookupText.find(L"\"reason\"") &&
+			        lookupText.find(L"\"reason\"") < lookupText.find(L"\"error\""),
+			    "Application rule entry fields are not in the required order.");
+			Check(
+			    lookupText.find(L"\"domain\"") < lookupText.find(L"\"code\"") &&
+			        lookupText.find(L"\"code\"") < lookupText.find(L"\"hex\""),
+			    "Error fields are not in domain/code/hex order.");
+		}
+	}
+	applications.fileCheck = ApplicationFileCheck::SkippedWow64Redirection;
+	WriteApplicationAnalysisJson(store, applications, L"analyze_rules");
+	const auto skipped = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"applicationAnalysis");
+	Check(
+	    skipped.GetNamedString(L"status") == L"skipped" && skipped.GetNamedString(L"reason") == L"wow64_redirection",
+	    "WOW64 skip not reported.");
+	Check(
+	    stores.GetAt(stores.Size() - 2).GetObject().GetNamedObject(L"applicationAnalysis").GetNamedString(L"status") ==
+	        L"completed",
+	    "Application analysis written to an older store record.");
+
+	// a store with no application rules still has the section, with zero counts and empty lists
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WriteApplicationAnalysisJson(store, ApplicationAnalysis{}, L"analyze_rules");
+		const auto empty = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"applicationAnalysis");
+		Check(empty.GetNamedString(L"status") == L"completed", "Empty analysis not completed.");
+		for (const auto* key :
+		     {L"applicationRuleCount",
+		      L"missingApplicationRuleCount",
+		      L"perUserVariableRuleCount",
+		      L"serviceProfileVariableRuleCount"})
+		{
+			Check(empty.GetNamedNumber(key) == 0, "Empty analysis count not zero.");
+		}
+		Check(empty.GetNamedArray(L"serviceProfileVariableRules").Size() == 0, "Empty warning list not empty.");
+		Check(
+		    verbose ? empty.GetNamedArray(L"missingApplicationRules").Size() == 0
+		            : !empty.HasKey(L"missingApplicationRules"),
+		    "Empty missing-rule list incorrect for the verbosity.");
+		Check(JsonObject::Parse(PrettifyJson(empty)).Size() == empty.Size(), "Empty analysis lost fields.");
+	}
+
+	// every string field of a finding can be absent
+	ApplicationAnalysis nullFields;
+	nullFields.applicationRuleCount = 1;
+	nullFields.missingApplicationRules.push_back(
+	    {.reason = ApplicationFindingReason::FileLookupFailed, .error = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)});
+	WriteApplicationAnalysisJson(store, nullFields, L"analyze_rules");
+	const auto nullEntry = stores.GetAt(stores.Size() - 1)
+	                           .GetObject()
+	                           .GetNamedObject(L"applicationAnalysis")
+	                           .GetNamedArray(L"missingApplicationRules")
+	                           .GetAt(0)
+	                           .GetObject();
+	for (const auto* key : {L"ruleId", L"name", L"application"})
+	{
+		Check(nullEntry.GetNamedValue(key).ValueType() == JsonValueType::Null, "Absent finding field not null.");
+	}
+	Check(
+	    JsonObject::Parse(PrettifyJson(nullEntry)).GetNamedValue(L"ruleId").ValueType() == JsonValueType::Null,
+	    "Ordered formatting lost a null rule ID.");
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
 	const auto readRunStatus = [&]()
@@ -339,7 +492,7 @@ try
 	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::StoppedEarly);
 	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
 
-	std::printf("Profile and rule-status JSON tests passed.\n");
+	std::printf("Profile, rule-status, and application-analysis JSON tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)

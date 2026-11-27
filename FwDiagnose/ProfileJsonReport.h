@@ -8,6 +8,8 @@
 #include <vector>
 #include <Windows.h>
 
+#include "ApplicationAnalysis.h"
+
 struct FirewallPolicyObjects;
 struct NormalizedFirewallRule;
 struct RuleStatusCategory
@@ -82,3 +84,6 @@ WriteFirewallRuleStatusJson(
     const RuleStatusCategories& categories,
     PCWSTR command,
     RuleStatusAnalysis analysis);
+// adds applicationAnalysis to the store record that WriteFirewallRuleStatusJson already wrote for this command
+void
+WriteApplicationAnalysisJson(const FirewallPolicyObjects& policy, const ApplicationAnalysis& analysis, PCWSTR command);

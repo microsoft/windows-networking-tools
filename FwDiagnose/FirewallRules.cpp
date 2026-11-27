@@ -56,8 +56,6 @@ PrintDeletionHeader(PCSTR str) noexcept
 	    str);
 }
 static constexpr auto* DeletionPrompt = "       Delete all duplicates of this rule";
-static constexpr auto* PerUserVariableNote = L" (per-user environment variable)";
-
 static FirewallPolicyObjects g_policy_objects[] = // NOLINT(bugprone-throwing-static-initialization)
     {
         {.parent_rule = nullptr,
@@ -1241,93 +1239,18 @@ DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Dupl
 }
 
 static void
-CheckForMissingAppRules(const std::vector<NormalizedFirewallRule>& normalized_rules)
+CheckForMissingAppRules(const FirewallPolicyObjects& policy)
 {
-	if (RunningUnderWow64())
-	{
-		std::printf(
-		    "  * Skipping the check for missing application files: this 32-bit build cannot see the same paths "
-		    "as the Firewall on 64-bit Windows - use the 64-bit build\n");
-	}
-
-	size_t count_of_rules_with_local_application = 0;
-	size_t count_of_rules_with_per_user_variable = 0;
-
-	std::vector<std::wstring> verbose_output_of_error_strings;
-	std::vector<std::wstring> warning_strings;
-
-	for (const auto& rule : normalized_rules)
-	{
-		if (rule.fw_rule->wszLocalApplication)
-		{
-			++count_of_rules_with_local_application;
-
-			if (rule.local_application_uses_service_profile_variable)
-			{
-				warning_strings.emplace_back(
-				    wil::str_printf<std::wstring>(
-				        L"     WARNING: Application-exe:  '%ls'  [%ls:  %ls]\n",
-				        rule.fw_rule->wszLocalApplication,
-				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
-			}
-
-			if (rule.local_application_exists.has_value() && !rule.local_application_exists.value())
-			{
-				if (rule.local_application_uses_per_user_variable)
-				{
-					++count_of_rules_with_per_user_variable;
-				}
-
-				verbose_output_of_error_strings.emplace_back(
-				    wil::str_printf<std::wstring>(
-				        L"     Application-exe:  '%ls'%ls  (%hs) [%ls:  %ls]\n",
-				        rule.fw_rule->wszLocalApplication,
-				        rule.local_application_uses_per_user_variable ? PerUserVariableNote : L"",
-				        rule.local_application_failure_string.c_str(),
-				        rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				        rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str()));
-			}
-		}
-	}
-
-	if (VerboseOutputEnabled() || !verbose_output_of_error_strings.empty() || !warning_strings.empty())
-	{
-		std::printf("  * Summary of application analysis of firewall rules:\n");
-		std::printf("   - count of rules with an application exe: %zu\n", count_of_rules_with_local_application);
-		std::printf(
-		    "   - count of rules with an application exe referencing non-existing file: %zu\n",
-		    verbose_output_of_error_strings.size());
-		if (VerboseOutputEnabled() || count_of_rules_with_per_user_variable > 0)
-		{
-			// clang-format off
-			std::printf(
-			    "     - of those, using a per-user environment variable (the Firewall service resolves it as LocalService): "
-			    "%zu\n",
-			    count_of_rules_with_per_user_variable);
-			// clang-format on
-		}
-		if (!warning_strings.empty())
-		{
-			std::printf(
-			    "   - WARNING: count of rules with an application exe using %%USERPROFILE%%, %%APPDATA%%, "
-			    "%%LOCALAPPDATA%%, "
-			    "%%TEMP%%, or %%TMP%% (resolves within the profile of the Firewall service account): %zu\n",
-			    warning_strings.size());
-			for (const auto& warning_string : warning_strings)
-			{
-				std::printf("%ls", warning_string.c_str());
-			}
-		}
-		if (VerboseOutputEnabled() && !verbose_output_of_error_strings.empty())
-		{
-			std::printf("   - unique rule names of rules with an application exe referencing non-existing file:\n");
-			for (const auto& error_string : verbose_output_of_error_strings)
-			{
-				std::printf("%ls", error_string.c_str());
-			}
-		}
-	}
+	const auto analysis = AnalyzeApplicationRules(
+	    policy.normalizedRules,
+	    RunningUnderWow64() ? ApplicationFileCheck::SkippedWow64Redirection : ApplicationFileCheck::Completed);
+	WriteApplicationAnalysisJson(policy, analysis, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
+	std::printf(
+	    "%ls",
+	    PrintApplicationAnalysis(
+	        analysis,
+	        VerboseOutputEnabled() ? ApplicationAnalysisOutput::Verbose : ApplicationAnalysisOutput::Summary)
+	        .c_str());
 }
 
 enum class PrintSummary : std::uint8_t
@@ -2659,7 +2582,7 @@ ProcessFirewallRules()
 				std::printf("\n");
 			}
 			timer.start("CheckForMissingAppRules");
-			details::CheckForMissingAppRules(policy.normalizedRules);
+			details::CheckForMissingAppRules(policy);
 			timer.end();
 
 			if (VerboseOutputEnabled())

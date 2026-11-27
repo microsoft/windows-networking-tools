@@ -240,6 +240,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AppContainers.cpp" />
+    <ClCompile Include="ApplicationAnalysis.cpp" />
     <ClCompile Include="FirewallRules.cpp" />
     <ClCompile Include="FwDiagnose.cpp" />
     <ClCompile Include="IpProperties.cpp" />
@@ -266,6 +267,7 @@
     <ClInclude Include="NormalizedFirewallRule.h" />
     <ClInclude Include="NormalizedString.h" />
     <ClInclude Include="ProfileJsonReport.h" />
+    <ClInclude Include="ApplicationAnalysis.h" />
     <ClInclude Include="TcpipEvents.h" />
     <ClInclude Include="WfpCounters.h" />
     <ClInclude Include="WfpEvents.h" />

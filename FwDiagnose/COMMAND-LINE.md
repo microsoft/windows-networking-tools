@@ -99,7 +99,7 @@ If restoration fails, the tool prints a recommendation to reboot. See [Known iss
 
 - It may appear only with `-analyze-rules`, `-clean-rules`, Shields Up commands, and `-verbose`, and needs at least one of the first three. Anything else fails before any work is done.
 - The path is the next argument and cannot begin with `-`. `-json` may appear only once.
-- It exports only firewall-profile configuration and per-store rule status. Every report has a `json_export_incomplete` warning, and `run.status` is `partial` if the run reached the end, even with a nonzero exit code, or `failed` if it stopped early. `completed` is not yet produced at run level.
+- It exports only firewall-profile configuration, per-store rule status, and per-store application analysis. Every report has a `json_export_incomplete` warning, and `run.status` is `partial` if the run reached the end, even with a nonzero exit code, or `failed` if it stopped early. `completed` is not yet produced at run level.
 - Each profile and store record has its own `status` and `diagnostics`, separate from the findings. Store status is `completed`, `not_present`, `not_collected`, `failed`, or `skipped` (a read-only store with rules, under `-clean-rules`).
 - The file is created and truncated at startup, held open exclusively, and written only at the end. If the process dies, the file is empty.
 - `-jsonl` appears in the plan but is not implemented.
