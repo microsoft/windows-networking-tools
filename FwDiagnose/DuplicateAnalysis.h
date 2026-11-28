@@ -53,4 +53,7 @@ ReturnDuplicateKeepChoices(const DuplicateRuleSet& set);
 
 void
 DeleteDuplicateRules(
-    const DuplicateAnalysis& analysis, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule);
+    const DuplicateAnalysis& analysis,
+    std::wistream& input,
+    const DeleteFirewallRuleFunction& deleteRule,
+    StoreCleanup& cleanup);

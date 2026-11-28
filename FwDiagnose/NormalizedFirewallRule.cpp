@@ -11,6 +11,7 @@
 #include "FwDiagnose.h"
 
 #include "NormalizedFirewallRule.h"
+#include "RuleDeletion.h"
 
 #include <algorithm>
 #include <ws2def.h>
@@ -1975,4 +1976,32 @@ PrintRuleContents(const NormalizedFirewallRule& rule_details, size_t counter)
 	append_line(L"ICMP Type/Code Constraints", icmp_type_codes);
 
 	return return_string;
+}
+
+//
+// ReturnRuleDeletionRecord
+//
+// Copies the fields -clean-rules reports for a rule into a new deletion record, so the record stays
+// correct when the store's rules are reordered or the rule is deleted.
+//
+// Parameters:
+//   rule [in] - the rule proposed for deletion
+//
+// Returns:
+//   A record with outcome NotAttempted; each field is nullopt where the rule's field is null.
+//
+RuleDeletionRecord
+ReturnRuleDeletionRecord(const NormalizedFirewallRule& rule)
+{
+	const auto copy = [](PCWSTR value)
+	{
+		return value ? std::optional<std::wstring>{value} : std::nullopt;
+	};
+
+	RuleDeletionRecord record;
+	record.ruleId = copy(rule.fw_rule->wszRuleId);
+	record.name = copy(rule.fw_rule->wszName);
+	record.application = copy(rule.fw_rule->wszLocalApplication);
+	record.localUserOwnerSid = copy(rule.fw_rule->wszLocalUserOwner);
+	return record;
 }

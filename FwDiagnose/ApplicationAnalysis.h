@@ -62,4 +62,7 @@ PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput out
 
 void
 DeleteMissingAppRules(
-    std::vector<NormalizedFirewallRule>& rules, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule);
+    std::vector<NormalizedFirewallRule>& rules,
+    std::wistream& input,
+    const DeleteFirewallRuleFunction& deleteRule,
+    StoreCleanup& cleanup);

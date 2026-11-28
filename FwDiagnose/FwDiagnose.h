@@ -66,7 +66,9 @@ enum class PromptResponse : uint8_t
 	Yes,
 	No,
 	Skip,
-	All
+	All,
+	// redirected input ran out before an answer; callers treat it as Skip
+	EndOfInput
 };
 
 //
@@ -97,16 +99,70 @@ inline constexpr auto* DuplicateDeletionPrompt = "       Delete all duplicates o
 inline constexpr auto* RuleDeletionPrompt = "       Delete this rule";
 
 //
+// InputIsConsole
+//
+// Says whether a prompt's input is the interactive console, which can supply more input after an end
+// of input (Ctrl+Z). A file, a pipe, and NUL cannot, and neither can a scripted stream in tests.
+//
+// Parameters:
+//   input [in] - the stream the prompt reads from
+//
+// Returns:
+//   true when input is std::wcin and standard input is a console.
+//
+inline bool
+InputIsConsole(const std::wistream& input) noexcept
+{
+	DWORD consoleMode{};
+	return &input == &std::wcin && GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &consoleMode) != FALSE;
+}
+
+//
+// AskAgainAtEndOfInput
+//
+// Decides whether a prompt whose read failed should ask its question again. At the console an end of
+// input is not an answer, so the stream is cleared and the question is asked again. Redirected input can
+// never supply an answer, so asking again would loop forever; the caller stops asking instead.
+//
+// Parameters:
+//   input          [in, out] - the stream whose read failed; cleared when this returns true
+//   inputIsConsole [in] - InputIsConsole(input)
+//
+// Returns:
+//   true when the stream reached its end at the console and was cleared, so the question should be
+//   asked again; false when the caller should treat the input as ended.
+//
+inline bool
+AskAgainAtEndOfInput(std::wistream& input, bool inputIsConsole)
+{
+	if (!inputIsConsole || !input.eof() || input.bad())
+	{
+		return false;
+	}
+
+	input.clear();
+	if (&input == &std::wcin)
+	{
+		// std::wcin reads through stdin, which keeps its own end-of-file flag
+		std::clearerr(stdin);
+	}
+	std::printf("\n");
+	return true;
+}
+
+//
 // PromptForDeletion
 //
-// Asks whether to delete, until a valid answer is read.
+// Asks whether to delete, until a valid answer is read. At the console an end of input (Ctrl+Z) asks
+// again; redirected input that runs out ends the prompt.
 //
 // Parameters:
 //   deletion_prompt [in] - the question, printed before "(y/n/s/a)?"
 //   input           [in] - where the answers are read from; tests pass a scripted stream
 //
 // Returns:
-//   The answer. Skip when the input ends, so running out of input never approves a deletion.
+//   The answer. EndOfInput when redirected input runs out, so running out of input never approves a
+//   deletion.
 //
 inline PromptResponse
 PromptForDeletion(PCSTR deletion_prompt, std::wistream& input = std::wcin)
@@ -118,9 +174,14 @@ PromptForDeletion(PCSTR deletion_prompt, std::wistream& input = std::wcin)
 		userInput.clear();
 		if (!std::getline(input, userInput))
 		{
+			if (AskAgainAtEndOfInput(input, InputIsConsole(input)))
+			{
+				continue;
+			}
+
 			// running out of input must never count as approving a deletion
 			std::printf("\n       - No more input\n");
-			return PromptResponse::Skip;
+			return PromptResponse::EndOfInput;
 		}
 
 		if (userInput == L"y" || userInput == L"Y")
@@ -145,6 +206,7 @@ PromptForDeletion(PCSTR deletion_prompt, std::wistream& input = std::wcin)
 }
 
 // by default allow all 4 options (y/n/s/a), but if onlyAllowYesNo is set to true, only allow y/n and ignore s/a inputs (treat them as invalid and re-prompt)
+// at the console an end of input (Ctrl+Z) asks again; redirected input that runs out answers No, or Skip
 inline PromptResponse
 PromptForDeletion(PCWSTR deletion_prompt, bool onlyAllowYesNo = false)
 {
@@ -163,6 +225,11 @@ PromptForDeletion(PCWSTR deletion_prompt, bool onlyAllowYesNo = false)
 		userInput.clear();
 		if (!std::getline(std::wcin, userInput))
 		{
+			if (AskAgainAtEndOfInput(std::wcin, InputIsConsole(std::wcin)))
+			{
+				continue;
+			}
+
 			// running out of input must never count as approving a deletion
 			std::printf("\n       - No more input\n");
 			return onlyAllowYesNo ? PromptResponse::No : PromptResponse::Skip;

@@ -798,7 +798,8 @@ try
 		InitializeProfileJsonReport(jsonPath, std::vector<PCWSTR>(arguments.begin() + 1, arguments.end()));
 		std::printf(
 		    "  NOTE: JSON export currently includes firewall profiles, rule-status analysis, application analysis, "
-		    "app-package analysis, SID-owner analysis, filter rankings, and duplicate analysis only.\n");
+		    "app-package analysis, SID-owner analysis, filter rankings, duplicate analysis, and -clean-rules "
+		    "deletions only.\n");
 	}
 	const auto exitCode = RunFwDiagnose(static_cast<int>(arguments.size()), arguments.data());
 

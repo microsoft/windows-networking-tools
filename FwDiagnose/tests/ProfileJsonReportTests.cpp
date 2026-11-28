@@ -1067,9 +1067,352 @@ try
 	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::StoppedEarly);
 	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
 
+	// -clean-rules: one action of each kind, with null and present fields, every outcome, and a keep choice
+	// answered and one ended by the input
+	const auto keysInOrder = [](const std::wstring& text, std::initializer_list<PCWSTR> keys)
+	{
+		size_t next = 0;
+		for (const auto* key : keys)
+		{
+			const auto position = text.find(std::wstring(L"\n  \"") + key + L"\":", next);
+			if (position == std::wstring::npos)
+			{
+				return false;
+			}
+			next = position + 1;
+		}
+		return true;
+	};
+	const auto record = [](std::optional<std::wstring> ruleId,
+	                       std::optional<std::wstring> name,
+	                       DeletionOutcome outcome,
+	                       HRESULT error = S_OK)
+	{
+		return RuleDeletionRecord{
+		    .ruleId = std::move(ruleId),
+		    .name = std::move(name),
+		    .application = L"C:\\missing\\app.exe",
+		    .localUserOwnerSid = L"S-1-5-21-1-2-3-1001",
+		    .outcome = outcome,
+		    .error = error};
+	};
+	const auto accessDenied = HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED);
+	StoreCleanup cleanup;
+	cleanup.actions.push_back(
+	    {.reason = CleanupReason::MissingApplication,
+	     .decision = CleanupDecision::Yes,
+	     .approvalSource = ApprovalSource::Prompt,
+	     .rules = {record(L"{c1}", L"App rule", DeletionOutcome::Succeeded)}});
+	cleanup.actions.push_back(
+	    {.reason = CleanupReason::UnresolvedUserOwner,
+	     .decision = CleanupDecision::NotPrompted,
+	     .approvalSource = ApprovalSource::DeleteAll,
+	     .rules = {record(std::nullopt, std::nullopt, DeletionOutcome::Failed, accessDenied)}});
+	cleanup.actions.push_back(
+	    {.reason = CleanupReason::Duplicate,
+	     .decision = CleanupDecision::DeleteAll,
+	     .approvalSource = ApprovalSource::Prompt,
+	     .rules =
+	         {record(L"{d1}", L"Alpha", DeletionOutcome::Succeeded),
+	          record(L"{d2}", L"alpha copy", DeletionOutcome::Kept),
+	          record(L"{d3}", std::nullopt, DeletionOutcome::Failed, accessDenied)},
+	     .keptRuleIndex = 1,
+	     .keepChoice = DuplicateKeepRecord{.choices = {L"alpha", L"alpha copy"}, .answer = 2}});
+	auto endedKeepChoice = CleanupAction{
+	    .reason = CleanupReason::Duplicate,
+	    .decision = CleanupDecision::Yes,
+	    .approvalSource = ApprovalSource::Prompt,
+	    .rules =
+	        {record(L"{d4}", L"beta", DeletionOutcome::NotAttempted),
+	         record(L"{d5}", L"gamma", DeletionOutcome::NotAttempted)},
+	    .keepChoice = DuplicateKeepRecord{.choices = {L"beta", L"gamma"}}};
+	for (auto& ruleRecord : endedKeepChoice.rules)
+	{
+		ruleRecord.application = L"";
+	}
+	cleanup.actions.push_back(endedKeepChoice);
+	cleanup.actions.push_back(
+	    {.reason = CleanupReason::Duplicate,
+	     .decision = CleanupDecision::No,
+	     .rules = {
+	         record(L"{d6}", L"delta", DeletionOutcome::NotAttempted),
+	         record(L"{d7}", L"delta", DeletionOutcome::NotAttempted)}});
+	cleanup.actions.push_back(
+	    {.reason = CleanupReason::MissingLocalProfile,
+	     .decision = CleanupDecision::No,
+	     .rules = {record(L"{c4}", std::nullopt, DeletionOutcome::NotAttempted)}});
+
+	const auto cleanupStores = [&]()
+	{
+		return g_jsonResults.GetAt(0).GetObject().GetNamedObject(L"data").GetNamedArray(L"stores");
+	};
+	FirewallPolicyObjects cleanedStore;
+	cleanedStore.store_type = FW_STORE_TYPE_LOCAL;
+	cleanedStore.store_type_string = "Local";
+	cleanedStore.load_result = S_OK;
+	std::wstring cleanupText[2];
+	for (const bool verbose : {false, true})
+	{
+		InitializeProfileJsonReport(outputPath, {L"-clean-rules"});
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(cleanedStore, 0, {}, L"clean_rules", RuleStatusAnalysis::Performed);
+		WriteCleanupJson(cleanedStore, cleanup, L"clean_rules", S_OK);
+		cleanupText[verbose] = PrettifyJson(cleanupStores().GetAt(0).GetObject().GetNamedObject(L"cleanup"));
+		if (!verbose)
+		{
+			FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+		}
+	}
+	Check(cleanupText[0] == cleanupText[1], "The cleanup section differs with -verbose.");
+
+	const auto cleanedStoreRecord = cleanupStores().GetAt(0).GetObject();
+	Check(
+	    keysInOrder(PrettifyJson(cleanedStoreRecord), {L"store", L"cleanup", L"status"}),
+	    "The cleanup section is not after the analyses and before the store status.");
+	const auto section = cleanedStoreRecord.GetNamedObject(L"cleanup");
+	Check(
+	    section.GetNamedString(L"status") == L"completed" && !section.HasKey(L"diagnostics") &&
+	        keysInOrder(cleanupText[0], {L"status", L"counts", L"actions"}) &&
+	        JsonObject::Parse(cleanupText[0]).Size() == section.Size(),
+	    "Completed cleanup section fields incorrect or out of order.");
+	const auto counts = section.GetNamedObject(L"counts");
+	Check(
+	    counts.GetNamedNumber(L"candidateRuleCount") == 7 && counts.GetNamedNumber(L"attemptedCount") == 4 &&
+	        counts.GetNamedNumber(L"succeededCount") == 2 && counts.GetNamedNumber(L"failedCount") == 2 &&
+	        counts.GetNamedNumber(L"declinedCount") == 2 && counts.GetNamedNumber(L"skippedCount") == 1,
+	    "Cleanup counts incorrect.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(counts),
+	        {L"candidateRuleCount",
+	         L"attemptedCount",
+	         L"succeededCount",
+	         L"failedCount",
+	         L"declinedCount",
+	         L"skippedCount"}),
+	    "Cleanup counts out of order.");
+
+	const auto actions = section.GetNamedArray(L"actions");
+	Check(actions.Size() == 6, "One cleanup action per rule or set expected.");
+	const auto isNull = [](const JsonObject& object, PCWSTR key)
+	{
+		return object.HasKey(key) && object.GetNamedValue(key).ValueType() == JsonValueType::Null;
+	};
+	const auto isAccessDenied = [](const JsonObject& error)
+	{
+		return error.GetNamedString(L"domain") == L"hresult" && error.GetNamedNumber(L"code") == 2147942405.0 &&
+		       error.GetNamedString(L"hex") == L"0x80070005";
+	};
+
+	const auto deleted = actions.GetAt(0).GetObject();
+	Check(
+	    deleted.GetNamedString(L"action") == L"delete_rule" &&
+	        deleted.GetNamedString(L"reason") == L"missing_application" &&
+	        deleted.GetNamedString(L"ruleId") == L"{c1}" && deleted.GetNamedString(L"name") == L"App rule" &&
+	        deleted.GetNamedString(L"application") == L"C:\\missing\\app.exe" &&
+	        !deleted.HasKey(L"localUserOwnerSid") && deleted.GetNamedString(L"decision") == L"yes" &&
+	        deleted.GetNamedString(L"approvalSource") == L"prompt" &&
+	        deleted.GetNamedString(L"outcome") == L"succeeded" && isNull(deleted, L"error") && deleted.Size() == 9,
+	    "Deleted missing-application action incorrect.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(deleted),
+	        {L"action",
+	         L"reason",
+	         L"ruleId",
+	         L"name",
+	         L"application",
+	         L"decision",
+	         L"approvalSource",
+	         L"outcome",
+	         L"error"}),
+	    "Single-rule action fields out of order.");
+
+	const auto failed = actions.GetAt(1).GetObject();
+	Check(
+	    failed.GetNamedString(L"reason") == L"unresolved_user_owner" && isNull(failed, L"ruleId") &&
+	        isNull(failed, L"name") && failed.GetNamedString(L"localUserOwnerSid") == L"S-1-5-21-1-2-3-1001" &&
+	        !failed.HasKey(L"application") && failed.GetNamedString(L"decision") == L"not_prompted" &&
+	        failed.GetNamedString(L"approvalSource") == L"delete_all" &&
+	        failed.GetNamedString(L"outcome") == L"failed" && isAccessDenied(failed.GetNamedObject(L"error")),
+	    "Failed unresolved-owner action incorrect; a missing rule ID or name must be null.");
+	Check(
+	    keysInOrder(PrettifyJson(failed), {L"ruleId", L"name", L"localUserOwnerSid", L"decision"}),
+	    "The owner SID is not where the application would be.");
+
+	const auto partial = actions.GetAt(2).GetObject();
+	const auto keepChoice = partial.GetNamedObject(L"keepChoice");
+	const auto choices = keepChoice.GetNamedArray(L"choices");
+	const auto keptRule = partial.GetNamedObject(L"keptRule");
+	Check(
+	    partial.GetNamedString(L"action") == L"delete_duplicates" &&
+	        partial.GetNamedString(L"reason") == L"duplicate" && partial.GetNamedNumber(L"ruleCount") == 3 &&
+	        partial.GetNamedString(L"application") == L"C:\\missing\\app.exe" && !partial.HasKey(L"ruleId") &&
+	        partial.GetNamedString(L"decision") == L"delete_all" &&
+	        partial.GetNamedString(L"approvalSource") == L"prompt" && choices.Size() == 2 &&
+	        choices.GetAt(0).GetString() == L"alpha" && choices.GetAt(1).GetString() == L"alpha copy" &&
+	        keepChoice.GetNamedString(L"result") == L"chosen" && keepChoice.GetNamedNumber(L"answer") == 2 &&
+	        keptRule.GetNamedString(L"ruleId") == L"{d2}" && keptRule.GetNamedString(L"name") == L"alpha copy" &&
+	        partial.GetNamedString(L"outcome") == L"partial",
+	    "Partly deleted duplicate action incorrect.");
+	const auto partialRules = partial.GetNamedArray(L"rules");
+	Check(
+	    partialRules.Size() == 3 && partialRules.GetAt(0).GetObject().GetNamedString(L"outcome") == L"succeeded" &&
+	        isNull(partialRules.GetAt(0).GetObject(), L"error") &&
+	        partialRules.GetAt(1).GetObject().GetNamedString(L"outcome") == L"kept" &&
+	        isNull(partialRules.GetAt(1).GetObject(), L"error") &&
+	        partialRules.GetAt(2).GetObject().GetNamedString(L"outcome") == L"failed" &&
+	        isNull(partialRules.GetAt(2).GetObject(), L"name") &&
+	        isAccessDenied(partialRules.GetAt(2).GetObject().GetNamedObject(L"error")),
+	    "Duplicate rule outcomes incorrect; only the failed rule has an error.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(partial),
+	        {L"action",
+	         L"reason",
+	         L"ruleCount",
+	         L"application",
+	         L"decision",
+	         L"approvalSource",
+	         L"keepChoice",
+	         L"keptRule",
+	         L"outcome",
+	         L"rules"}) &&
+	        keysInOrder(PrettifyJson(keepChoice), {L"choices", L"result", L"answer"}) &&
+	        keysInOrder(PrettifyJson(keptRule), {L"ruleId", L"name"}) &&
+	        keysInOrder(PrettifyJson(partialRules.GetAt(2).GetObject()), {L"ruleId", L"name", L"outcome", L"error"}),
+	    "Duplicate action fields out of order.");
+
+	const auto ended = actions.GetAt(3).GetObject();
+	const auto endedChoice = ended.GetNamedObject(L"keepChoice");
+	Check(
+	    endedChoice.GetNamedString(L"result") == L"end_of_input" && isNull(endedChoice, L"answer") &&
+	        endedChoice.GetNamedArray(L"choices").Size() == 2 && isNull(ended, L"keptRule") &&
+	        isNull(ended, L"application") && ended.GetNamedString(L"outcome") == L"not_attempted",
+	    "A keep choice ended by the input must have a null answer and no kept rule.");
+
+	const auto declined = actions.GetAt(4).GetObject();
+	Check(
+	    declined.GetNamedString(L"decision") == L"no" && isNull(declined, L"approvalSource") &&
+	        isNull(declined, L"keepChoice") && isNull(declined, L"keptRule") &&
+	        declined.GetNamedString(L"outcome") == L"not_attempted",
+	    "A declined set must have null keepChoice, keptRule, and approvalSource.");
+	const auto noProfile = actions.GetAt(5).GetObject();
+	Check(
+	    noProfile.GetNamedString(L"reason") == L"missing_local_profile" &&
+	        noProfile.GetNamedString(L"localUserOwnerSid") == L"S-1-5-21-1-2-3-1001" &&
+	        noProfile.GetNamedString(L"decision") == L"no",
+	    "Missing-local-profile action incorrect.");
+
+	const auto incomplete = g_jsonResults.GetAt(0).GetObject().GetNamedArray(L"diagnostics").GetAt(0).GetObject();
+	Check(
+	    incomplete.GetNamedString(L"code") == L"json_export_incomplete" &&
+	        incomplete.GetNamedString(L"message") ==
+	            L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, "
+	            L"SID-owner analysis, filter rankings, duplicate analysis, and -clean-rules deletions are exported. "
+	            L"Other console output for this command is not yet exported.",
+	    "The json_export_incomplete message does not list -clean-rules deletions.");
+
+	// cleanupSummary across stores: the cleaned store above, a store interrupted after one deletion, a store
+	// with nothing to clean, a store skipped because it cannot be modified locally, and one not skipped
+	FW_RULE skippedFwRule{};
+	FirewallPolicyObjects interruptedStore;
+	interruptedStore.store_type = FW_STORE_TYPE_GPO;
+	interruptedStore.store_type_string = "Group Policy";
+	interruptedStore.load_result = S_OK;
+	FirewallPolicyObjects emptyStore;
+	emptyStore.store_type = FW_STORE_TYPE_MDM;
+	emptyStore.store_type_string = "MDM";
+	emptyStore.load_result = S_OK;
+	FirewallPolicyObjects skippedStore;
+	skippedStore.store_type = FW_STORE_TYPE_GP_RSOP;
+	skippedStore.store_type_string = "Group Policy (RSOP)";
+	skippedStore.load_result = S_OK;
+	skippedStore.normalizedRules.emplace_back(&skippedFwRule, FW_BINARY_VERSION_33);
+	FirewallPolicyObjects emptyUnmodifiableStore;
+	emptyUnmodifiableStore.store_type = FW_STORE_TYPE_WSH_STATIC;
+	emptyUnmodifiableStore.store_type_string = "Service Hardening (static)";
+	emptyUnmodifiableStore.load_result = S_OK;
+
+	StoreCleanup interrupted;
+	interrupted.actions.push_back(cleanup.actions[0]);
+	WriteFirewallRuleStatusJson(interruptedStore, 0, {}, L"clean_rules", RuleStatusAnalysis::Performed);
+	WriteCleanupJson(interruptedStore, interrupted, L"clean_rules", E_ACCESSDENIED);
+	WriteFirewallRuleStatusJson(emptyStore, 0, {}, L"clean_rules", RuleStatusAnalysis::Performed);
+	WriteCleanupJson(emptyStore, StoreCleanup{}, L"clean_rules", S_OK);
+	WriteFirewallRuleStatusJson(skippedStore, 0, {}, L"clean_rules", RuleStatusAnalysis::NotPerformed);
+	WriteCleanupSkippedStoreJson(skippedStore, L"clean_rules");
+	WriteFirewallRuleStatusJson(emptyUnmodifiableStore, 0, {}, L"clean_rules", RuleStatusAnalysis::NotPerformed);
+	WriteCleanupSkippedStoreJson(emptyUnmodifiableStore, L"clean_rules");
+
+	const auto interruptedSection = cleanupStores().GetAt(1).GetObject().GetNamedObject(L"cleanup");
+	const auto interruptedDiagnostics = interruptedSection.GetNamedArray(L"diagnostics");
+	Check(
+	    interruptedSection.GetNamedString(L"status") == L"partial" && interruptedDiagnostics.Size() == 1 &&
+	        interruptedSection.GetNamedArray(L"actions").Size() == 1 &&
+	        keysInOrder(PrettifyJson(interruptedSection), {L"status", L"counts", L"actions", L"diagnostics"}),
+	    "An interrupted cleanup must be partial with one diagnostic after its actions.");
+	const auto interruption = interruptedDiagnostics.GetAt(0).GetObject();
+	Check(
+	    interruption.GetNamedString(L"code") == L"cleanup_interrupted" &&
+	        interruption.GetNamedString(L"severity") == L"error" &&
+	        interruption.GetNamedString(L"operation") == L"clean_rules" &&
+	        interruption.GetNamedObject(L"subject").GetNamedString(L"property") == L"cleanup" &&
+	        interruption.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070005",
+	    "The cleanup_interrupted diagnostic is incorrect.");
+
+	const auto emptySection = cleanupStores().GetAt(2).GetObject().GetNamedObject(L"cleanup");
+	const auto emptyCounts = emptySection.GetNamedObject(L"counts");
+	bool allZero = emptyCounts.Size() == 6;
+	for (const auto* key :
+	     {L"candidateRuleCount",
+	      L"attemptedCount",
+	      L"succeededCount",
+	      L"failedCount",
+	      L"declinedCount",
+	      L"skippedCount"})
+	{
+		allZero = allZero && emptyCounts.GetNamedNumber(key) == 0;
+	}
+	Check(
+	    emptySection.GetNamedString(L"status") == L"completed" && emptySection.GetNamedArray(L"actions").Size() == 0 &&
+	        allZero,
+	    "A store with nothing to clean must have no actions and zero counts.");
+	Check(
+	    cleanupStores().GetAt(3).GetObject().GetNamedString(L"status") == L"skipped" &&
+	        !cleanupStores().GetAt(3).GetObject().HasKey(L"cleanup") &&
+	        cleanupStores().GetAt(4).GetObject().GetNamedString(L"status") == L"completed",
+	    "Store statuses for the skipped-store test incorrect.");
+
+	const auto data = g_jsonResults.GetAt(0).GetObject().GetNamedObject(L"data");
+	const auto summary = data.GetNamedObject(L"cleanupSummary");
+	const auto totals = summary.GetNamedObject(L"counts");
+	Check(
+	    summary.GetNamedNumber(L"cleanedStoreCount") == 3 && totals.GetNamedNumber(L"candidateRuleCount") == 8 &&
+	        totals.GetNamedNumber(L"attemptedCount") == 5 && totals.GetNamedNumber(L"succeededCount") == 3 &&
+	        totals.GetNamedNumber(L"failedCount") == 2 && totals.GetNamedNumber(L"declinedCount") == 2 &&
+	        totals.GetNamedNumber(L"skippedCount") == 1,
+	    "cleanupSummary totals do not add the cleaned stores' counts.");
+	const auto skippedStores = summary.GetNamedArray(L"skippedStores");
+	Check(
+	    skippedStores.Size() == 1 &&
+	        skippedStores.GetAt(0).GetObject().GetNamedString(L"store") == L"group_policy_rsop" &&
+	        skippedStores.GetAt(0).GetObject().GetNamedString(L"reason") == L"store_cannot_be_modified_locally" &&
+	        keysInOrder(PrettifyJson(skippedStores.GetAt(0).GetObject()), {L"store", L"reason"}),
+	    "skippedStores must list only stores whose status is skipped.");
+	const auto summaryText = PrettifyJson(summary);
+	Check(
+	    keysInOrder(summaryText, {L"cleanedStoreCount", L"counts", L"skippedStores"}) &&
+	        JsonObject::Parse(summaryText).Size() == summary.Size(),
+	    "cleanupSummary fields out of order.");
+	Check(
+	    keysInOrder(PrettifyJson(data), {L"firewallProfiles", L"stores", L"cleanupSummary"}),
+	    "cleanupSummary is not after the stores.");
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+
 	std::printf(
-	    "Profile, rule-status, application-analysis, package-analysis, SID-owner-analysis, filter-ranking, and "
-	    "duplicate-analysis JSON tests passed.\n");
+	    "Profile, rule-status, application-analysis, package-analysis, SID-owner-analysis, filter-ranking, "
+	    "duplicate-analysis, and -clean-rules JSON tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)

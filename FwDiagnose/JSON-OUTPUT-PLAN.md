@@ -2,7 +2,7 @@
 
 ## Current status and next steps
 
-Last updated 2026-11-27, at commit `14c87c8` on branch `khorton/FirewallRuleAnalysis` (pushed), plus the step 1 tests and these notes (not committed yet).
+Last updated 2026-11-27, at commit `d6a114b` on branch `khorton/FirewallRuleAnalysis` (pushed), plus Review 8 (not committed yet).
 
 ### Where we left off
 
@@ -10,16 +10,15 @@ Last updated 2026-11-27, at commit `14c87c8` on branch `khorton/FirewallRuleAnal
 - Each analysis lives in its own module (`ApplicationAnalysis`, `PackageAnalysis`, `UserOwnerAnalysis`, `FilterRanking`, `DuplicateAnalysis`) and returns one result that both the console text and the JSON are written from.
 - All three `-clean-rules` deletions take the input stream and delete function as parameters and are tested with scripted answers and a fake delete function: `DeleteMissingAppRules` (`ApplicationAnalysis.cpp`), `DeleteUnresolvedUserAccountRules` (`UserOwnerAnalysis.cpp`), and `DeleteDuplicateRules` (`DuplicateAnalysis.cpp`). The shared `DeleteFirewallRuleFunction` type is in `RuleDeletion.h`.
 - Every report is still marked `partial` with a `json_export_incomplete` warning (`ProfileJsonReport.cpp`, about line 180), and the console prints a NOTE listing the exported sections (`FwDiagnose.cpp`, about line 800).
-- Tests: `NormalizedStringTests`, `FirewallRulePrintTests` (1294 checks), and `ProfileJsonReportTests` all pass.
+- Tests: `NormalizedStringTests`, `FirewallRulePrintTests` (1394 checks), and `ProfileJsonReportTests` all pass.
 - **Fixed after resuming:** under `-clean-rules`, duplicate deletion could delete rules the user chose to keep. The missing-application and unresolved-SID phases never set `is_rule_deleted`, and duplicate analysis did not check it; copies of a duplicate share every setting, so the duplicate phase could keep a copy an earlier phase had deleted and delete the copies the user kept. Now all three phases mark the rules they delete, and `AnalyzeDuplicateRules` leaves deleted rules out of the sets (a set with one rule left is not a duplicate). `TestDuplicateAnalysisSkipsDeletedRules` and `TestDeleteDuplicateRulesSkipsDeletedRules` cover the duplicate part; `-analyze-rules` output is unchanged.
-- Still open, for Review 8: in `-clean-rules`, the unresolved-SID analysis and filter rankings still count rules the earlier phases deleted, while duplicate analysis no longer does.
+- Review 8 is implemented: `-clean-rules` reports one action per rule or set of duplicates it proposed, with the decision, approval, and outcome, per-store and total counts, and the read-only stores it skipped. The SID-owner analysis now leaves out rules deleted earlier in the run; filter rankings stay a before-cleanup snapshot.
 
 ### What to do next, in order
 
-1. **Review 8: `-clean-rules` action history.** Propose the JSON for section 3's `-clean-rules` schema: one action record per prompted rule or set (reason, store, rule ID, decision, approval source, outcome, error), which rule was kept for duplicates, and the attempted, succeeded, failed, and skipped counts. Get approval, then implement it from the deletion functions' results (have them return their decisions rather than only printing).
-2. **Review 9: finish `-analyze-rules`.** Check whether any console output of `-analyze-rules` is still not exported. If nothing is left, stop marking `analyze_rules` partial: drop its `json_export_incomplete` warning, let `run.status` become `completed`, and update the console NOTE, `-?` help (`FwDiagnose.cpp`, about line 218), COMMAND-LINE.md, and the tests.
-3. **Then the other commands**, one review each, in this order: `-analyze-inbound-rules` (currently rejected with `-json`), `-list-app-packages`, `-analyze-app-package-rules`, `-analyze-wfp`, Shields Up outcomes, and callout removal and restoration.
-4. **Later:** `-jsonl` for `-wfp-events` and `-tcpip-events` (sections 4-6), and formal JSON Schema files (section 7, step 1).
+1. **Review 9: finish `-analyze-rules`.** Check whether any console output of `-analyze-rules` is still not exported. If nothing is left, stop marking `analyze_rules` partial: drop its `json_export_incomplete` warning, let `run.status` become `completed`, and update the console NOTE, `-?` help (`FwDiagnose.cpp`, about line 218), COMMAND-LINE.md, and the tests.
+2. **Then the other commands**, one review each, in this order: `-analyze-inbound-rules` (currently rejected with `-json`), `-list-app-packages`, `-analyze-app-package-rules`, `-analyze-wfp`, Shields Up outcomes, and callout removal and restoration.
+3. **Later:** `-jsonl` for `-wfp-events` and `-tcpip-events` (sections 4-6), and formal JSON Schema files (section 7, step 1).
 
 ### How each review is done
 
@@ -39,9 +38,9 @@ Every round that changes code ends with an independent review by **vault** and *
 | Resume | No agent: build the solution, run the three test executables, and save a read-only `-analyze-rules -json` baseline. |
 | Deletion bug (done) | **forge** fixed it; **tester** wrote the duplicate-phase tests; reviewed by vault, bug-hunter, and security-sdl. |
 | Testable deletions (done) | **forge** added the parameters and moved the functions; **tester** wrote the scripted-answer tests; reviewed by vault, bug-hunter, sal-contracts, and security-sdl. |
-| 1. Review 8 | **cipher** proposes the console and JSON design for approval; then **forge** and **tester**. |
-| 2. Review 9 | **forge** checks for unexported output and removes the partial marking; **vault** validates. |
-| 3. Other commands | **forge** and **tester** for each; for callout removal, **sal-contracts** also checks the filter lock and the `TerminateProcess` exit path. |
+| Review 8 (done) | **cipher** proposed the design; **forge** implemented it; **tester** wrote the tests; reviewed by vault, bug-hunter, and security-sdl. |
+| 1. Review 9 | **forge** checks for unexported output and removes the partial marking; **vault** validates. |
+| 2. Other commands | **forge** and **tester** for each; for callout removal, **sal-contracts** also checks the filter lock and the `TerminateProcess` exit path. |
 | Later | **sal-contracts** for thread-safe `-jsonl` event recording; **vm-deployer**, only with approval, for the firewall-changing tests (TESTING-PLAN Phases 3-4). |
 
 Follow `.github/copilot-instructions.md`: tabs, CRLF, no BOM; format only the changed lines with clang-format; `.has_value()`; `enum class` rather than bool parameters; `NormalizedString::AlphabeticalCompare` for any sort a user sees. Every new function gets a comment banner with its purpose, its `[in]`/`[out]` parameters, and its return value, and unusual C++ constructs are explained.
@@ -204,20 +203,7 @@ Store identities cover all ten configured stores: Local, Group Policy, RSOP, sta
 
 ### `-clean-rules`
 
-Use the analysis sections above, plus an ordered action history.
-
-```json
-{
-  "action": "delete_rule",
-  "reason": "duplicate",
-  "store": "local",
-  "ruleId": "a-rule-id",
-  "decision": "approved",
-  "approvalSource": "prompt",
-  "outcome": "succeeded",
-  "error": null
-}
-```
+Use the analysis sections above, plus an ordered action history per store and a summary. Implemented as Review 8 (section 9), which has the field-level contract.
 
 Record:
 
@@ -965,3 +951,78 @@ Status: approved and implemented.
 - Without `-verbose`, `duplicateSets` is omitted. With `-verbose`, it is present and empty when there are no duplicates.
 - Sets and their rules are in console order. `name` keeps its original case, unlike the console. `application` is the set's shared application, or `null` when the rules have none. `ruleId` and `name` are `null` when absent.
 - Field order: `status`, `ignoredFields`, `duplicateSetCount`, `duplicateRuleCount`, `duplicateSets`. Sets: `ruleCount`, `application`, `rules`. Rules: `ruleId`, `name`.
+
+### Review 8: `-clean-rules` - deletion history per policy store
+
+Status: approved and implemented.
+
+The three deletion functions (`DeleteMissingAppRules`, `DeleteUnresolvedUserAccountRules`, `DeleteDuplicateRules`) append one `CleanupAction` (`RuleDeletion.h`) to the store's `StoreCleanup` for every rule or set of duplicates they propose, before deleting it. The JSON is written from those records after the duplicate phase, or from the store's error handler if an exception stopped it.
+
+#### Console
+
+The prompts, answers, and messages are unchanged. `PromptForDeletion` now returns `EndOfInput` instead of `Skip` when redirected input runs out, so the two can be told apart; the callers print the same "Skipping the remainder" line for both. At the console, an end of input (Ctrl+Z) is not an answer: the stream is cleared and the question is asked again, for the y/n/s/a prompts, the name-to-keep prompt, and the `-remove-callouts` prompt. Only redirected input, which can never supply an answer, ends a prompt. The SID-owner summary under `-clean-rules` can show smaller counts than before, because it now leaves out rules the missing-application phase deleted (see below).
+
+Each record copies the rule's ID, name, application, and owner SID when the action is recorded. The duplicate analysis sorts the store's rules in place after the first two phases, so a pointer into them would name the wrong rule.
+
+#### JSON
+
+`cleanup` is added to the store record after `duplicateAnalysis` (values illustrative):
+
+```json
+"cleanup": {
+  "status": "completed",
+  "counts": { "candidateRuleCount": 5, "attemptedCount": 3, "succeededCount": 2, "failedCount": 1, "declinedCount": 0, "skippedCount": 2 },
+  "actions": [
+    { "action": "delete_rule", "reason": "missing_application", "ruleId": "{a1}", "name": "Old Tool", "application": "C:\\Tools\\old.exe",
+      "decision": "yes", "approvalSource": "prompt", "outcome": "succeeded", "error": null },
+    { "action": "delete_rule", "reason": "missing_application", "ruleId": "{a2}", "name": "Legacy Updater", "application": "C:\\Legacy\\upd.exe",
+      "decision": "yes", "approvalSource": "prompt", "outcome": "failed",
+      "error": { "domain": "hresult", "code": 2147942405, "hex": "0x80070005" } },
+    { "action": "delete_rule", "reason": "missing_application", "ruleId": "{a3}", "name": "Gone", "application": "C:\\Gone\\a.exe",
+      "decision": "skip_remaining", "approvalSource": null, "outcome": "not_attempted", "error": null },
+    { "action": "delete_duplicates", "reason": "duplicate", "ruleCount": 2, "application": null,
+      "decision": "yes", "approvalSource": "prompt",
+      "keepChoice": { "choices": ["Contoso App", "Contoso App (old)"], "result": "chosen", "answer": 1 },
+      "keptRule": { "ruleId": "{d1}", "name": "Contoso App" },
+      "outcome": "succeeded",
+      "rules": [
+        { "ruleId": "{d1}", "name": "Contoso App", "outcome": "kept", "error": null },
+        { "ruleId": "{d2}", "name": "Contoso App (old)", "outcome": "succeeded", "error": null }
+      ] },
+    { "action": "delete_duplicates", "reason": "duplicate", "ruleCount": 2, "application": null,
+      "decision": "end_of_input", "approvalSource": null, "keepChoice": null, "keptRule": null, "outcome": "not_attempted",
+      "rules": [
+        { "ruleId": "{z1}", "name": "zz", "outcome": "not_attempted", "error": null },
+        { "ruleId": "{z2}", "name": "zz", "outcome": "not_attempted", "error": null }
+      ] }
+  ]
+}
+```
+
+`cleanupSummary` is added to `results[].data` after `stores`:
+
+```json
+"cleanupSummary": {
+  "cleanedStoreCount": 5,
+  "counts": { "candidateRuleCount": 5, "attemptedCount": 3, "succeededCount": 2, "failedCount": 1, "declinedCount": 0, "skippedCount": 2 },
+  "skippedStores": [ { "store": "group_policy", "reason": "store_cannot_be_modified_locally" } ]
+}
+```
+
+- `cleanup` is present for every store whose rules were analyzed under `-clean-rules`, with `actions: []` and zero counts when nothing was proposed. Empty, failed, and skipped stores have none. It is the same with and without `-verbose`.
+- `status` is `partial` when an exception stopped the store; a `cleanup_interrupted` diagnostic carries the error, and the actions taken before it are kept.
+- Actions are in the order they were taken. The store is implied by nesting.
+- `reason`: `missing_application`, `unresolved_user_owner`, `missing_local_profile`, or `duplicate`. Single rules have `application` (missing application) or `localUserOwnerSid` (the other two).
+- `decision`: `yes`, `no`, `skip_remaining`, `delete_all`, `end_of_input` (redirected input ran out; never at the console), or `not_prompted`. After `s` or the end of input, the rest of that category in that store is still listed, as `not_prompted` with `approvalSource: null` and `outcome: "not_attempted"`, so a reader sees which problem rules remain.
+- `approvalSource`: `prompt` (this action's own `y` or `a`), `delete_all` (an earlier `a` in the same category and store), or `null` (not approved).
+- `outcome`: `succeeded`, `failed`, or `not_attempted`; for duplicates also `partial` when some deletions of the set failed. Each rule of a set has `kept`, `succeeded`, `failed`, or `not_attempted`. `error` is the error object for a failed deletion, otherwise `null`.
+- `keepChoice` is `null` when the rules of a set have one name (the first rule is kept). Otherwise it lists the choices offered; `result` is `chosen` with the number entered, or `end_of_input` with `answer: null`, in which case every rule was kept.
+- Counts are of rules proposed for deletion; the rule kept from a set is not counted. `candidateRuleCount = attemptedCount + declinedCount + skippedCount` and `attemptedCount = succeededCount + failedCount`. `declinedCount` is `n`; `skippedCount` is everything else not attempted.
+- `cleanupSummary.counts` adds up the stores; `skippedStores` lists the read-only stores that had rules (store `status: "skipped"`).
+- `ruleId` and `name` keep their original case and are `null` when absent.
+- Field order: `cleanup`: `status`, `counts`, `actions`, `diagnostics`. Actions: `action`, `reason`, `ruleCount`, `ruleId`, `name`, `application`, `localUserOwnerSid`, `decision`, `approvalSource`, `keepChoice`, `keptRule`, `outcome`, `error`, `rules`. `cleanupSummary`: `cleanedStoreCount`, `counts`, `skippedStores`.
+
+#### Analyses that run after a deletion phase
+
+- `AnalyzeUserOwnerRules` leaves out rules the missing-application phase deleted, so its findings match what the unresolved-SID phase prompts. `-analyze-rules` output is unchanged.
+- Filter rankings stay a snapshot from before the cleanup: the WFP filters are read once, before any deletion, so leaving deleted rules out of the rule side alone would mix the two.

@@ -1747,8 +1747,28 @@ ProcessFirewallRules()
 			    banner_header.c_str(),
 			    policy.store_type_string);
 			WriteFirewallRuleStatusJson(policy, 0, {}, L"clean_rules", RuleStatusAnalysis::NotPerformed);
+			WriteCleanupSkippedStoreJson(policy, L"clean_rules");
 			continue;
 		}
+
+		// declared outside the try, so the actions taken before an exception are still reported
+		StoreCleanup cleanup;
+		bool cleanup_started = false;
+		const auto writeInterruptedCleanup = [&](HRESULT error) noexcept
+		{
+			if (!cleanup_started)
+			{
+				return;
+			}
+			try
+			{
+				WriteCleanupJson(policy, cleanup, L"clean_rules", error);
+			}
+			catch (...)
+			{
+				RecordOperationFailure(wil::ResultFromCaughtException());
+			}
+		};
 
 		try
 		{
@@ -1822,13 +1842,15 @@ ProcessFirewallRules()
 			if (CleanBrokenRulesEnabled())
 			{
 				std::printf("\n");
+				cleanup_started = true;
 				DeleteMissingAppRules(
 				    policy.normalizedRules,
 				    std::wcin,
 				    [&policy](PCWSTR ruleId)
 				    {
 					    return g_FWDeleteFirewallRule(policy.store_handle, ruleId);
-				    });
+				    },
+				    cleanup);
 			}
 
 			if (VerboseOutputEnabled())
@@ -1848,7 +1870,8 @@ ProcessFirewallRules()
 				    [&policy](PCWSTR ruleId)
 				    {
 					    return g_FWDeleteFirewallRule(policy.store_handle, ruleId);
-				    });
+				    },
+				    cleanup);
 			}
 
 			if (VerboseOutputEnabled())
@@ -1874,18 +1897,24 @@ ProcessFirewallRules()
 				    [&policy](PCWSTR ruleId)
 				    {
 					    return g_FWDeleteFirewallRule(policy.store_handle, ruleId);
-				    });
+				    },
+				    cleanup);
+				// a failure writing it is not reported again as an interrupted cleanup
+				cleanup_started = false;
+				WriteCleanupJson(policy, cleanup, L"clean_rules", S_OK);
 			}
 		}
 		catch (const wil::ResultException& ex)
 		{
 			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
 			RecordOperationFailure(ex.GetErrorCode());
+			writeInterruptedCleanup(ex.GetErrorCode());
 		}
 		catch (const std::exception& ex)
 		{
 			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
 			RecordOperationFailure(wil::ResultFromCaughtException());
+			writeInterruptedCleanup(wil::ResultFromCaughtException());
 		}
 	}
 }

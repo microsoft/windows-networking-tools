@@ -65,7 +65,8 @@ struct UserOwnerAnalysis
 	std::vector<MissingLocalProfileFinding> missingLocalProfileRules;
 };
 
-// sets unresolve_user_sid and successfully_resolved_user_name_with_local_profile on the analyzed rules
+// sets unresolve_user_sid and successfully_resolved_user_name_with_local_profile on the analyzed rules;
+// rules already marked is_rule_deleted are not analyzed, so the findings match what can still be deleted
 UserOwnerAnalysis
 AnalyzeUserOwnerRules(std::vector<NormalizedFirewallRule>& rules, const LocalProfiles& localProfiles);
 
@@ -75,4 +76,7 @@ PrintUserOwnerAnalysis(const UserOwnerAnalysis& analysis, AnalysisOutput output)
 
 void
 DeleteUnresolvedUserAccountRules(
-    std::vector<NormalizedFirewallRule>& rules, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule);
+    std::vector<NormalizedFirewallRule>& rules,
+    std::wistream& input,
+    const DeleteFirewallRuleFunction& deleteRule,
+    StoreCleanup& cleanup);

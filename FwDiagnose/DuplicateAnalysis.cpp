@@ -267,23 +267,45 @@ ReturnDuplicateKeepChoices(const DuplicateRuleSet& set)
 //
 // Parameters:
 //   analysis   [in] - the result of AnalyzeDuplicateRules; the rules it refers to are updated
-//   input      [in] - where the answers are read from: std::wcin, or a scripted stream in tests. When it
-//                     ends, nothing more is deleted without an answer: a y/n/s/a prompt counts as 's',
-//                     and a set waiting for the name to keep is left alone.
+//   input      [in] - where the answers are read from: std::wcin, or a scripted stream in tests. At the
+//                     console an end of input asks again. When redirected input ends, nothing more is
+//                     deleted without an answer: a y/n/s/a prompt counts as 's', and a set waiting for
+//                     the name to keep is left alone.
 //   deleteRule [in] - deletes one rule by rule ID; FWDeleteFirewallRule on the store's handle, or a
 //                     fake in tests
+//   cleanup    [in, out] - one action is appended for each set, including the sets left unprompted after
+//                          's' or the end of input; each is appended before its deletions
 //
 void
 DeleteDuplicateRules(
-    const DuplicateAnalysis& analysis, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule)
+    const DuplicateAnalysis& analysis,
+    std::wistream& input,
+    const DeleteFirewallRuleFunction& deleteRule,
+    StoreCleanup& cleanup)
 {
 	bool printed_deletion_header = false;
 	bool delete_all_with_no_more_prompts = false;
+	bool skip_remaining_sets = false;
 
 	for (const auto& set : analysis.duplicateSets)
 	{
 		const auto duplicate_rule_total = std::distance(set.duplicate_rule_begin, set.duplicate_rule_end);
 		FAIL_FAST_IF(duplicate_rule_total == 0);
+
+		// built before the action is added, so a failed copy never leaves an action without its rules
+		std::vector<RuleDeletionRecord> records;
+		for (auto rule = set.duplicate_rule_begin; rule != set.duplicate_rule_end; ++rule)
+		{
+			records.push_back(ReturnRuleDeletionRecord(*rule));
+		}
+		auto& action = cleanup.actions.emplace_back();
+		action.reason = CleanupReason::Duplicate;
+		action.rules = std::move(records);
+		if (skip_remaining_sets)
+		{
+			// recorded without printing, so the JSON shows which sets are still there
+			continue;
+		}
 
 		if (!printed_deletion_header)
 		{
@@ -297,23 +319,37 @@ DeleteDuplicateRules(
 		    duplicate_rule_total,
 		    RuleNameOrId(*set.duplicate_rule_begin).c_str());
 
-		if (!delete_all_with_no_more_prompts)
+		if (delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion(DuplicateDeletionPrompt, input))
+			action.approvalSource = ApprovalSource::DeleteAll;
+		}
+		else
+		{
+			const auto response = PromptForDeletion(DuplicateDeletionPrompt, input);
+			switch (response)
 			{
 			case PromptResponse::Yes:
 				// continue to delete the duplicates of this rule
+				action.decision = CleanupDecision::Yes;
+				action.approvalSource = ApprovalSource::Prompt;
 				break;
 
 			case PromptResponse::No:
+				action.decision = CleanupDecision::No;
 				std::printf("       - Skipping this rule\n");
 				continue;
 
 			case PromptResponse::Skip:
+			case PromptResponse::EndOfInput:
+				action.decision =
+				    response == PromptResponse::Skip ? CleanupDecision::SkipRemaining : CleanupDecision::EndOfInput;
 				std::printf("       - Skipping the remainder of the duplicate rules in this store\n");
-				return;
+				skip_remaining_sets = true;
+				continue;
 
 			case PromptResponse::All:
+				action.decision = CleanupDecision::DeleteAll;
+				action.approvalSource = ApprovalSource::Prompt;
 				std::printf("       - Deleting all duplicate rules in this store\n");
 				delete_all_with_no_more_prompts = true;
 				break;
@@ -325,10 +361,12 @@ DeleteDuplicateRules(
 		const auto choices = ReturnDuplicateKeepChoices(set);
 		if (choices.size() > 1)
 		{
+			auto& keepChoice = action.keepChoice.emplace();
 			std::printf("\n     Duplicate rules have different names. Please choose which to keep:\n");
 			for (size_t choice = 0; choice < choices.size(); ++choice)
 			{
 				std::printf("       %zu. %ls\n", choice + 1, choices[choice].label.c_str());
+				keepChoice.choices.push_back(choices[choice].label);
 			}
 
 			std::optional<size_t> chosen_rule;
@@ -339,6 +377,10 @@ DeleteDuplicateRules(
 				userInput.clear();
 				if (!std::getline(input, userInput))
 				{
+					if (AskAgainAtEndOfInput(input, InputIsConsole(input)))
+					{
+						continue;
+					}
 					break;
 				}
 
@@ -347,6 +389,7 @@ DeleteDuplicateRules(
 				if (entered_choice >= 1 && entered_choice <= choices.size())
 				{
 					chosen_rule = choices[entered_choice - 1].ruleIndex;
+					keepChoice.answer = entered_choice;
 				}
 			}
 
@@ -358,6 +401,8 @@ DeleteDuplicateRules(
 			rule_to_keep = chosen_rule.value();
 		}
 
+		action.keptRuleIndex = rule_to_keep;
+		action.rules[rule_to_keep].outcome = DeletionOutcome::Kept;
 		std::printf("       Deleting %zd duplicates of this rule, keeping 1\n", duplicate_rule_total - 1);
 
 		uint32_t successful_deletion_counter = 0;
@@ -370,9 +415,12 @@ DeleteDuplicateRules(
 				continue;
 			}
 
+			auto& record = action.rules[rule_index];
 			const auto deleteRuleError = deleteRule(rule->fw_rule->wszRuleId);
 			if (deleteRuleError != ERROR_SUCCESS)
 			{
+				record.outcome = DeletionOutcome::Failed;
+				record.error = HRESULT_FROM_WIN32(deleteRuleError);
 				std::printf(
 				    "        Failed to delete one of the duplicate firewall rules (0x%lx) - RuleId %ls\n",
 				    HRESULT_FROM_WIN32(deleteRuleError),
@@ -381,6 +429,7 @@ DeleteDuplicateRules(
 			}
 			else
 			{
+				record.outcome = DeletionOutcome::Succeeded;
 				rule->is_rule_deleted = true;
 				++successful_deletion_counter;
 				if (VerboseOutputEnabled())

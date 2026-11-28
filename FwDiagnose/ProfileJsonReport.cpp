@@ -182,8 +182,8 @@ ReturnJsonResultObject(PCWSTR command)
 	    L"message",
 	    String(
 	        L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, "
-	        L"SID-owner analysis, filter rankings, and duplicate analysis are exported. Other console output for this "
-	        L"command is not yet exported."));
+	        L"SID-owner analysis, filter rankings, duplicate analysis, and -clean-rules deletions are exported. Other "
+	        L"console output for this command is not yet exported."));
 
 	JsonArray diagnostics;
 	diagnostics.Append(pending);
@@ -238,6 +238,109 @@ ReturnJsonStoreObject(PCWSTR command, FW_STORE_TYPE storeType)
 		}
 	}
 	THROW_HR_MSG(E_UNEXPECTED, "The store record must be written before its analyses.");
+}
+
+JsonObject
+ReturnJsonCleanupCountsObject(const CleanupCounts& counts)
+{
+	const auto count = [](size_t value)
+	{
+		return JsonValue::CreateNumberValue(static_cast<double>(value));
+	};
+	JsonObject object;
+	object.SetNamedValue(L"candidateRuleCount", count(counts.candidate));
+	object.SetNamedValue(L"attemptedCount", count(counts.attempted));
+	object.SetNamedValue(L"succeededCount", count(counts.succeeded));
+	object.SetNamedValue(L"failedCount", count(counts.failed));
+	object.SetNamedValue(L"declinedCount", count(counts.declined));
+	object.SetNamedValue(L"skippedCount", count(counts.skipped));
+	return object;
+}
+
+// Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
+JsonObject
+ReturnJsonCleanupSummaryObject(PCWSTR command)
+{
+	auto data = ReturnJsonResultObject(command).GetNamedObject(L"data");
+	if (!data.HasKey(L"cleanupSummary"))
+	{
+		JsonObject summary;
+		summary.SetNamedValue(L"cleanedStoreCount", JsonValue::CreateNumberValue(0));
+		summary.SetNamedValue(L"counts", ReturnJsonCleanupCountsObject({}));
+		summary.SetNamedValue(L"skippedStores", JsonArray{});
+		data.SetNamedValue(L"cleanupSummary", summary);
+	}
+	return data.GetNamedObject(L"cleanupSummary");
+}
+
+PCWSTR
+CleanupReasonName(CleanupReason reason)
+{
+	switch (reason)
+	{
+	case CleanupReason::MissingApplication:
+		return L"missing_application";
+	case CleanupReason::UnresolvedUserOwner:
+		return L"unresolved_user_owner";
+	case CleanupReason::MissingLocalProfile:
+		return L"missing_local_profile";
+	case CleanupReason::Duplicate:
+		return L"duplicate";
+	}
+	THROW_HR_MSG(E_UNEXPECTED, "Unknown cleanup reason.");
+}
+
+PCWSTR
+CleanupDecisionName(CleanupDecision decision)
+{
+	switch (decision)
+	{
+	case CleanupDecision::Yes:
+		return L"yes";
+	case CleanupDecision::No:
+		return L"no";
+	case CleanupDecision::SkipRemaining:
+		return L"skip_remaining";
+	case CleanupDecision::DeleteAll:
+		return L"delete_all";
+	case CleanupDecision::EndOfInput:
+		return L"end_of_input";
+	case CleanupDecision::NotPrompted:
+		return L"not_prompted";
+	}
+	THROW_HR_MSG(E_UNEXPECTED, "Unknown cleanup decision.");
+}
+
+JsonValue
+ApprovalSourceValue(ApprovalSource source)
+{
+	switch (source)
+	{
+	case ApprovalSource::None:
+		return JsonValue::CreateNullValue();
+	case ApprovalSource::Prompt:
+		return String(L"prompt");
+	case ApprovalSource::DeleteAll:
+		return String(L"delete_all");
+	}
+	THROW_HR_MSG(E_UNEXPECTED, "Unknown approval source.");
+}
+
+PCWSTR
+DeletionOutcomeName(DeletionOutcome outcome)
+{
+	switch (outcome)
+	{
+	case DeletionOutcome::Kept:
+		return L"kept";
+	case DeletionOutcome::Succeeded:
+		return L"succeeded";
+	case DeletionOutcome::Failed:
+		return L"failed";
+	case DeletionOutcome::NotAttempted:
+		return L"not_attempted";
+	}
+	THROW_HR_MSG(E_UNEXPECTED, "Unknown deletion outcome.");
 }
 
 std::wstring
@@ -303,6 +406,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                         L"userOwnerAnalysis",
 		                                         L"filterRankings",
 		                                         L"duplicateAnalysis",
+		                                         L"cleanup",
 		                                         L"ruleCount",
 		                                         L"status",
 		                                         L"reason",
@@ -363,16 +467,88 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                             L"reason",
 		                                             L"status",
 		                                             L"statusHex",
+		                                             L"outcome",
 		                                             L"error"};
 
 		constexpr std::wstring_view errorOrder[]{L"domain",
 		                                         L"code",
 		                                         L"hex"};
+
+		constexpr std::wstring_view dataOrder[]{L"firewallProfiles",
+		                                        L"stores",
+		                                        L"cleanupSummary"};
+
+		constexpr std::wstring_view cleanupOrder[]{L"status",
+		                                           L"counts",
+		                                           L"actions",
+		                                           L"diagnostics"};
+
+		constexpr std::wstring_view cleanupSummaryOrder[]{L"cleanedStoreCount",
+		                                                  L"counts",
+		                                                  L"skippedStores"};
+
+		constexpr std::wstring_view cleanupCountsOrder[]{L"candidateRuleCount",
+		                                                 L"attemptedCount",
+		                                                 L"succeededCount",
+		                                                 L"failedCount",
+		                                                 L"declinedCount",
+		                                                 L"skippedCount"};
+
+		constexpr std::wstring_view cleanupActionOrder[]{L"action",
+		                                                 L"reason",
+		                                                 L"ruleCount",
+		                                                 L"ruleId",
+		                                                 L"name",
+		                                                 L"application",
+		                                                 L"localUserOwnerSid",
+		                                                 L"decision",
+		                                                 L"approvalSource",
+		                                                 L"keepChoice",
+		                                                 L"keptRule",
+		                                                 L"outcome",
+		                                                 L"error",
+		                                                 L"rules"};
+
+		constexpr std::wstring_view keepChoiceOrder[]{L"choices",
+		                                              L"result",
+		                                              L"answer"};
+
+		constexpr std::wstring_view skippedStoreOrder[]{L"store",
+		                                                L"reason"};
 		// clang-format on
 		std::span<const std::wstring_view> fieldOrder;
 		if (isProfile)
 		{
 			fieldOrder = profileOrder;
+		}
+		else if (object.HasKey(L"firewallProfiles") && object.HasKey(L"stores"))
+		{
+			fieldOrder = dataOrder;
+		}
+		else if (object.HasKey(L"actions") && object.HasKey(L"counts"))
+		{
+			fieldOrder = cleanupOrder;
+		}
+		else if (object.HasKey(L"cleanedStoreCount"))
+		{
+			fieldOrder = cleanupSummaryOrder;
+		}
+		else if (object.HasKey(L"candidateRuleCount"))
+		{
+			fieldOrder = cleanupCountsOrder;
+		}
+		else if (object.HasKey(L"action") && object.HasKey(L"decision"))
+		{
+			// before the duplicate-set and rule-entry orders, whose keys an action also has
+			fieldOrder = cleanupActionOrder;
+		}
+		else if (object.HasKey(L"choices") && object.HasKey(L"result"))
+		{
+			fieldOrder = keepChoiceOrder;
+		}
+		else if (object.Size() == 2 && object.HasKey(L"store") && object.HasKey(L"reason"))
+		{
+			fieldOrder = skippedStoreOrder;
 		}
 		else if (object.HasKey(L"category") && object.HasKey(L"count"))
 		{
@@ -1207,4 +1383,208 @@ WriteDuplicateAnalysisJson(const FirewallPolicyObjects& policy, const DuplicateA
 		section.SetNamedValue(L"duplicateSets", sets);
 	}
 	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"duplicateAnalysis", section);
+}
+
+//
+// WriteCleanupJson
+//
+// Adds the cleanup section, one record per rule or set of duplicates that -clean-rules proposed deleting,
+// to the store's record in the JSON report, and adds the store's counts to the command's cleanupSummary.
+// Does nothing when JSON output is not enabled.
+//
+// Parameters:
+//   policy       [in] - the store that was cleaned; selects the store record
+//   cleanup      [in] - the actions recorded by the deletion functions for this store
+//   command      [in] - the JSON command the store record belongs to, L"clean_rules"
+//   interruption [in] - S_OK when every deletion phase ran; otherwise the error that stopped the store,
+//                       which marks the section partial
+//
+// The section is the same with and without -verbose.
+//
+void
+WriteCleanupJson(const FirewallPolicyObjects& policy, const StoreCleanup& cleanup, PCWSTR command, HRESULT interruption)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	const auto nullableString = [](const std::optional<std::wstring>& value)
+	{
+		return value.has_value() ? String(value->c_str()) : JsonValue::CreateNullValue();
+	};
+	const auto count = [](size_t value)
+	{
+		return JsonValue::CreateNumberValue(static_cast<double>(value));
+	};
+	const auto errorValue = [](const RuleDeletionRecord& record)
+	{
+		return record.outcome == DeletionOutcome::Failed ? IJsonValue(ReturnJsonErrorObject(record.error))
+		                                                 : IJsonValue(JsonValue::CreateNullValue());
+	};
+
+	JsonArray actions;
+	for (const auto& action : cleanup.actions)
+	{
+		JsonObject entry;
+		entry.SetNamedValue(L"reason", String(CleanupReasonName(action.reason)));
+		entry.SetNamedValue(L"decision", String(CleanupDecisionName(action.decision)));
+		entry.SetNamedValue(L"approvalSource", ApprovalSourceValue(action.approvalSource));
+		if (action.reason == CleanupReason::Duplicate)
+		{
+			entry.SetNamedValue(L"action", String(L"delete_duplicates"));
+			entry.SetNamedValue(L"ruleCount", count(action.rules.size()));
+			// every rule in a set has the same application
+			const auto* application = action.rules.empty() ? nullptr : &action.rules.front().application;
+			entry.SetNamedValue(
+			    L"application",
+			    application && application->has_value() && !(*application)->empty() ? String((*application)->c_str())
+			                                                                        : JsonValue::CreateNullValue());
+
+			if (action.keepChoice.has_value())
+			{
+				JsonObject keepChoice;
+				JsonArray choices;
+				for (const auto& choice : action.keepChoice->choices)
+				{
+					choices.Append(String(choice));
+				}
+				keepChoice.SetNamedValue(L"choices", choices);
+				keepChoice.SetNamedValue(
+				    L"result",
+				    String(action.keepChoice->answer.has_value() ? L"chosen" : L"end_of_input"));
+				keepChoice.SetNamedValue(
+				    L"answer",
+				    action.keepChoice->answer.has_value() ? count(*action.keepChoice->answer)
+				                                          : JsonValue::CreateNullValue());
+				entry.SetNamedValue(L"keepChoice", keepChoice);
+			}
+			else
+			{
+				entry.SetNamedValue(L"keepChoice", JsonValue::CreateNullValue());
+			}
+
+			if (action.keptRuleIndex.has_value())
+			{
+				const auto& kept = action.rules[*action.keptRuleIndex];
+				JsonObject keptRule;
+				keptRule.SetNamedValue(L"ruleId", nullableString(kept.ruleId));
+				keptRule.SetNamedValue(L"name", nullableString(kept.name));
+				entry.SetNamedValue(L"keptRule", keptRule);
+			}
+			else
+			{
+				entry.SetNamedValue(L"keptRule", JsonValue::CreateNullValue());
+			}
+
+			size_t succeeded = 0;
+			size_t failed = 0;
+			JsonArray rules;
+			for (const auto& record : action.rules)
+			{
+				succeeded += record.outcome == DeletionOutcome::Succeeded ? 1 : 0;
+				failed += record.outcome == DeletionOutcome::Failed ? 1 : 0;
+				JsonObject ruleEntry;
+				ruleEntry.SetNamedValue(L"ruleId", nullableString(record.ruleId));
+				ruleEntry.SetNamedValue(L"name", nullableString(record.name));
+				ruleEntry.SetNamedValue(L"outcome", String(DeletionOutcomeName(record.outcome)));
+				ruleEntry.SetNamedValue(L"error", errorValue(record));
+				rules.Append(ruleEntry);
+			}
+			entry.SetNamedValue(
+			    L"outcome",
+			    String(
+			        succeeded + failed == 0 ? L"not_attempted"
+			        : failed == 0           ? L"succeeded"
+			        : succeeded == 0        ? L"failed"
+			                                : L"partial"));
+			entry.SetNamedValue(L"rules", rules);
+		}
+		else
+		{
+			const auto& record = action.rules.front();
+			entry.SetNamedValue(L"action", String(L"delete_rule"));
+			entry.SetNamedValue(L"ruleId", nullableString(record.ruleId));
+			entry.SetNamedValue(L"name", nullableString(record.name));
+			if (action.reason == CleanupReason::MissingApplication)
+			{
+				entry.SetNamedValue(L"application", nullableString(record.application));
+			}
+			else
+			{
+				entry.SetNamedValue(L"localUserOwnerSid", nullableString(record.localUserOwnerSid));
+			}
+			entry.SetNamedValue(L"outcome", String(DeletionOutcomeName(record.outcome)));
+			entry.SetNamedValue(L"error", errorValue(record));
+		}
+		actions.Append(entry);
+	}
+
+	const auto counts = CountCleanup(cleanup);
+	JsonObject section;
+	section.SetNamedValue(L"status", String(FAILED(interruption) ? L"partial" : L"completed"));
+	section.SetNamedValue(L"counts", ReturnJsonCleanupCountsObject(counts));
+	section.SetNamedValue(L"actions", actions);
+	if (FAILED(interruption))
+	{
+		auto diagnostic = ReturnJsonDiagnosticObject(
+		    L"cleanup",
+		    L"clean_rules",
+		    interruption,
+		    L"An error stopped the cleanup of this store; the actions taken before it are listed.");
+		diagnostic.SetNamedValue(L"code", String(L"cleanup_interrupted"));
+		JsonArray diagnostics;
+		diagnostics.Append(diagnostic);
+		section.SetNamedValue(L"diagnostics", diagnostics);
+	}
+	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"cleanup", section);
+
+	auto summary = ReturnJsonCleanupSummaryObject(command);
+	summary.SetNamedValue(
+	    L"cleanedStoreCount",
+	    count(static_cast<size_t>(summary.GetNamedNumber(L"cleanedStoreCount")) + 1));
+	auto totals = summary.GetNamedObject(L"counts");
+	const std::pair<PCWSTR, size_t> additions[]{
+	    {L"candidateRuleCount", counts.candidate},
+	    {L"attemptedCount", counts.attempted},
+	    {L"succeededCount", counts.succeeded},
+	    {L"failedCount", counts.failed},
+	    {L"declinedCount", counts.declined},
+	    {L"skippedCount", counts.skipped}};
+	for (const auto& [key, value] : additions)
+	{
+		totals.SetNamedValue(key, count(static_cast<size_t>(totals.GetNamedNumber(key)) + value));
+	}
+}
+
+//
+// WriteCleanupSkippedStoreJson
+//
+// Lists the store in the command's cleanupSummary as skipped, when its record says it has rules that
+// cannot be modified locally; creates the cleanupSummary either way. Does nothing when JSON output is
+// not enabled.
+//
+// Parameters:
+//   policy  [in] - the store -clean-rules did not clean; its record must already be written
+//   command [in] - the JSON command the store record belongs to, L"clean_rules"
+//
+void
+WriteCleanupSkippedStoreJson(const FirewallPolicyObjects& policy, PCWSTR command)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	auto summary = ReturnJsonCleanupSummaryObject(command);
+	const auto store = ReturnJsonStoreObject(command, policy.store_type);
+	if (store.GetNamedString(L"status") != L"skipped")
+	{
+		return;
+	}
+
+	JsonObject entry;
+	entry.SetNamedValue(L"store", String(StoreJsonName(policy.store_type)));
+	entry.SetNamedValue(L"reason", store.GetNamedValue(L"reason"));
+	summary.GetNamedArray(L"skippedStores").Append(entry);
 }

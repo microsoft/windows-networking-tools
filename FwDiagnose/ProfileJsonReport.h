@@ -14,6 +14,7 @@
 #include "UserOwnerAnalysis.h"
 #include "FilterRanking.h"
 #include "DuplicateAnalysis.h"
+#include "RuleDeletion.h"
 
 struct FirewallPolicyObjects;
 struct NormalizedFirewallRule;
@@ -106,3 +107,13 @@ WriteFilterRankingsJson(const FirewallPolicyObjects& policy, const FilterRanking
 // adds duplicateAnalysis to the store record that WriteFirewallRuleStatusJson already wrote for this command
 void
 WriteDuplicateAnalysisJson(const FirewallPolicyObjects& policy, const DuplicateAnalysis& analysis, PCWSTR command);
+
+// adds cleanup to the store record that WriteFirewallRuleStatusJson already wrote for this command, and adds its
+// counts to the command's cleanupSummary; a failed interruption marks the cleanup partial
+void
+WriteCleanupJson(
+    const FirewallPolicyObjects& policy, const StoreCleanup& cleanup, PCWSTR command, HRESULT interruption);
+
+// lists a store in the command's cleanupSummary as skipped when its record says it cannot be modified locally
+void
+WriteCleanupSkippedStoreJson(const FirewallPolicyObjects& policy, PCWSTR command);

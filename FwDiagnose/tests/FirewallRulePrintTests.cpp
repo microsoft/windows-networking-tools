@@ -5,6 +5,7 @@
 // with placeholders for fields the rule's schema version or protocol cannot carry.
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <format>
 #include <optional>
@@ -1561,6 +1562,7 @@ RunDeleteDuplicateRules(const wchar_t* answers, const wchar_t* failing_id = null
 	std::wistringstream input(answers);
 	std::wstring attempted;
 	std::wstring expected_deleted;
+	StoreCleanup cleanup;
 	g_recorded_failures.clear();
 	{
 		SuppressStdout quiet;
@@ -1578,7 +1580,8 @@ RunDeleteDuplicateRules(const wchar_t* answers, const wchar_t* failing_id = null
 			    expected_deleted += rule_id;
 			    expected_deleted += L';';
 			    return ERROR_SUCCESS;
-		    });
+		    },
+		    cleanup);
 	}
 
 	std::wstring marked_deleted;
@@ -1767,6 +1770,7 @@ TestDeleteDuplicateRulesSkipsDeletedRules()
 	const auto analysis = AnalyzeDuplicateRules(rules);
 	std::wistringstream input(L"a\n1\n");
 	std::wstring attempted;
+	StoreCleanup cleanup;
 	g_recorded_failures.clear();
 	{
 		SuppressStdout quiet;
@@ -1778,7 +1782,8 @@ TestDeleteDuplicateRulesSkipsDeletedRules()
 			    attempted += rule_id;
 			    attempted += L';';
 			    return ERROR_SUCCESS;
-		    });
+		    },
+		    cleanup);
 	}
 
 	Check(
@@ -1802,7 +1807,7 @@ wchar_t g_clean_rule_ids[7][8]{L"{c1}", L"{c2}", L"{c3}", L"{c4}", L"{c5}", L"{c
 
 // DeleteMissingAppRules or DeleteUnresolvedUserAccountRules
 using DeleteRulesFunction =
-    void (*)(std::vector<NormalizedFirewallRule>&, std::wistream&, const DeleteFirewallRuleFunction&);
+    void (*)(std::vector<NormalizedFirewallRule>&, std::wistream&, const DeleteFirewallRuleFunction&, StoreCleanup&);
 
 //
 // MakeCleanupRules
@@ -1880,6 +1885,7 @@ SetUnresolvedOwnerResults(std::vector<NormalizedFirewallRule>& rules)
 //   rules       [in, out] - the rules to delete from; deleted rules are marked is_rule_deleted
 //   answers     [in]      - the user's input, one answer per line
 //   failing_id  [in]      - a rule ID the fake fails to delete with ERROR_ACCESS_DENIED, or nullptr
+//   cleanup     [in, out] - receives the actions recorded, or nullptr to discard them
 //
 // Returns:
 //   The rule IDs the fake was asked to delete, in order, each followed by ';'. Also checks that exactly
@@ -1890,8 +1896,10 @@ RunDeleteRules(
     DeleteRulesFunction deleteRules,
     std::vector<NormalizedFirewallRule>& rules,
     const wchar_t* answers,
-    const wchar_t* failing_id = nullptr)
+    const wchar_t* failing_id = nullptr,
+    StoreCleanup* cleanup = nullptr)
 {
+	StoreCleanup discarded;
 	std::vector<bool> deleted_before;
 	for (const auto& rule : rules)
 	{
@@ -1917,7 +1925,8 @@ RunDeleteRules(
 			    }
 			    deleted_now.emplace_back(rule_id);
 			    return ERROR_SUCCESS;
-		    });
+		    },
+		    cleanup ? *cleanup : discarded);
 	}
 
 	bool marks_match = true;
@@ -2028,6 +2037,7 @@ TestDuplicateDeletionWording()
 	const auto analysis = AnalyzeDuplicateRules(rules);
 	std::wistringstream input(L"n\nn\nn\n");
 	std::string text;
+	StoreCleanup cleanup;
 	{
 		CaptureStdout capture;
 		DeleteDuplicateRules(
@@ -2036,7 +2046,8 @@ TestDuplicateDeletionWording()
 		    [](PCWSTR) -> DWORD
 		    {
 			    return ERROR_SUCCESS;
-		    });
+		    },
+		    cleanup);
 		text = capture.Finish();
 	}
 
@@ -2088,6 +2099,7 @@ TestSingleRuleDeletionWording()
 		setResults(rules);
 		std::wistringstream input(L"n\ns\n");
 		std::string text;
+		StoreCleanup cleanup;
 		{
 			CaptureStdout capture;
 			deleteRules(
@@ -2096,7 +2108,8 @@ TestSingleRuleDeletionWording()
 			    [](PCWSTR) -> DWORD
 			    {
 				    return ERROR_SUCCESS;
-			    });
+			    },
+			    cleanup);
 			text = capture.Finish();
 		}
 
@@ -2142,6 +2155,7 @@ TestUnresolvedOwnerSkipWording()
 	SetUnresolvedOwnerResults(rules);
 	std::wistringstream input(L"s\n");
 	std::string text;
+	StoreCleanup cleanup;
 	{
 		CaptureStdout capture;
 		DeleteUnresolvedUserAccountRules(
@@ -2150,13 +2164,665 @@ TestUnresolvedOwnerSkipWording()
 		    [](PCWSTR) -> DWORD
 		    {
 			    return ERROR_SUCCESS;
-		    });
+		    },
+		    cleanup);
 		text = capture.Finish();
 	}
 	Check(
 	    text.find("       - Skipping the remainder of the rules with unresolved SIDs in this store\n") !=
 	        std::string::npos,
 	    "unresolved owner: 's' prints the skip message with a space after the dash");
+}
+
+//
+// DescribeCleanup
+//
+// Parameters:
+//   cleanup [in] - the actions recorded by the deletion functions
+//
+// Returns:
+//   One line per action: the decision, the approval source, then each rule's ID and outcome, e.g.
+//   "yes prompt {c1}=deleted". "eoi" is EndOfInput, "none" NotPrompted, and "-" no source or no attempt.
+//
+std::wstring
+DescribeCleanup(const StoreCleanup& cleanup)
+{
+	constexpr PCWSTR decisions[]{L"yes", L"no", L"skip", L"all", L"eoi", L"none"};
+	constexpr PCWSTR sources[]{L"-", L"prompt", L"all"};
+	constexpr PCWSTR outcomes[]{L"kept", L"deleted", L"failed", L"-"};
+	std::wstring text;
+	for (const auto& action : cleanup.actions)
+	{
+		text += decisions[static_cast<size_t>(action.decision)];
+		text += L' ';
+		text += sources[static_cast<size_t>(action.approvalSource)];
+		for (const auto& record : action.rules)
+		{
+			text += std::format(
+			    L" {}={}",
+			    record.ruleId.value_or(L"(none)"),
+			    outcomes[static_cast<size_t>(record.outcome)]);
+		}
+		text += L'\n';
+	}
+	return text;
+}
+
+//
+// CountsAre
+//
+// Parameters:
+//   counts [in] - the result of CountCleanup
+//   the rest [in] - the expected counts, in the order CleanupCounts declares them
+//
+// Returns:
+//   Whether every count matches, and the invariants candidate == attempted + declined + skipped and
+//   attempted == succeeded + failed hold.
+//
+bool
+CountsAre(
+    const CleanupCounts& counts,
+    size_t candidate,
+    size_t attempted,
+    size_t succeeded,
+    size_t failed,
+    size_t declined,
+    size_t skipped)
+{
+	return counts.candidate == candidate && counts.attempted == attempted && counts.succeeded == succeeded &&
+	       counts.failed == failed && counts.declined == declined && counts.skipped == skipped &&
+	       counts.candidate == counts.attempted + counts.declined + counts.skipped &&
+	       counts.attempted == counts.succeeded + counts.failed;
+}
+
+//
+// TestCleanupActionsForSingleRules
+//
+// Checks the actions DeleteMissingAppRules and DeleteUnresolvedUserAccountRules record: one per rule
+// offered or left unprompted, none for rules not checked, OK, or already deleted, with the decision,
+// approval source, outcome, error, and reason of each answer, and the counts CountCleanup makes of them.
+//
+void
+TestCleanupActionsForSingleRules()
+{
+	const auto fw_rules = MakeCleanupRules();
+	for (const auto& [deleteRules, setResults, reasons, phase] :
+	     {std::tuple{
+	          &DeleteMissingAppRules,
+	          &SetMissingAppResults,
+	          std::array{
+	              CleanupReason::MissingApplication,
+	              CleanupReason::MissingApplication,
+	              CleanupReason::MissingApplication},
+	          "missing application: "},
+	      std::tuple{
+	          &DeleteUnresolvedUserAccountRules,
+	          &SetUnresolvedOwnerResults,
+	          std::array{
+	              CleanupReason::UnresolvedUserOwner,
+	              CleanupReason::MissingLocalProfile,
+	              CleanupReason::UnresolvedUserOwner},
+	          "unresolved owner: "}})
+	{
+		const auto run = [&](const wchar_t* answers, const wchar_t* failing_id = nullptr)
+		{
+			auto rules = NormalizeRules(fw_rules);
+			setResults(rules);
+			StoreCleanup cleanup;
+			RunDeleteRules(deleteRules, rules, answers, failing_id, &cleanup);
+			return cleanup;
+		};
+		const auto check = [phase](bool condition, const char* description)
+		{
+			const auto text = std::string(phase) + description;
+			Check(condition, text.c_str());
+		};
+
+		const auto yes_no = run(L"y\nn\ny\n");
+		check(
+		    DescribeCleanup(yes_no) == L"yes prompt {c1}=deleted\nno - {c4}=-\nyes prompt {c7}=deleted\n",
+		    "'y' is approved by its prompt and deleted; 'n' is declined and not attempted");
+		bool reasons_match = yes_no.actions.size() == reasons.size();
+		bool single_rule_actions = true;
+		for (size_t index = 0; reasons_match && index < reasons.size(); ++index)
+		{
+			const auto& action = yes_no.actions[index];
+			reasons_match = action.reason == reasons[index];
+			single_rule_actions = single_rule_actions && action.rules.size() == 1 && !action.keptRuleIndex &&
+			                      !action.keepChoice && action.rules[0].error == S_OK;
+		}
+		check(reasons_match, "each action records why its rule was proposed");
+		check(single_rule_actions, "each action holds one rule, with no kept rule, keep choice, or error");
+		check(CountsAre(CountCleanup(yes_no), 3, 2, 2, 0, 1, 0), "the rule answered 'n' is counted as declined");
+
+		const auto skip = run(L"y\ns\ny\n");
+		check(
+		    DescribeCleanup(skip) == L"yes prompt {c1}=deleted\nskip - {c4}=-\nnone - {c7}=-\n",
+		    "after 's' the remaining rules are recorded as not prompted, not approved, and not attempted");
+		check(CountsAre(CountCleanup(skip), 3, 1, 1, 0, 0, 2), "the rules after 's', and its own, are skipped");
+
+		const auto all = run(L"n\na\n");
+		check(
+		    DescribeCleanup(all) == L"no - {c1}=-\nall prompt {c4}=deleted\nnone all {c7}=deleted\n",
+		    "'a' is approved by its prompt; the rules after it are approved by that 'a' without a prompt");
+		check(CountsAre(CountCleanup(all), 3, 2, 2, 0, 1, 0), "the rules deleted after 'a' are attempted");
+
+		check(
+		    DescribeCleanup(run(L"Y\nx\nN\nS\n")) == L"yes prompt {c1}=deleted\nno - {c4}=-\nskip - {c7}=-\n",
+		    "case-insensitive answers record the same decisions; an invalid answer records nothing");
+
+		const auto end_of_input = run(L"y\n");
+		check(
+		    DescribeCleanup(end_of_input) == L"yes prompt {c1}=deleted\neoi - {c4}=-\nnone - {c7}=-\n",
+		    "the end of the input is recorded at the prompt it ended, and the rest are not prompted");
+		check(CountsAre(CountCleanup(end_of_input), 3, 1, 1, 0, 0, 2), "rules left at the end of input are skipped");
+		check(
+		    DescribeCleanup(run(L"")) == L"eoi - {c1}=-\nnone - {c4}=-\nnone - {c7}=-\n",
+		    "with no input at all, every rule is still recorded");
+
+		const auto failed = run(L"a\n", L"{c4}");
+		check(
+		    DescribeCleanup(failed) == L"all prompt {c1}=deleted\nnone all {c4}=failed\nnone all {c7}=deleted\n",
+		    "a failed deletion is recorded as failed");
+		check(
+		    failed.actions.size() == 3 && failed.actions[1].rules[0].error == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) &&
+		        failed.actions[0].rules[0].error == S_OK && failed.actions[2].rules[0].error == S_OK,
+		    "a failed deletion records the HRESULT of the delete function's error; the others record none");
+		check(CountsAre(CountCleanup(failed), 3, 3, 2, 1, 0, 0), "a failed deletion is attempted and failed");
+	}
+}
+
+//
+// TestCleanupPromptEndOfInput
+//
+// Checks that the stream overload of PromptForDeletion reports the end of the input as EndOfInput, not
+// as an answer, including after an invalid answer.
+//
+void
+TestCleanupPromptEndOfInput()
+{
+	std::wistringstream empty(L"");
+	std::wistringstream invalid(L"x\n");
+	std::wistringstream yes(L"y\n");
+	PromptResponse responses[3]{};
+	{
+		SuppressStdout quiet;
+		responses[0] = PromptForDeletion(RuleDeletionPrompt, empty);
+		responses[1] = PromptForDeletion(RuleDeletionPrompt, invalid);
+		responses[2] = PromptForDeletion(RuleDeletionPrompt, yes);
+	}
+	Check(responses[0] == PromptResponse::EndOfInput, "no input returns EndOfInput");
+	Check(responses[1] == PromptResponse::EndOfInput, "input ending after an invalid answer returns EndOfInput");
+	Check(responses[2] == PromptResponse::Yes, "an answer is still returned");
+}
+
+//
+// ReadToEndOfInput
+//
+// Reads a line from a stream that holds no input, leaving it at its end with eofbit and failbit set.
+//
+// Parameters:
+//   input [in, out] - the stream to read; must hold no input
+//
+void
+ReadToEndOfInput(std::wistringstream& input)
+{
+	std::wstring line;
+	std::getline(input, line);
+}
+
+//
+// TestAskAgainAtEndOfInput
+//
+// Checks that a prompt asks again at the end of the input only at the console, where the stream is cleared
+// so a later answer can be read, and that a scripted stream is never treated as the console.
+//
+void
+TestAskAgainAtEndOfInput()
+{
+	std::wistringstream console(L"");
+	ReadToEndOfInput(console);
+	bool consoleAsksAgain{};
+	{
+		SuppressStdout quiet;
+		consoleAsksAgain = AskAgainAtEndOfInput(console, true);
+	}
+	Check(consoleAsksAgain, "the end of the input at the console asks again");
+	Check(console.good(), "asking again at the console clears the stream");
+	console.str(L"y\n");
+	std::wstring answer;
+	Check(static_cast<bool>(std::getline(console, answer)) && answer == L"y", "a later answer at the console is read");
+
+	std::wistringstream redirected(L"");
+	ReadToEndOfInput(redirected);
+	Check(!AskAgainAtEndOfInput(redirected, false), "the end of redirected input does not ask again");
+	Check(redirected.eof() && redirected.fail(), "redirected input is left ended and failed");
+
+	std::wistringstream bad(L"");
+	ReadToEndOfInput(bad);
+	bad.setstate(std::ios_base::badbit);
+	Check(!AskAgainAtEndOfInput(bad, true), "a bad stream does not ask again, even at the console");
+	Check(bad.bad(), "a bad stream is left bad");
+
+	std::wistringstream unread(L"y\n");
+	Check(!AskAgainAtEndOfInput(unread, true), "a stream not at its end does not ask again");
+
+	Check(!InputIsConsole(console), "a scripted stream is not the console");
+}
+
+//
+// RunDuplicateCleanup
+//
+// Runs DeleteDuplicateRules with scripted answers and a fake delete function, recording its actions.
+//
+// Parameters:
+//   fw_rules     [in] - MakeDuplicateRules or MakeRulesWithDeletedDuplicates
+//   mark_deleted [in] - whether to apply MarkRulesDeleted before the analysis
+//   answers      [in] - the user's input, one answer per line
+//   failing_id   [in] - a rule ID the fake fails to delete with ERROR_ACCESS_DENIED, or nullptr
+//
+// Returns:
+//   The actions recorded.
+//
+StoreCleanup
+RunDuplicateCleanup(
+    const std::vector<FW_RULE>& fw_rules,
+    bool mark_deleted,
+    const wchar_t* answers,
+    const wchar_t* failing_id = nullptr)
+{
+	auto rules = NormalizeRules(fw_rules);
+	if (mark_deleted)
+	{
+		MarkRulesDeleted(rules);
+	}
+	const auto analysis = AnalyzeDuplicateRules(rules);
+	std::wistringstream input(answers);
+	StoreCleanup cleanup;
+	g_recorded_failures.clear();
+	{
+		SuppressStdout quiet;
+		DeleteDuplicateRules(
+		    analysis,
+		    input,
+		    [failing_id](PCWSTR rule_id) -> DWORD
+		    {
+			    return failing_id && std::wstring_view(rule_id) == failing_id ? ERROR_ACCESS_DENIED : ERROR_SUCCESS;
+		    },
+		    cleanup);
+	}
+	return cleanup;
+}
+
+//
+// TestCleanupActionsForDuplicates
+//
+// Checks the actions DeleteDuplicateRules records, one per set in set order ({d5};{d6}, then {d3};{d4}
+// whose names differ, then {d1};{d2}): the decision, approval source, and each rule's outcome; the kept
+// rule's position; the keep choice, answered or ended by the input; a failed deletion; and that rules
+// already deleted are not recorded.
+//
+void
+TestCleanupActionsForDuplicates()
+{
+	const auto fw_rules = MakeDuplicateRules();
+
+	const auto yes_no = RunDuplicateCleanup(fw_rules, false, L"y\nn\ny\n");
+	Check(
+	    DescribeCleanup(yes_no) ==
+	        L"yes prompt {d5}=kept {d6}=deleted\nno - {d3}=- {d4}=-\nyes prompt {d1}=kept {d2}=deleted\n",
+	    "duplicates: each set is one action; the kept rule is recorded as kept");
+	Check(
+	    yes_no.actions.size() == 3 && yes_no.actions[0].keptRuleIndex == 0 && !yes_no.actions[1].keptRuleIndex &&
+	        yes_no.actions[2].keptRuleIndex == 0 && !yes_no.actions[0].keepChoice && !yes_no.actions[1].keepChoice &&
+	        !yes_no.actions[2].keepChoice && yes_no.actions[0].reason == CleanupReason::Duplicate,
+	    "duplicates: a declined set has no kept rule, and no keep choice is recorded when the names match");
+	Check(
+	    CountsAre(CountCleanup(yes_no), 3, 2, 2, 0, 1, 0),
+	    "duplicates: every rule of a set but the one kept is counted");
+
+	const auto chosen = RunDuplicateCleanup(fw_rules, false, L"a\n2\n");
+	Check(
+	    DescribeCleanup(chosen) == L"all prompt {d5}=kept {d6}=deleted\nnone all {d3}=deleted {d4}=kept\n"
+	                               L"none all {d1}=kept {d2}=deleted\n",
+	    "duplicates: the sets after 'a' are approved by it, and the rule chosen is kept");
+	if (chosen.actions.size() == 3 && chosen.actions[1].keepChoice)
+	{
+		const auto& keepChoice = *chosen.actions[1].keepChoice;
+		Check(
+		    keepChoice.choices == std::vector<std::wstring>{L"another", L"beta-long-name"} && keepChoice.answer == 2u &&
+		        chosen.actions[1].keptRuleIndex == 1,
+		    "duplicates: the keep choice records the names offered and the number entered");
+	}
+	else
+	{
+		Check(false, "duplicates: a set whose names differ records its keep choice");
+	}
+
+	const auto keep_ended = RunDuplicateCleanup(fw_rules, false, L"n\ny\n");
+	Check(
+	    DescribeCleanup(keep_ended) == L"no - {d5}=- {d6}=-\nyes prompt {d3}=- {d4}=-\neoi - {d1}=- {d2}=-\n",
+	    "duplicates: when the input ends at the keep choice no rule of the set is attempted or kept");
+	Check(
+	    keep_ended.actions.size() == 3 && keep_ended.actions[1].keepChoice &&
+	        keep_ended.actions[1].keepChoice->choices.size() == 2 && !keep_ended.actions[1].keepChoice->answer &&
+	        !keep_ended.actions[1].keptRuleIndex,
+	    "duplicates: a keep choice the input ended records no answer and no kept rule");
+	Check(
+	    CountsAre(CountCleanup(keep_ended), 3, 0, 0, 0, 1, 2),
+	    "duplicates: a set left at the keep choice is counted as skipped, not declined");
+
+	Check(
+	    DescribeCleanup(RunDuplicateCleanup(fw_rules, false, L"y\ns\n")) ==
+	        L"yes prompt {d5}=kept {d6}=deleted\nskip - {d3}=- {d4}=-\nnone - {d1}=- {d2}=-\n",
+	    "duplicates: after 's' the remaining sets are recorded as not prompted");
+	Check(
+	    DescribeCleanup(RunDuplicateCleanup(fw_rules, false, L"y\n")) ==
+	        L"yes prompt {d5}=kept {d6}=deleted\neoi - {d3}=- {d4}=-\nnone - {d1}=- {d2}=-\n",
+	    "duplicates: the end of the input is recorded at the prompt it ended");
+
+	const auto failed = RunDuplicateCleanup(fw_rules, false, L"a\n1\n", L"{d4}");
+	Check(
+	    DescribeCleanup(failed) == L"all prompt {d5}=kept {d6}=deleted\nnone all {d3}=kept {d4}=failed\n"
+	                               L"none all {d1}=kept {d2}=deleted\n",
+	    "duplicates: a failed deletion is recorded as failed");
+	Check(
+	    failed.actions.size() == 3 && failed.actions[1].rules[1].error == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) &&
+	        failed.actions[1].rules[0].error == S_OK,
+	    "duplicates: a failed deletion records the HRESULT of the delete function's error");
+	Check(CountsAre(CountCleanup(failed), 3, 3, 2, 1, 0, 0), "duplicates: a failed deletion is attempted and failed");
+
+	const auto with_three = RunDuplicateCleanup(MakeRulesWithDeletedDuplicates(), false, L"a\n1\n", L"{d2}");
+	const auto three_rule_set = std::ranges::find_if(
+	    with_three.actions,
+	    [](const CleanupAction& action)
+	    {
+		    return action.rules.size() == 3;
+	    });
+	Check(
+	    three_rule_set != with_three.actions.end() &&
+	        DescribeCleanup({{*three_rule_set}}) == L"none all {d0}=kept {d1}=deleted {d2}=failed\n",
+	    "duplicates: a set partly deleted records each rule's own outcome");
+	Check(
+	    CountsAre(CountCleanup(with_three), 4, 4, 3, 1, 0, 0),
+	    "duplicates: a set of three proposes two rules, one deleted and one failed");
+
+	const auto after_earlier_phase = RunDuplicateCleanup(MakeRulesWithDeletedDuplicates(), true, L"a\n1\n");
+	Check(
+	    DescribeCleanup(after_earlier_phase) == L"all prompt {d3}=kept {d4}=deleted\nnone all {d1}=kept {d2}=deleted\n",
+	    "duplicates: rules already deleted, and a set left with one live rule, are not recorded");
+}
+
+//
+// TestCountCleanup
+//
+// Checks CountCleanup on hand-built actions: declined only for 'n', skipped for every other decision
+// that attempted nothing, attempts counted from the outcomes, and every rule of a duplicate set but one.
+//
+void
+TestCountCleanup()
+{
+	Check(CountsAre(CountCleanup({}), 0, 0, 0, 0, 0, 0), "no actions count nothing");
+
+	const auto single = [](CleanupDecision decision, DeletionOutcome outcome = DeletionOutcome::NotAttempted)
+	{
+		CleanupAction action{.reason = CleanupReason::MissingApplication, .decision = decision};
+		action.rules.push_back({.outcome = outcome});
+		return action;
+	};
+	const auto duplicates = [](CleanupDecision decision, std::initializer_list<DeletionOutcome> outcomes)
+	{
+		CleanupAction action{.reason = CleanupReason::Duplicate, .decision = decision};
+		for (const auto outcome : outcomes)
+		{
+			action.rules.push_back({.outcome = outcome});
+		}
+		return action;
+	};
+	constexpr auto none = DeletionOutcome::NotAttempted;
+
+	Check(
+	    CountsAre(CountCleanup({{single(CleanupDecision::No)}}), 1, 0, 0, 0, 1, 0),
+	    "a rule answered 'n' is declined");
+	bool skipped = true;
+	for (const auto decision :
+	     {CleanupDecision::SkipRemaining,
+	      CleanupDecision::EndOfInput,
+	      CleanupDecision::NotPrompted,
+	      CleanupDecision::Yes,
+	      CleanupDecision::DeleteAll})
+	{
+		skipped = skipped && CountsAre(CountCleanup({{single(decision)}}), 1, 0, 0, 0, 0, 1);
+	}
+	Check(skipped, "a rule not attempted for any reason but 'n' is skipped");
+	Check(
+	    CountsAre(CountCleanup({{duplicates(CleanupDecision::No, {none, none, none})}}), 2, 0, 0, 0, 2, 0),
+	    "a declined set of three declines the two rules it proposed");
+	Check(
+	    CountsAre(CountCleanup({{duplicates(CleanupDecision::Yes, {none, none, none})}}), 2, 0, 0, 0, 0, 2),
+	    "a set left at its keep choice skips the two rules it proposed");
+	Check(
+	    CountsAre(CountCleanup({{duplicates(CleanupDecision::Yes, {})}}), 0, 0, 0, 0, 0, 0),
+	    "a set with no rules proposes nothing");
+
+	StoreCleanup mixed;
+	mixed.actions.push_back(single(CleanupDecision::Yes, DeletionOutcome::Succeeded));
+	mixed.actions.push_back(single(CleanupDecision::NotPrompted, DeletionOutcome::Failed));
+	mixed.actions.push_back(single(CleanupDecision::No));
+	mixed.actions.push_back(single(CleanupDecision::SkipRemaining));
+	mixed.actions.push_back(duplicates(
+	    CleanupDecision::DeleteAll,
+	    {DeletionOutcome::Kept, DeletionOutcome::Succeeded, DeletionOutcome::Failed}));
+	mixed.actions.push_back(duplicates(CleanupDecision::No, {none, none}));
+	Check(
+	    CountsAre(CountCleanup(mixed), 7, 4, 2, 2, 2, 1),
+	    "counts add up across actions, with declined and skipped kept apart");
+}
+
+//
+// TestUserOwnerAnalysisSkipsDeletedRules
+//
+// Checks that AnalyzeUserOwnerRules neither counts nor flags rules already deleted by an earlier
+// -clean-rules phase, whether their owner is unresolved or resolved without a local profile.
+//
+void
+TestUserOwnerAnalysisSkipsDeletedRules()
+{
+	const auto fw_rules = MakeCleanupRules();
+	auto rules = NormalizeRules(fw_rules);
+	for (auto& rule : rules)
+	{
+		rule.successfully_resolved_user_name = false;
+	}
+	// {c4} resolved without a local profile, {c3} resolved with no profile check result yet
+	rules[2].successfully_resolved_user_name = true;
+	rules[3].successfully_resolved_user_name = true;
+	rules[2].is_rule_deleted = true;
+	rules[4].is_rule_deleted = true;
+
+	const auto analysis = AnalyzeUserOwnerRules(rules, {.check = LocalProfileCheck::Completed});
+	Check(analysis.localUserOwnerRuleCount == 5, "deleted rules are not counted as rules with an owner");
+	Check(
+	    analysis.unresolvedSidRules.size() == 4 && std::ranges::none_of(
+	                                                   analysis.unresolvedSidRules,
+	                                                   [](const auto& finding)
+	                                                   {
+		                                                   return std::wstring_view(finding.ruleId) == L"{c5}";
+	                                                   }),
+	    "a deleted rule with an unresolved owner is not reported");
+	Check(!rules[4].unresolve_user_sid, "a deleted rule with an unresolved owner is not flagged");
+	Check(
+	    analysis.missingLocalProfileRules.size() == 1 && !rules[2].successfully_resolved_user_name_with_local_profile &&
+	        rules[3].successfully_resolved_user_name_with_local_profile == false,
+	    "a deleted rule without a local profile is neither reported nor flagged");
+}
+
+//
+// TestCleanupConsoleTextAfterSkip
+//
+// Checks that recording the rules left after 's' or the end of input prints nothing: each deletion
+// function's output ends with its skip message, and matches the output of a store where no rules were
+// left. The missing-application output is also compared with the text printed before the actions were
+// recorded.
+//
+void
+TestCleanupConsoleTextAfterSkip()
+{
+	const auto capture_run = [](const auto& run)
+	{
+		CaptureStdout capture;
+		run();
+		return capture.Finish();
+	};
+	const auto ignore_deletions = [](PCWSTR) -> DWORD
+	{
+		return ERROR_SUCCESS;
+	};
+
+	const auto fw_rules = MakeCleanupRules();
+	for (const auto& [deleteRules, setResults, uncheck, skipMessage, phase] :
+	     {std::tuple{
+	          &DeleteMissingAppRules,
+	          &SetMissingAppResults,
+	          +[](NormalizedFirewallRule& rule)
+	          {
+		          rule.local_application_exists.reset();
+	          },
+	          "       - Skipping the remainder of the rules with an application exe referencing non-existing file "
+	          "in this store\n",
+	          "missing application: "},
+	      std::tuple{
+	          &DeleteUnresolvedUserAccountRules,
+	          &SetUnresolvedOwnerResults,
+	          +[](NormalizedFirewallRule& rule)
+	          {
+		          rule.successfully_resolved_user_name.reset();
+	          },
+	          "       - Skipping the remainder of the rules with unresolved SIDs in this store\n",
+	          "unresolved owner: "}})
+	{
+		for (const auto answers : {L"y\ns\n", L"y\n"})
+		{
+			const auto output = [&](bool last_rule_offered)
+			{
+				auto rules = NormalizeRules(fw_rules);
+				setResults(rules);
+				if (!last_rule_offered)
+				{
+					uncheck(rules[6]);
+				}
+				std::wistringstream input(answers);
+				StoreCleanup cleanup;
+				return capture_run(
+				    [&]
+				    {
+					    deleteRules(rules, input, ignore_deletions, cleanup);
+				    });
+			};
+			const auto text = output(true);
+			const auto description = std::string(phase) + (answers[2] == L's' ? "'s'" : "the end of input") +
+			                         " prints its skip message last, and nothing for the rules left";
+			Check(text.ends_with(skipMessage) && text == output(false), description.c_str());
+		}
+	}
+
+	auto rules = NormalizeRules(fw_rules);
+	SetMissingAppResults(rules);
+	std::wistringstream input(L"y\ns\n");
+	StoreCleanup cleanup;
+	const auto text = capture_run(
+	    [&]
+	    {
+		    DeleteMissingAppRules(rules, input, ignore_deletions, cleanup);
+	    });
+	Check(
+	    text == "     Deleting rules with an application exe referencing non-existing file - will prompt for input "
+	            "(y/n/s/a)\n"
+	            "     - indicate 'Y' to delete the one rule prompted\n"
+	            "     - indicate 'N' to not delete the one rule prompted\n"
+	            "     - indicate 'S' to SKIP deleting any more rules from this store\n"
+	            "     - indicate 'A' to delete ALL rules with an application exe referencing non-existing file from "
+	            "this store without further prompts\n"
+	            "\n"
+	            "     Application-exe:  'C:\\FwDiagnoseTest-missing\\app.exe'  [(no Rule Name) RuleId:  {c1}]\n"
+	            "              Delete this rule (y/n/s/a)?        - Successfully deleted the firewall rule\n"
+	            "\n"
+	            "     Application-exe:  'C:\\FwDiagnoseTest-missing\\app.exe'  [(no Rule Name) RuleId:  {c4}]\n"
+	            "              Delete this rule (y/n/s/a)?        - Skipping the remainder of the rules with an "
+	            "application exe referencing non-existing file in this store\n",
+	    "missing application: the output of an 's' run is the text printed before actions were recorded");
+
+	for (const auto answers : {L"y\ns\n", L"y\n"})
+	{
+		const auto fw_duplicates = MakeDuplicateRules();
+		auto duplicate_rules = NormalizeRules(fw_duplicates);
+		const auto analysis = AnalyzeDuplicateRules(duplicate_rules);
+		std::wistringstream duplicate_input(answers);
+		StoreCleanup duplicate_cleanup;
+		const auto duplicate_text = capture_run(
+		    [&]
+		    {
+			    DeleteDuplicateRules(analysis, duplicate_input, ignore_deletions, duplicate_cleanup);
+		    });
+		const auto end_of_input = answers[2] != L's' ? "\n       - No more input\n" : "";
+		Check(
+		    duplicate_text.ends_with(
+		        std::format(
+		            "              Delete all duplicates of this rule (y/n/s/a)? {}"
+		            "       - Skipping the remainder of the duplicate rules in this store\n",
+		            end_of_input)) &&
+		        duplicate_text.find("zz") == std::string::npos,
+		    "duplicates: 's' or the end of input prints its skip message last, and nothing for the sets left");
+	}
+}
+
+//
+// TestCleanupRecordsSurviveReorderedRules
+//
+// Checks that the actions recorded by DeleteMissingAppRules and DeleteUnresolvedUserAccountRules still
+// name the rules prompted after the store's rules are reordered, as AnalyzeDuplicateRules does in place
+// between those phases and the JSON report.
+//
+void
+TestCleanupRecordsSurviveReorderedRules()
+{
+	auto fw_rules = MakeCleanupRules();
+	fw_rules[0].wszName = g_another_name;
+	for (const auto& [deleteRules, setResults, phase] :
+	     {std::tuple{&DeleteMissingAppRules, &SetMissingAppResults, "missing application: "},
+	      std::tuple{&DeleteUnresolvedUserAccountRules, &SetUnresolvedOwnerResults, "unresolved owner: "}})
+	{
+		auto rules = NormalizeRules(fw_rules);
+		setResults(rules);
+		StoreCleanup cleanup;
+		RunDeleteRules(deleteRules, rules, L"y\nn\ny\n", nullptr, &cleanup);
+
+		std::ranges::reverse(rules);
+		const auto analysis = AnalyzeDuplicateRules(rules);
+
+		const auto check = [phase](bool condition, const char* description)
+		{
+			const auto text = std::string(phase) + description;
+			Check(condition, text.c_str());
+		};
+		check(
+		    analysis.duplicateSets.size() == 1 && std::wstring_view(rules[0].fw_rule->wszRuleId) != L"{c1}",
+		    "the duplicate analysis reordered the rules");
+		check(
+		    DescribeCleanup(cleanup) == L"yes prompt {c1}=deleted\nno - {c4}=-\nyes prompt {c7}=deleted\n",
+		    "after the rules are reordered, each record still names the rule it was recorded for");
+		if (cleanup.actions.size() == 3)
+		{
+			const auto& first = cleanup.actions[0].rules[0];
+			const auto& second = cleanup.actions[1].rules[0];
+			check(
+			    first.name == L"Another" && !second.name.has_value(),
+			    "the record keeps the rule's name, or no name when the rule has none");
+			check(
+			    first.application == g_missing_application && first.localUserOwnerSid == g_unmapped_sid,
+			    "the record keeps the rule's application and owner SID");
+		}
+	}
 }
 } // namespace
 int
@@ -2194,6 +2860,14 @@ wmain()
 	TestDuplicateDeletionWording();
 	TestSingleRuleDeletionWording();
 	TestUnresolvedOwnerSkipWording();
+	TestCleanupActionsForSingleRules();
+	TestCleanupPromptEndOfInput();
+	TestAskAgainAtEndOfInput();
+	TestCleanupActionsForDuplicates();
+	TestCountCleanup();
+	TestUserOwnerAnalysisSkipsDeletedRules();
+	TestCleanupConsoleTextAfterSkip();
+	TestCleanupRecordsSurviveReorderedRules();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

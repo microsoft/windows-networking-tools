@@ -29,7 +29,8 @@ AnalyzeUserOwnerRules(std::vector<NormalizedFirewallRule>& rules, const LocalPro
 
 	for (auto& rule : rules)
 	{
-		if (!rule.successfully_resolved_user_name.has_value())
+		// -clean-rules deletes missing-application rules before this analysis
+		if (rule.is_rule_deleted || !rule.successfully_resolved_user_name.has_value())
 		{
 			continue;
 		}
@@ -146,16 +147,23 @@ PrintUserOwnerAnalysis(const UserOwnerAnalysis& analysis, AnalysisOutput output)
 // Parameters:
 //   rules      [in, out] - the store's rules, after AnalyzeUserOwnerRules; each rule deleted is marked
 //                          is_rule_deleted, and rules already marked are skipped
-//   input      [in] - where the answers are read from: std::wcin, or a scripted stream in tests. When it
-//                     ends, the answer counts as 's', so nothing more is deleted without an answer.
+//   input      [in] - where the answers are read from: std::wcin, or a scripted stream in tests. At the
+//                     console an end of input asks again; when redirected input ends, nothing more is
+//                     deleted without an answer, as with 's', and the decision is recorded as EndOfInput.
 //   deleteRule [in] - deletes one rule by rule ID; FWDeleteFirewallRule on the store's handle, or a
 //                     fake in tests
+//   cleanup    [in, out] - one action is appended for each rule proposed, including the rules left
+//                          unprompted after 's' or the end of input; each is appended before its deletion
 //
 void
 DeleteUnresolvedUserAccountRules(
-    std::vector<NormalizedFirewallRule>& rules, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule)
+    std::vector<NormalizedFirewallRule>& rules,
+    std::wistream& input,
+    const DeleteFirewallRuleFunction& deleteRule,
+    StoreCleanup& cleanup)
 {
 	bool delete_all_with_no_more_prompts = false;
+	bool skip_remaining_rules = false;
 	bool printed_deletion_header = false;
 
 	for (auto& rule : rules)
@@ -208,6 +216,18 @@ DeleteUnresolvedUserAccountRules(
 			continue;
 		}
 
+		// built before the action is added, so a failed copy never leaves an action without its rule
+		auto proposed = ReturnRuleDeletionRecord(rule);
+		auto& action = cleanup.actions.emplace_back();
+		action.reason = rule.successfully_resolved_user_name.value() ? CleanupReason::MissingLocalProfile
+		                                                             : CleanupReason::UnresolvedUserOwner;
+		action.rules.push_back(std::move(proposed));
+		if (skip_remaining_rules)
+		{
+			// recorded without printing, so the JSON shows which rules are still there
+			continue;
+		}
+
 		if (!printed_deletion_header)
 		{
 			printed_deletion_header = true;
@@ -219,37 +239,55 @@ DeleteUnresolvedUserAccountRules(
 
 		std::printf("%ls", rule_to_delete.c_str());
 
-		if (!delete_all_with_no_more_prompts)
+		if (delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion(RuleDeletionPrompt, input))
+			action.approvalSource = ApprovalSource::DeleteAll;
+		}
+		else
+		{
+			const auto response = PromptForDeletion(RuleDeletionPrompt, input);
+			switch (response)
 			{
 			case PromptResponse::Yes:
 				// continue to delete this rule
+				action.decision = CleanupDecision::Yes;
+				action.approvalSource = ApprovalSource::Prompt;
 				break;
 
 			case PromptResponse::No:
+				action.decision = CleanupDecision::No;
 				std::printf("       - Skipping this rule\n");
 				continue;
 
 			case PromptResponse::Skip:
+			case PromptResponse::EndOfInput:
+				action.decision =
+				    response == PromptResponse::Skip ? CleanupDecision::SkipRemaining : CleanupDecision::EndOfInput;
 				std::printf("       - Skipping the remainder of the rules with unresolved SIDs in this store\n");
-				return;
+				skip_remaining_rules = true;
+				continue;
 
 			case PromptResponse::All:
+				action.decision = CleanupDecision::DeleteAll;
+				action.approvalSource = ApprovalSource::Prompt;
 				std::printf("       - Deleting all rules with unresolved SIDs in this store\n");
 				delete_all_with_no_more_prompts = true;
 				break;
 			}
 		}
 
+		auto& record = action.rules.front();
 		const auto deleteRuleError = deleteRule(rule.fw_rule->wszRuleId);
 		if (deleteRuleError != ERROR_SUCCESS)
 		{
+			record.outcome = DeletionOutcome::Failed;
+			record.error = HRESULT_FROM_WIN32(deleteRuleError);
 			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
 			RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
 		}
 		else
 		{
+			record.outcome = DeletionOutcome::Succeeded;
 			rule.is_rule_deleted = true;
 			std::printf("       - Successfully deleted the firewall rule\n");
 		}
