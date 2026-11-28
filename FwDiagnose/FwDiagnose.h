@@ -75,20 +75,26 @@ enum class PromptResponse : uint8_t
 // Prints the heading of one category of rule deletion, with the answers its prompts accept.
 //
 // Parameters:
-//   str [in] - the category heading, e.g. "Deleting duplicate rules"
+//   heading  [in] - the category heading, e.g. "Deleting duplicate rules"
+//   prompted [in] - what 'Y' deletes, e.g. "duplicates of the one rule prompted"
+//   category [in] - what 'A' deletes, e.g. "duplicate rules"
 //
 inline void
-PrintDeletionHeader(PCSTR str) noexcept
+PrintDeletionHeader(PCSTR heading, PCSTR prompted, PCSTR category) noexcept
 {
 	std::printf(
 	    "     %s - will prompt for input (y/n/s/a)\n"
-	    "     - indicate 'Y' to delete duplicates of the one rule prompted\n"
-	    "     - indicate 'N' to not delete duplicates of the one rule prompted\n"
+	    "     - indicate 'Y' to delete %s\n"
+	    "     - indicate 'N' to not delete %s\n"
 	    "     - indicate 'S' to SKIP deleting any more rules from this store\n"
-	    "     - indicate 'A' to delete ALL duplicate rules from this store without further prompts\n",
-	    str);
+	    "     - indicate 'A' to delete ALL %s from this store without further prompts\n",
+	    heading,
+	    prompted,
+	    prompted,
+	    category);
 }
-inline constexpr auto* DeletionPrompt = "       Delete all duplicates of this rule";
+inline constexpr auto* DuplicateDeletionPrompt = "       Delete all duplicates of this rule";
+inline constexpr auto* RuleDeletionPrompt = "       Delete this rule";
 
 //
 // PromptForDeletion

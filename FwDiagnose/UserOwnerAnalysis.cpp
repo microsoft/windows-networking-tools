@@ -211,14 +211,17 @@ DeleteUnresolvedUserAccountRules(
 		if (!printed_deletion_header)
 		{
 			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting rules with unresolved SIDs or SIDs without local profiles:\n");
+			PrintDeletionHeader(
+			    "Deleting rules with unresolved SIDs or SIDs without local profiles",
+			    "the one rule prompted",
+			    "rules with unresolved SIDs or SIDs without local profiles");
 		}
 
 		std::printf("%ls", rule_to_delete.c_str());
 
 		if (!delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion(DeletionPrompt, input))
+			switch (PromptForDeletion(RuleDeletionPrompt, input))
 			{
 			case PromptResponse::Yes:
 				// continue to delete this rule
@@ -229,7 +232,7 @@ DeleteUnresolvedUserAccountRules(
 				continue;
 
 			case PromptResponse::Skip:
-				std::printf("       -Skipping the remainder of the rules with unresolved SIDs in this store\n");
+				std::printf("       - Skipping the remainder of the rules with unresolved SIDs in this store\n");
 				return;
 
 			case PromptResponse::All:

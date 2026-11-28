@@ -167,7 +167,10 @@ DeleteMissingAppRules(
 		if (!printed_deletion_header)
 		{
 			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting rules with an application exe referencing non-existing file");
+			PrintDeletionHeader(
+			    "Deleting rules with an application exe referencing non-existing file",
+			    "the one rule prompted",
+			    "rules with an application exe referencing non-existing file");
 		}
 
 		std::printf(
@@ -180,7 +183,7 @@ DeleteMissingAppRules(
 
 		if (!delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion(DeletionPrompt, input))
+			switch (PromptForDeletion(RuleDeletionPrompt, input))
 			{
 			case PromptResponse::Yes:
 				// continue to delete this rule

@@ -1459,6 +1459,85 @@ class SuppressStdout
 };
 
 //
+// CaptureStdout
+//
+// Sends stdout to a scratch file in the current directory while it exists, so a test can check the
+// deletion headers and prompts. Read the text with Finish, which also restores stdout; check results
+// only after that, so failures are printed.
+//
+class CaptureStdout
+{
+  public:
+	CaptureStdout() noexcept
+	{
+		std::fflush(stdout);
+		m_saved = _dup(_fileno(stdout));
+		FILE* ignored{};
+		freopen_s(&ignored, CaptureFileName, "w", stdout);
+	}
+
+	~CaptureStdout() noexcept
+	{
+		Restore();
+		std::remove(CaptureFileName);
+	}
+
+	//
+	// Finish
+	//
+	// Restores stdout and reads what was printed.
+	//
+	// Returns:
+	//   Everything printed to stdout since the capture started.
+	//
+	std::string
+	Finish()
+	{
+		Restore();
+		std::string text;
+		FILE* file{};
+		if (fopen_s(&file, CaptureFileName, "r") == 0 && file)
+		{
+			char buffer[4096];
+			size_t read{};
+			while ((read = std::fread(buffer, 1, sizeof(buffer), file)) > 0)
+			{
+				text.append(buffer, read);
+			}
+			std::fclose(file);
+		}
+		std::remove(CaptureFileName);
+		return text;
+	}
+
+	CaptureStdout(const CaptureStdout&) = delete;
+	CaptureStdout&
+	operator=(const CaptureStdout&) = delete;
+
+  private:
+	static constexpr auto* CaptureFileName = "FirewallRulePrintTests-stdout.txt";
+
+	//
+	// Restore
+	//
+	// Points stdout back where it was, once; this also closes the scratch file.
+	//
+	void
+	Restore() noexcept
+	{
+		if (m_saved != -1)
+		{
+			std::fflush(stdout);
+			_dup2(m_saved, _fileno(stdout));
+			_close(m_saved);
+			m_saved = -1;
+		}
+	}
+
+	int m_saved{-1};
+};
+
+//
 // RunDeleteDuplicateRules
 //
 // Runs DeleteDuplicateRules over the sets of MakeDuplicateRules with scripted answers and a fake delete
@@ -1934,6 +2013,151 @@ TestCleanupPhasesSkipRulesDeletedEarlier()
 		}
 	}
 }
+
+//
+// TestDuplicateDeletionWording
+//
+// Checks the header and prompt DeleteDuplicateRules prints: 'Y' and 'N' act on the duplicates of the
+// rule prompted, 'A' on all duplicate rules, and the prompt asks about all duplicates of the rule.
+//
+void
+TestDuplicateDeletionWording()
+{
+	const auto fw_rules = MakeDuplicateRules();
+	auto rules = NormalizeRules(fw_rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+	std::wistringstream input(L"n\nn\nn\n");
+	std::string text;
+	{
+		CaptureStdout capture;
+		DeleteDuplicateRules(
+		    analysis,
+		    input,
+		    [](PCWSTR) -> DWORD
+		    {
+			    return ERROR_SUCCESS;
+		    });
+		text = capture.Finish();
+	}
+
+	const auto contains = [&text](std::string_view expected)
+	{
+		return text.find(expected) != std::string::npos;
+	};
+	Check(
+	    contains("     Deleting duplicate rules - will prompt for input (y/n/s/a)\n"),
+	    "duplicates: the header names the duplicate category");
+	Check(
+	    contains("     - indicate 'Y' to delete duplicates of the one rule prompted\n") &&
+	        contains("     - indicate 'N' to not delete duplicates of the one rule prompted\n"),
+	    "duplicates: 'Y' and 'N' act on the duplicates of the one rule prompted");
+	Check(
+	    contains("     - indicate 'A' to delete ALL duplicate rules from this store without further prompts\n"),
+	    "duplicates: 'A' deletes all duplicate rules");
+	Check(
+	    contains("       Delete all duplicates of this rule (y/n/s/a)? ") && !contains("Delete this rule"),
+	    "duplicates: the prompt asks about all duplicates of the rule");
+}
+
+//
+// TestSingleRuleDeletionWording
+//
+// Checks the header and prompt DeleteMissingAppRules and DeleteUnresolvedUserAccountRules print: 'Y'
+// and 'N' act on the one rule prompted, 'A' on the phase's category, the prompt asks about this rule,
+// and nothing mentions duplicates. Also checks the unresolved-SID phase's 's' message.
+//
+void
+TestSingleRuleDeletionWording()
+{
+	const auto fw_rules = MakeCleanupRules();
+	for (const auto& [deleteRules, setResults, heading, category, phase] :
+	     {std::tuple{
+	          &DeleteMissingAppRules,
+	          &SetMissingAppResults,
+	          "Deleting rules with an application exe referencing non-existing file",
+	          "rules with an application exe referencing non-existing file",
+	          "missing application: "},
+	      std::tuple{
+	          &DeleteUnresolvedUserAccountRules,
+	          &SetUnresolvedOwnerResults,
+	          "Deleting rules with unresolved SIDs or SIDs without local profiles",
+	          "rules with unresolved SIDs or SIDs without local profiles",
+	          "unresolved owner: "}})
+	{
+		auto rules = NormalizeRules(fw_rules);
+		setResults(rules);
+		std::wistringstream input(L"n\ns\n");
+		std::string text;
+		{
+			CaptureStdout capture;
+			deleteRules(
+			    rules,
+			    input,
+			    [](PCWSTR) -> DWORD
+			    {
+				    return ERROR_SUCCESS;
+			    });
+			text = capture.Finish();
+		}
+
+		const auto contains = [&text](std::string_view expected)
+		{
+			return text.find(expected) != std::string::npos;
+		};
+		const auto check = [phase](bool condition, const char* description)
+		{
+			const auto full_description = std::string(phase) + description;
+			Check(condition, full_description.c_str());
+		};
+		check(
+		    contains(std::format("     {} - will prompt for input (y/n/s/a)\n", heading)),
+		    "the header names the category on one line");
+		check(
+		    contains("     - indicate 'Y' to delete the one rule prompted\n") &&
+		        contains("     - indicate 'N' to not delete the one rule prompted\n"),
+		    "'Y' and 'N' act on the one rule prompted");
+		check(
+		    contains(
+		        std::format(
+		            "     - indicate 'A' to delete ALL {} from this store without further prompts\n",
+		            category)),
+		    "'A' deletes all rules of the category");
+		check(
+		    contains("       Delete this rule (y/n/s/a)? ") && !contains("Delete all duplicates"),
+		    "the prompt asks about this rule");
+		check(!contains("uplicate"), "nothing mentions duplicates");
+	}
+}
+
+//
+// TestUnresolvedOwnerSkipWording
+//
+// Checks the message DeleteUnresolvedUserAccountRules prints when the answer is 's'.
+//
+void
+TestUnresolvedOwnerSkipWording()
+{
+	const auto fw_rules = MakeCleanupRules();
+	auto rules = NormalizeRules(fw_rules);
+	SetUnresolvedOwnerResults(rules);
+	std::wistringstream input(L"s\n");
+	std::string text;
+	{
+		CaptureStdout capture;
+		DeleteUnresolvedUserAccountRules(
+		    rules,
+		    input,
+		    [](PCWSTR) -> DWORD
+		    {
+			    return ERROR_SUCCESS;
+		    });
+		text = capture.Finish();
+	}
+	Check(
+	    text.find("       - Skipping the remainder of the rules with unresolved SIDs in this store\n") !=
+	        std::string::npos,
+	    "unresolved owner: 's' prints the skip message with a space after the dash");
+}
 } // namespace
 int
 wmain()
@@ -1967,6 +2191,9 @@ wmain()
 	TestDeleteDuplicateRulesSkipsDeletedRules();
 	TestDeleteCleanupRules();
 	TestCleanupPhasesSkipRulesDeletedEarlier();
+	TestDuplicateDeletionWording();
+	TestSingleRuleDeletionWording();
+	TestUnresolvedOwnerSkipWording();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

@@ -288,7 +288,7 @@ DeleteDuplicateRules(
 		if (!printed_deletion_header)
 		{
 			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting duplicate rules");
+			PrintDeletionHeader("Deleting duplicate rules", "duplicates of the one rule prompted", "duplicate rules");
 		}
 
 		std::printf(
@@ -299,7 +299,7 @@ DeleteDuplicateRules(
 
 		if (!delete_all_with_no_more_prompts)
 		{
-			switch (PromptForDeletion(DeletionPrompt, input))
+			switch (PromptForDeletion(DuplicateDeletionPrompt, input))
 			{
 			case PromptResponse::Yes:
 				// continue to delete the duplicates of this rule
