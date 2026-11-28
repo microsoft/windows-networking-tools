@@ -10,14 +10,14 @@ Principles: tests use synthetic data only, never read or change system firewall/
 | Keyword/format helpers | `AddressKeywordToString`, `PortKeywordToString`, `PortRangesToString`, `IcmpTypeCodeConstraintsToString` (partly covered through `PrintRuleContents`), enum `ToString`s | single/multiple/unknown bits; no trailing separators |
 | Path classification | `ContainsPerUserEnvironmentVariable`, `ContainsServiceProfileEnvironmentVariable`, `IsRuleAnAppxRule` | case-insensitivity, partial matches |
 | Inbound analysis | `IsInboundAllowRule`, `GetInboundProfileCategory`, `AnalyzeInboundRules` | profile buckets, local-subnet handling |
-| Duplicates | `CheckForDuplicateRules` (split detection from printing) | profile/enabled relaxations, keep-candidate selection |
+| Duplicates | `AnalyzeDuplicateRules`, `PrintDuplicateAnalysis`, `ReturnDuplicateKeepChoices`, `DeleteDuplicateRules` (done: `FirewallRulePrintTests`; JSON in `ProfileJsonReportTests`) | sets found; profile and active-flag differences each prevent a match; name/ID/description excluded; set and rule order; null names and IDs; keep choices; each prompt answer, end of input, and a failed deletion, with scripted input and a fake delete function |
 | WFP formatting | `FwpmLayerToString`, `Built-in*ToString`, `IpProtocolToString`, discard-reason and ICMP type/code strings, `PrintNetEvent*` with synthetic events | known GUIDs, unknown/third-party paths, version-specific event fields |
 | JSON report | extend `ProfileJsonReportTests` | each JSON command once JSON-OUTPUT-PLAN phases land |
 
 ## Phase 2 - seams for Windows APIs
 - Firewall: inject the FirewallAPI function table (already resolved at runtime in `LoadFirewallFunctions`) so `LoadFirewallRulesFromStore` can be fed synthetic rule arrays per store and version, including `ERROR_FILE_NOT_FOUND` and other failures.
 - App packages, IP properties, WFP enumerations: separate "collect" from "analyze" so analyses take vectors rather than globals.
-- Deletion paths (`DeleteDuplicateRules`, `DeleteMissingAppRules`, `DeleteUnresolvedUserAccountRules`, callout removal): test the selection logic only, against a fake delete function.
+- Deletion paths (`DeleteMissingAppRules`, `DeleteUnresolvedUserAccountRules`, callout removal): pass the input stream and delete function in, as `DeleteDuplicateRules` does (done), and test with scripted answers and a fake delete function.
 
 ## Phase 3 - real firewall rules at each schema version (test machine only)
 - Script or test executable that opens the Local store at 2.27, 2.31, and 2.33 with `FWOpenPolicyStore`, adds rules in a dedicated rule group using a broad set of fields (service, application, package ID/PFN, owner SID, authorization lists, address keywords and lists, TCP/UDP ports and keywords, ICMPv4/v6 type/codes, interfaces, dynamic keywords), runs `-analyze-rules` and `-analyze-inbound-rules -verbose`, compares the output against expected label sets, and deletes the group even on failure.

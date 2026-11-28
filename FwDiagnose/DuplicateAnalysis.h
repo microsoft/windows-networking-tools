@@ -3,8 +3,13 @@
 
 #pragma once
 
+#include <cstddef>
+#include <functional>
+#include <istream>
 #include <string>
 #include <vector>
+
+#include <Windows.h>
 
 #include "AnalysisOutput.h"
 #include "NormalizedFirewallRule.h"
@@ -33,3 +38,22 @@ AnalyzeDuplicateRules(std::vector<NormalizedFirewallRule>& rules);
 
 std::wstring
 PrintDuplicateAnalysis(const DuplicateAnalysis& analysis, AnalysisOutput output);
+
+// one name the user can choose to keep when the rules of a set have different names
+struct DuplicateKeepChoice
+{
+	// the normalized name, or "(no Rule Name) RuleId:  <rule ID>" for rules without a name
+	std::wstring label;
+	// the position within the set of the first rule with this name; that rule is the one kept
+	size_t ruleIndex{};
+};
+
+std::vector<DuplicateKeepChoice>
+ReturnDuplicateKeepChoices(const DuplicateRuleSet& set);
+
+// deletes one rule by its rule ID and returns a Win32 error code, as FWDeleteFirewallRule does
+using DeleteFirewallRuleFunction = std::function<DWORD(PCWSTR ruleId)>;
+
+void
+DeleteDuplicateRules(
+    const DuplicateAnalysis& analysis, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule);

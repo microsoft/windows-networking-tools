@@ -7,11 +7,13 @@
 #include <algorithm>
 #include <cstdio>
 #include <format>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 #include <string_view>
 
+#include <io.h>
 #include <wil/network.h>
 #include <Windows.h>
 
@@ -20,6 +22,7 @@
 #include "..\PackageAnalysis.h"
 #include "..\UserOwnerAnalysis.h"
 #include "..\FilterRanking.h"
+#include "..\DuplicateAnalysis.h"
 
 bool
 VerboseOutputEnabled() noexcept
@@ -31,6 +34,15 @@ bool
 DebugOutputEnabled() noexcept
 {
 	return false;
+}
+
+// the failures DeleteDuplicateRules reports, in order
+std::vector<HRESULT> g_recorded_failures;
+
+void
+RecordOperationFailure(HRESULT error) noexcept
+{
+	g_recorded_failures.push_back(error);
 }
 
 namespace
@@ -1204,6 +1216,339 @@ TestFilterRankingsWithoutFilters()
 	    noRules.byFilterCount.empty() && PrintFilterRankings(noRules).empty(),
 	    "nothing is printed for a store without rules");
 }
+
+wchar_t g_duplicate_rule_ids[9][8]{L"{d1}", L"{d2}", L"{d3}", L"{d4}", L"{d5}", L"{d6}", L"{d7}", L"{d8}", L"{d9}"};
+wchar_t g_zz_lower_name[] = L"zz";
+wchar_t g_zz_upper_name[] = L"ZZ";
+wchar_t g_another_name[] = L"Another";
+wchar_t g_long_name[] = L"beta-long-name";
+wchar_t g_duplicate_description[] = L"only one rule of the set has this description";
+wchar_t g_private_name[] = L"private";
+wchar_t g_public_name[] = L"public";
+wchar_t g_active_name[] = L"active";
+
+//
+// MakeDuplicateRules
+//
+// Returns:
+//   Nine rules: three sets of two duplicate rules and three rules that are not duplicates of anything,
+//   in an order that is not sorted by any of the analysis's comparisons:
+//     - UDP: "ZZ" {d2} and "zz" {d1}, names differing only in case
+//     - blocked: "beta-long-name" {d4} (with a description) and "Another" {d3}, different names
+//     - outbound, with an application: two rules with no name, {d6} and {d5}
+//     - "private" {d7}, "public" {d8}, and "active" {d9}: "public" differs from "private" only in its
+//       profile and from "active" only in the active flag
+//
+std::vector<FW_RULE>
+MakeDuplicateRules()
+{
+	std::vector<FW_RULE> fw_rules;
+	const auto add = [&fw_rules](PWSTR name, PWSTR rule_id)
+	{
+		auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rule.wszName = name;
+		fw_rule.wszRuleId = rule_id;
+		fw_rules.push_back(fw_rule);
+		return fw_rules.size() - 1;
+	};
+
+	for (const auto index :
+	     {add(g_zz_upper_name, g_duplicate_rule_ids[1]), add(g_zz_lower_name, g_duplicate_rule_ids[0])})
+	{
+		fw_rules[index].wIpProtocol = IPPROTO_UDP;
+	}
+	fw_rules[add(g_private_name, g_duplicate_rule_ids[6])].dwProfiles = FW_PROFILE_TYPE_PRIVATE;
+	fw_rules[add(g_public_name, g_duplicate_rule_ids[7])].dwProfiles = FW_PROFILE_TYPE_PUBLIC;
+	for (const auto index : {add(g_long_name, g_duplicate_rule_ids[3]), add(g_another_name, g_duplicate_rule_ids[2])})
+	{
+		fw_rules[index].Action = FW_RULE_ACTION_BLOCK;
+	}
+	fw_rules[fw_rules.size() - 2].wszDescription = g_duplicate_description;
+	for (const auto index : {add(nullptr, g_duplicate_rule_ids[5]), add(nullptr, g_duplicate_rule_ids[4])})
+	{
+		fw_rules[index].Direction = FW_DIR_OUT;
+		fw_rules[index].wszLocalApplication = g_existing_application;
+	}
+	const auto active = add(g_active_name, g_duplicate_rule_ids[8]);
+	fw_rules[active].dwProfiles = FW_PROFILE_TYPE_PUBLIC;
+	fw_rules[active].wFlags = FW_RULE_FLAGS_ACTIVE;
+	return fw_rules;
+}
+
+//
+// RuleIdsOf
+//
+// Parameters:
+//   set [in] - a set of duplicate rules from AnalyzeDuplicateRules
+//
+// Returns:
+//   The set's rule IDs in order, each followed by ';', so a test can compare a whole set.
+//
+std::wstring
+RuleIdsOf(const DuplicateRuleSet& set)
+{
+	std::wstring ids;
+	for (auto rule = set.duplicate_rule_begin; rule != set.duplicate_rule_end; ++rule)
+	{
+		ids += rule->fw_rule->wszRuleId;
+		ids += L';';
+	}
+	return ids;
+}
+
+//
+// TestDuplicateAnalysisFindsAndOrdersSets
+//
+// Checks which rules are duplicates (rule ID, name, and description are ignored; profiles and the
+// active flag are not), the counts, the alphabetical order of the sets and of the rules within each
+// set, and the printed text.
+//
+void
+TestDuplicateAnalysisFindsAndOrdersSets()
+{
+	const auto fw_rules = MakeDuplicateRules();
+	auto rules = NormalizeRules(fw_rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+
+	Check(
+	    analysis.duplicateSets.size() == 3 && analysis.duplicateRuleCount == 6,
+	    "rules differing only in rule ID, name, or description are duplicates; profile or active flag differences "
+	    "are not");
+	if (analysis.duplicateSets.size() != 3)
+	{
+		return;
+	}
+	Check(
+	    RuleIdsOf(analysis.duplicateSets[0]) == L"{d5};{d6};" &&
+	        RuleIdsOf(analysis.duplicateSets[1]) == L"{d3};{d4};" &&
+	        RuleIdsOf(analysis.duplicateSets[2]) == L"{d1};{d2};",
+	    "sets are ordered alphabetically by the name of their first rule (not shorter names first), and rules "
+	    "within a set by name, then rule ID");
+	Check(
+	    analysis.duplicateSets[0].nameCount == 1 && analysis.duplicateSets[1].nameCount == 2 &&
+	        analysis.duplicateSets[2].nameCount == 1,
+	    "names differing only in case are the same name");
+
+	const std::wstring summary = L"  * Summary of duplicate analysis of firewall rules:\n"
+	                             L"   - count of sets of duplicate rules: 3\n"
+	                             L"   - count of rules in sets of duplicate rules: 6\n";
+	Check(PrintDuplicateAnalysis(analysis, AnalysisOutput::Summary) == summary, "the summary prints only the counts");
+	Check(
+	    PrintDuplicateAnalysis(analysis, AnalysisOutput::Verbose) ==
+	        summary + L"   - sets of duplicate rules:\n"
+	                  L"       [2 rules] (no Rule Name) RuleId:  {d5}  (Application-exe: "
+	                  L"'%SystemRoot%\\System32\\svchost.exe')\n"
+	                  L"       [2 rules] Rule Name:  another  [2 different names]\n"
+	                  L"       [2 rules] Rule Name:  zz\n",
+	    "the verbose output lists each set once, by its first rule, with its application and name count");
+}
+
+//
+// TestDuplicateAnalysisWithoutDuplicates
+//
+// Checks the output when a store has rules but no duplicates, and when it has no rules.
+//
+void
+TestDuplicateAnalysisWithoutDuplicates()
+{
+	auto fw_rules = MakeDuplicateRules();
+	fw_rules.resize(1);
+	auto rules = NormalizeRules(fw_rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+	Check(
+	    analysis.duplicateSets.empty() && analysis.duplicateRuleCount == 0,
+	    "a single rule is not a set of duplicate rules");
+	Check(
+	    PrintDuplicateAnalysis(analysis, AnalysisOutput::Summary).empty(),
+	    "the summary prints nothing when there are no duplicates");
+	Check(
+	    PrintDuplicateAnalysis(analysis, AnalysisOutput::Verbose) ==
+	        L"  * Summary of duplicate analysis of firewall rules:\n"
+	        L"   - count of sets of duplicate rules: 0\n"
+	        L"   - count of rules in sets of duplicate rules: 0\n",
+	    "the verbose output prints zero counts and no list when there are no duplicates");
+
+	std::vector<NormalizedFirewallRule> none;
+	Check(AnalyzeDuplicateRules(none).duplicateSets.empty(), "a store without rules has no duplicates");
+}
+
+wchar_t g_keep_ids[4][8]{L"{k1}", L"{k2}", L"{k3}", L"{k4}"};
+wchar_t g_keep_upper_alpha[] = L"ALPHA";
+wchar_t g_keep_lower_alpha[] = L"alpha";
+wchar_t g_keep_zed[] = L"Zed";
+
+//
+// TestDuplicateKeepChoices
+//
+// Checks the names offered when deleting all but one rule of a set: one per different name, in
+// alphabetical order, each keeping the first rule with that name, and a rule without a name labeled by
+// its rule ID instead of an empty entry.
+//
+void
+TestDuplicateKeepChoices()
+{
+	std::vector<FW_RULE> fw_rules;
+	for (const auto& [name, rule_id] :
+	     {std::pair{g_keep_zed, g_keep_ids[0]},
+	      std::pair{g_keep_upper_alpha, g_keep_ids[2]},
+	      std::pair<PWSTR, PWSTR>{nullptr, g_keep_ids[3]},
+	      std::pair{g_keep_lower_alpha, g_keep_ids[1]}})
+	{
+		auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rule.wszName = name;
+		fw_rule.wszRuleId = rule_id;
+		fw_rules.push_back(fw_rule);
+	}
+	auto rules = NormalizeRules(fw_rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+	Check(
+	    analysis.duplicateSets.size() == 1 && RuleIdsOf(analysis.duplicateSets[0]) == L"{k4};{k2};{k3};{k1};",
+	    "a rule without a name is first in its set");
+	if (analysis.duplicateSets.size() != 1)
+	{
+		return;
+	}
+	const auto choices = ReturnDuplicateKeepChoices(analysis.duplicateSets[0]);
+	Check(
+	    choices.size() == 3 && choices[0].label == L"(no Rule Name) RuleId:  {k4}" && choices[0].ruleIndex == 0 &&
+	        choices[1].label == L"alpha" && choices[1].ruleIndex == 1 && choices[2].label == L"zed" &&
+	        choices[2].ruleIndex == 3,
+	    "one choice per name, alphabetically, keeping the first rule with that name; no empty label");
+
+	const auto same_name_rules = MakeDuplicateRules();
+	auto same_name = NormalizeRules(same_name_rules);
+	const auto same_name_analysis = AnalyzeDuplicateRules(same_name);
+	const auto one_choice = ReturnDuplicateKeepChoices(same_name_analysis.duplicateSets.back());
+	Check(
+	    one_choice.size() == 1 && one_choice[0].label == L"zz" && one_choice[0].ruleIndex == 0,
+	    "names differing only in case are one choice");
+}
+
+//
+// SuppressStdout
+//
+// Sends stdout to NUL while it exists, so the deletion prompts do not clutter the test output. Check
+// results only after it is destroyed, so failures are printed.
+//
+class SuppressStdout
+{
+  public:
+	SuppressStdout() noexcept
+	{
+		std::fflush(stdout);
+		m_saved = _dup(_fileno(stdout));
+		FILE* ignored{};
+		freopen_s(&ignored, "NUL", "w", stdout);
+	}
+
+	~SuppressStdout() noexcept
+	{
+		std::fflush(stdout);
+		_dup2(m_saved, _fileno(stdout));
+		_close(m_saved);
+	}
+
+	SuppressStdout(const SuppressStdout&) = delete;
+	SuppressStdout&
+	operator=(const SuppressStdout&) = delete;
+
+  private:
+	int m_saved{-1};
+};
+
+//
+// RunDeleteDuplicateRules
+//
+// Runs DeleteDuplicateRules over the sets of MakeDuplicateRules with scripted answers and a fake delete
+// function. The sets are, in order: {d5};{d6} (no names), {d3} "Another";{d4} "beta-long-name", and
+// {d1};{d2} (both "zz").
+//
+// Parameters:
+//   answers    [in] - the user's input, one answer per line
+//   failing_id [in] - a rule ID the fake fails to delete with ERROR_ACCESS_DENIED, or nullptr
+//
+// Returns:
+//   The rule IDs the fake was asked to delete, in order, each followed by ';'. Also checks that exactly
+//   the rules deleted without failure are marked is_rule_deleted.
+//
+std::wstring
+RunDeleteDuplicateRules(const wchar_t* answers, const wchar_t* failing_id = nullptr)
+{
+	const auto fw_rules = MakeDuplicateRules();
+	auto rules = NormalizeRules(fw_rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+	std::wistringstream input(answers);
+	std::wstring attempted;
+	std::wstring expected_deleted;
+	g_recorded_failures.clear();
+	{
+		SuppressStdout quiet;
+		DeleteDuplicateRules(
+		    analysis,
+		    input,
+		    [&](PCWSTR rule_id) -> DWORD
+		    {
+			    attempted += rule_id;
+			    attempted += L';';
+			    if (failing_id && std::wstring_view(rule_id) == failing_id)
+			    {
+				    return ERROR_ACCESS_DENIED;
+			    }
+			    expected_deleted += rule_id;
+			    expected_deleted += L';';
+			    return ERROR_SUCCESS;
+		    });
+	}
+
+	std::wstring marked_deleted;
+	for (const auto& set : analysis.duplicateSets)
+	{
+		for (auto rule = set.duplicate_rule_begin; rule != set.duplicate_rule_end; ++rule)
+		{
+			if (rule->is_rule_deleted)
+			{
+				marked_deleted += rule->fw_rule->wszRuleId;
+				marked_deleted += L';';
+			}
+		}
+	}
+	Check(marked_deleted == expected_deleted, "exactly the rules deleted without failure are marked deleted");
+	return attempted;
+}
+
+//
+// TestDeleteDuplicateRules
+//
+// Checks which rules DeleteDuplicateRules deletes for each answer, which rule it keeps, that running out
+// of input never deletes anything more, and that a failed deletion is recorded.
+//
+void
+TestDeleteDuplicateRules()
+{
+	Check(
+	    RunDeleteDuplicateRules(L"y\nn\ny\n") == L"{d6};{d2};",
+	    "'y' deletes all but the first rule of a set when the names match; 'n' deletes nothing from that set");
+	Check(
+	    RunDeleteDuplicateRules(L"n\ny\n1\nn\n") == L"{d4};",
+	    "choosing the first name keeps the rule with that name");
+	Check(
+	    RunDeleteDuplicateRules(L"a\n2\n") == L"{d6};{d3};{d2};",
+	    "'a' deletes from every set without asking again, but still asks which name to keep");
+	Check(RunDeleteDuplicateRules(L"y\ns\n") == L"{d6};", "'s' deletes nothing more from the store");
+	Check(RunDeleteDuplicateRules(L"Y\nx\nN\nS\n") == L"{d6};", "answers are case-insensitive; others ask again");
+	Check(RunDeleteDuplicateRules(L"") == L"", "no input deletes nothing");
+	Check(
+	    RunDeleteDuplicateRules(L"n\ny\nx\n0\n9\n") == L"",
+	    "numbers that are not listed ask again; running out of input keeps the set and skips the rest");
+	Check(g_recorded_failures.empty(), "no failure is recorded when every deletion succeeds");
+
+	Check(
+	    RunDeleteDuplicateRules(L"a\n1\n", L"{d4}") == L"{d6};{d4};{d2};",
+	    "a failed deletion does not stop the remaining deletions");
+	Check(
+	    g_recorded_failures.size() == 1 && g_recorded_failures[0] == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED),
+	    "a failed deletion is recorded as an HRESULT");
+}
 } // namespace
 int
 wmain()
@@ -1229,6 +1574,10 @@ wmain()
 	TestUserOwnerAnalysisWithNullFindingFields();
 	TestFilterRankingsGroupAndOrderRuleNames();
 	TestFilterRankingsWithoutFilters();
+	TestDuplicateAnalysisFindsAndOrdersSets();
+	TestDuplicateAnalysisWithoutDuplicates();
+	TestDuplicateKeepChoices();
+	TestDeleteDuplicateRules();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

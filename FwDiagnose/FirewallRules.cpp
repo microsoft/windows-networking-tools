@@ -45,18 +45,6 @@ static decltype(FWClosePolicyStore)* g_FWClosePolicyStore = nullptr;
 static decltype(FWEnumFirewallRules)* g_FWEnumFirewallRules = nullptr;
 static decltype(FWDeleteFirewallRule)* g_FWDeleteFirewallRule = nullptr;
 
-static void
-PrintDeletionHeader(PCSTR str) noexcept
-{
-	std::printf(
-	    "     %s - will prompt for input (y/n/s/a)\n"
-	    "     - indicate 'Y' to delete duplicates of the one rule prompted\n"
-	    "     - indicate 'N' to not delete duplicates of the one rule prompted\n"
-	    "     - indicate 'S' to SKIP deleting any more rules from this store\n"
-	    "     - indicate 'A' to delete ALL duplicate rules from this store without further prompts\n",
-	    str);
-}
-static constexpr auto* DeletionPrompt = "       Delete all duplicates of this rule";
 static FirewallPolicyObjects g_policy_objects[] = // NOLINT(bugprone-throwing-static-initialization)
     {
         {.parent_rule = nullptr,
@@ -823,222 +811,6 @@ CheckForDuplicateRules(FirewallPolicyObjects& policy, PCWSTR command)
 	    PrintDuplicateAnalysis(analysis, VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary)
 	        .c_str());
 	return analysis;
-}
-
-static void
-DeleteDuplicateRules(FW_POLICY_STORE_HANDLE store_handle, const DuplicateAnalysis& duplicate_rules)
-{
-	bool printed_deletion_header = false;
-	bool delete_all_with_no_more_prompts = false;
-
-	for (const auto& duplicate_rule : duplicate_rules.duplicateSets)
-	{
-		const auto duplicate_rule_total =
-		    std::distance(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end);
-		FAIL_FAST_IF(duplicate_rule_total == 0);
-
-		if (!printed_deletion_header)
-		{
-			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting duplicate rules");
-		}
-
-		std::printf(
-		    "\n"
-		    "     %zd duplicates of this rule [%ls:  %ls]\n",
-		    duplicate_rule_total,
-		    duplicate_rule.duplicate_rule_begin->rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-		    duplicate_rule.duplicate_rule_begin->rule_name.value.empty()
-		        ? duplicate_rule.duplicate_rule_begin->fw_rule->wszRuleId
-		        : duplicate_rule.duplicate_rule_begin->rule_name.value.c_str());
-
-		if (!delete_all_with_no_more_prompts)
-		{
-			switch (PromptForDeletion(DeletionPrompt))
-			{
-			case PromptResponse::Yes:
-				// continue to delete the duplicates of this rule
-				break;
-
-			case PromptResponse::No:
-				std::printf("       - Skipping this rule\n");
-				continue;
-
-			case PromptResponse::Skip:
-				std::printf("       - Skipping the remainder of the duplicate rules in this store\n");
-				return;
-
-			case PromptResponse::All:
-				std::printf("       - Deleting all duplicate rules in this store\n");
-				delete_all_with_no_more_prompts = true;
-				break;
-			}
-		}
-
-		// if the names are not the same, ask the user which to keep
-		bool allNamesMatch = true;
-		for (auto iter = duplicate_rule.duplicate_rule_begin; iter != duplicate_rule.duplicate_rule_end; ++iter)
-		{
-			auto next = iter + 1;
-			if (next == duplicate_rule.duplicate_rule_end)
-			{
-				break;
-			}
-			if (iter->rule_name != next->rule_name)
-			{
-				allNamesMatch = false;
-				break;
-			}
-		}
-
-		// by default keep the first rule
-		// if names don't match, ask the user which rule to keep
-		uint32_t rule_to_keep = 1;
-		if (!allNamesMatch)
-		{
-			uint32_t rule_count = 0;
-			uint32_t rule_listing = 0;
-
-			std::printf("\n     Duplicate rules have different names. Please choose which to keep:\n");
-
-			// cache the rule names so we don't present the same name multiple times
-			struct DuplicateRuleDetails
-			{
-				NormalizedString rule_name;
-				uint32_t rule_count;
-				uint32_t rule_listing;
-			};
-
-			// duplicate_rule_details will contain all unique names for duplicate rules
-			// this is to preset the user with a list of unique rule names to ask which to keep
-			// since we will delete all but one of the duplicates
-			std::vector<DuplicateRuleDetails> duplicate_rule_details;
-			for (const auto& rule :
-			     std::ranges::subrange(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end))
-			{
-				++rule_count;
-
-				bool rule_name_exists = false;
-				for (const auto& rule_detail : duplicate_rule_details)
-				{
-					if (rule_detail.rule_name == rule.rule_name)
-					{
-						// already listed this rule name, skip
-						rule_name_exists = true;
-						break;
-					}
-				}
-
-				// a new unique name for a duplicate rule
-				if (!rule_name_exists)
-				{
-					++rule_listing;
-					duplicate_rule_details.emplace_back(
-					    DuplicateRuleDetails{
-					        .rule_name = NormalizedString::Copy(rule.rule_name),
-					        .rule_count = rule_count,
-					        .rule_listing = rule_listing});
-				}
-			}
-
-			// sort the rule names alphabetically to make presenting to the user nicer
-			std::ranges::sort(
-			    duplicate_rule_details,
-			    [](const DuplicateRuleDetails& lhs, const DuplicateRuleDetails& rhs)
-			    {
-				    return NormalizedString::AlphabeticalCompare(lhs.rule_name, rhs.rule_name) < 0;
-			    });
-
-			// after sorting by name, renumber them
-			rule_listing = 0;
-			for (auto& rule_detail : duplicate_rule_details)
-			{
-				rule_detail.rule_listing = ++rule_listing;
-				std::printf("       %u. %ls\n", rule_detail.rule_listing, rule_detail.rule_name.value.c_str());
-			}
-
-			// now ask the user which rule to keep
-			std::wstring userInput;
-			bool input_ended = false;
-			for (;;)
-			{
-				std::printf("       Enter the number of the rule to keep: ");
-				userInput.clear();
-				if (!std::getline(std::wcin, userInput))
-				{
-					input_ended = true;
-					break;
-				}
-
-				const auto entered_rule_listing = std::wcstoul(userInput.c_str(), nullptr, 10);
-				if (entered_rule_listing < 1 || entered_rule_listing > rule_listing)
-				{
-					// invalid, ask the user again
-					continue;
-				}
-
-				// they chose the rule - find the rule_to_keep value matching it
-				for (const auto& rule_detail : duplicate_rule_details)
-				{
-					if (rule_detail.rule_listing == entered_rule_listing)
-					{
-						rule_to_keep = rule_detail.rule_count;
-						break;
-					}
-				}
-				break;
-			}
-
-			if (input_ended)
-			{
-				std::printf("\n       - No more input - keeping all of these rules\n");
-				continue;
-			}
-		}
-
-		std::printf("       Deleting %zd duplicates of this rule, keeping 1\n", duplicate_rule_total - 1);
-
-		uint32_t delete_rule_counter = 0;
-		uint32_t successful_deletion_counter = 0;
-		for (auto& rule : std::ranges::subrange(duplicate_rule.duplicate_rule_begin, duplicate_rule.duplicate_rule_end))
-		{
-			++delete_rule_counter;
-			if (delete_rule_counter == rule_to_keep)
-			{
-				std::printf(
-				    "        Keeping [%ls:  %ls]\n",
-				    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				    rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str());
-				continue;
-			}
-
-			const auto deleteRuleError = g_FWDeleteFirewallRule(store_handle, rule.fw_rule->wszRuleId);
-			if (deleteRuleError != ERROR_SUCCESS)
-			{
-				std::printf(
-				    "        Failed to delete one of the duplicate firewall rules (0x%lx) - RuleId %ls\n",
-				    HRESULT_FROM_WIN32(deleteRuleError),
-				    rule.fw_rule->wszRuleId);
-				RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
-			}
-			else
-			{
-				rule.is_rule_deleted = true;
-				++successful_deletion_counter;
-				if (VerboseOutputEnabled())
-				{
-					std::printf(
-					    "        Successfully deleted the duplicate firewall rule RuleId %ls\n",
-					    rule.fw_rule->wszRuleId);
-				}
-			}
-		}
-
-		if (successful_deletion_counter > 0)
-		{
-			std::printf("        Successfully deleted %u duplicate firewall rules\n", successful_deletion_counter);
-		}
-	}
 }
 
 static void
@@ -2263,7 +2035,13 @@ ProcessFirewallRules()
 			if (CleanBrokenRulesEnabled())
 			{
 				std::printf("\n");
-				details::DeleteDuplicateRules(policy.store_handle, duplicateRules);
+				DeleteDuplicateRules(
+				    duplicateRules,
+				    std::wcin,
+				    [&policy](PCWSTR ruleId)
+				    {
+					    return g_FWDeleteFirewallRule(policy.store_handle, ruleId);
+				    });
 			}
 		}
 		catch (const wil::ResultException& ex)

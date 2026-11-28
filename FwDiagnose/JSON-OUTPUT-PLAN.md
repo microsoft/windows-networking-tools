@@ -143,7 +143,7 @@ Proposed `data`:
 | `packageAnalysis` | Package-SID/PFN reference counts and unresolved references (implemented; see Review 4) |
 | `userOwnerAnalysis` | SID-owner counts, unresolved owners, and missing local-profile findings (implemented; see Review 5) |
 | `filterRankings` | Top rule names by WFP filter count and filter-condition count (implemented; see Review 6) |
-| `duplicateAnalysis` | Number of duplicate groups and number of rules participating in those groups |
+| `duplicateAnalysis` | Number of duplicate sets and number of rules in those sets (implemented; see Review 7) |
 
 Under `-verbose`, include the corresponding finding records and rule details, not merely their formatted names.
 
@@ -418,7 +418,7 @@ This document is a plan, not an implementation of the feature. The design uses s
 
 Status: approved and implemented for firewall-profile configuration.
 
-The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, per-store SID-owner analysis, and per-store filter rankings for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
+The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, per-store SID-owner analysis, per-store filter rankings, and per-store duplicate analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
 
 ```powershell
 .\FwDiagnose\x64\Debug\FwDiagnose.exe -analyze-rules -json .\firewall-profiles.json
@@ -866,3 +866,56 @@ Status: approved and implemented.
 - Without `-verbose`, `ruleIds` is omitted. A rule without an ID has a `null` entry.
 - If the WFP filters could not be read, `status` is `failed`, `limit` and both lists are omitted, and `diagnostics` has one entry with `code: "wfp_filters_not_loaded"`, `operation: "enumerate_wfp_filters"`, `subject.property: "wfpFilters"`, and the read `error`.
 - Field order: `status`, `correlationMethod`, `filterScope`, `limit`, `byFilterCount`, `byFilterConditionCount`, `diagnostics`. Entries: `ruleName`, `ruleCount`, `filterCount`, `filterConditionCount`, `ruleIds`.
+
+### Review 7: `-analyze-rules` - duplicate analysis per policy store
+
+Status: approved and implemented.
+
+`AnalyzeDuplicateRules()` finds the sets of duplicate rules in one store; the console and JSON are both written from it, and `-clean-rules` deletes from the same sets. Rules are duplicates when they match on every setting except the rule ID, name, description, and schema version. Profiles and the active flag are compared, so rules differing only in either are not duplicates.
+
+#### Console
+
+```text
+  * Summary of duplicate analysis of firewall rules:
+   - count of sets of duplicate rules: 3
+   - count of rules in sets of duplicate rules: 6
+   - sets of duplicate rules:
+       [2 rules] (no Rule Name) RuleId:  {d5}  (Application-exe: '%SystemRoot%\System32\svchost.exe')
+       [2 rules] Rule Name:  another  [2 different names]
+       [2 rules] Rule Name:  zz
+```
+
+- Without `-verbose`, only the two counts print, and nothing prints when a store has no duplicates.
+- Sets are ordered alphabetically by the name of their first rule; rules within a set are ordered by name, then by rule ID (rules without a name or ID first). Previously sets were in comparison order.
+- A set's first rule is printed: its name, or its rule ID if it has no name, and its application if any.
+- `[N different names]` prints when the rules of a set have more than one (case-insensitive) name.
+
+#### JSON with `-verbose`
+
+`duplicateAnalysis` is added to the store record after `filterRankings`:
+
+```json
+"duplicateAnalysis": {
+  "status": "completed",
+  "ignoredFields": ["ruleId", "name", "description", "schemaVersion"],
+  "duplicateSetCount": 1,
+  "duplicateRuleCount": 2,
+  "duplicateSets": [
+    {
+      "ruleCount": 2,
+      "application": null,
+      "rules": [
+        { "ruleId": "MDEServer-1", "name": null },
+        { "ruleId": "WMPNetworkSvc-2", "name": null }
+      ]
+    }
+  ]
+}
+```
+
+- `duplicateAnalysis` is present for every store whose rules were analyzed, with zero counts when there are no duplicates.
+- `ignoredFields` lists the fields that are not compared, so a reader knows why rules in a set can have different names.
+- `duplicateRuleCount` counts every rule in every set, including the one rule per set that `-clean-rules` keeps.
+- Without `-verbose`, `duplicateSets` is omitted. With `-verbose`, it is present and empty when there are no duplicates.
+- Sets and their rules are in console order. `name` keeps its original case, unlike the console. `application` is the set's shared application, or `null` when the rules have none. `ruleId` and `name` are `null` when absent.
+- Field order: `status`, `ignoredFields`, `duplicateSetCount`, `duplicateRuleCount`, `duplicateSets`. Sets: `ruleCount`, `application`, `rules`. Rules: `ruleId`, `name`.

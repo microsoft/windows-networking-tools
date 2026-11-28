@@ -9,10 +9,10 @@ FwDiagnose is a single-process C++ console application. It takes a snapshot of s
 | `FwDiagnose.cpp` | `wmain`, argument parsing, loader threads, command dispatch. Holds option flags as globals behind accessors declared in `FwDiagnose.h`. |
 | `FwDiagnose.h` | Option accessors, `GuidToString`, deletion prompts, `ChronoTimer`. |
 | `firewall.h` | Declarations for the undocumented-in-SDK `FW_*` types and functions from `FirewallAPI.dll`. |
-| `FirewallRules.*` | Loads rules from all stores; all rule analyses and deletion; profile policy; Shields Up. |
+| `FirewallRules.*` | Loads rules from all stores; all rule analyses and deletion (except duplicate deletion, in `DuplicateAnalysis.*`); profile policy; Shields Up. |
 | `NormalizedFirewallRule.*` | Canonical per-rule record and comparison functions. |
 | `NormalizedString.h` | Case-insensitive string with an ASCII fast path. |
-| `ApplicationAnalysis.*`, `PackageAnalysis.*`, `UserOwnerAnalysis.*`, `FilterRanking.*` | Per-store application, app-package, and SID-owner analyses, and filter rankings. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups and filter counts are passed in, keeping WinRT and WFP out of these files. |
+| `ApplicationAnalysis.*`, `PackageAnalysis.*`, `UserOwnerAnalysis.*`, `FilterRanking.*`, `DuplicateAnalysis.*` | Per-store application, app-package, SID-owner, and duplicate analyses, and filter rankings. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups and filter counts are passed in, keeping WinRT and WFP out of these files. |
 | `AnalysisOutput.h` | Summary/verbose selector and the rule label shared by analysis console output. |
 | `AppContainers.*` | Installed-package inventory and SID derivation. |
 | `WfpCounters.*` | Shared WFP engine handle, layer names and ordering, shared WFP types. |
@@ -118,9 +118,9 @@ Comparison (`RuleDetailsComparison`) has separate steps so that a `ComparisonPol
 | Address keywords | `skip_comparing_local_subnet` (ignores only Local Subnet) |
 | `normalized_rule_details` | None |
 
-The rule ID, name, description, and schema version are **excluded**, which is why duplicates can have different names and why deletion may ask which to keep. Status and origin are included, so otherwise identical rules with different statuses are not duplicates.
+The rule ID, name, description, and schema version are **excluded**, which is why duplicates can have different names and why deletion may ask which to keep. Status and origin are included, so otherwise identical rules with different statuses are not duplicates. `AnalyzeDuplicateRules` compares with the default policy (nothing relaxed) and returns the sets that the console text, the JSON report, and `-clean-rules` all use. `DeleteDuplicateRules` takes the input stream and the delete function as parameters (`std::wcin` and `FWDeleteFirewallRule` in the tool), so tests can script the answers and use a fake delete function; `ReturnDuplicateKeepChoices` lists the names it offers to keep.
 
-`NormalizedString` lowercases ASCII until the first non-ASCII character and leaves the rest unchanged, then compares with `memcmp` when both strings are ASCII and with `CompareStringOrdinal` otherwise. Two consequences: strings of different length never compare equal, and printed rule and filter names appear in lowercase because the normalized text is what gets displayed. Use `fw_rule->wszName` when the original spelling matters, as the JSON report does.
+`NormalizedString` lowercases ASCII until the first non-ASCII character and leaves the rest unchanged, then compares with `memcmp` when both strings are ASCII and with `CompareStringOrdinal` otherwise. Two consequences: strings of different length never compare equal, and printed rule and filter names appear in lowercase because the normalized text is what gets displayed. Use `fw_rule->wszName` when the original spelling matters, as the JSON report does. Its `operator<` orders shorter strings first, which is fine for lookups and grouping; sort anything a user sees with `NormalizedString::AlphabeticalCompare`, which has the same equality.
 
 ### Rules and filters
 
@@ -159,7 +159,7 @@ Restoration uses `FwpmFilterAdd0` with the original security descriptor. If that
 
 ## Testing
 
-The solution includes three test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly and checks the JSON report using synthetic data. `FirewallRulePrintTests` compiles `NormalizedFirewallRule.cpp` and checks that `PrintRule` and `PrintRuleContents` print the same labels for every schema version and protocol, that values common to every version match, and that a resolved user name has no embedded null. It also checks the console text and findings of the application, app-package, and SID-owner analyses and the filter rankings. It resolves the well-known SYSTEM SID but otherwise does not touch the system. None changes system state. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
+The solution includes three test projects in `tests/`. `NormalizedStringTests` covers `StrStrComparison`. `ProfileJsonReportTests` includes `ProfileJsonReport.cpp` directly, compiles `NormalizedFirewallRule.cpp` to build rule records, and checks the JSON report using synthetic data. `FirewallRulePrintTests` compiles `NormalizedFirewallRule.cpp` and checks that `PrintRule` and `PrintRuleContents` print the same labels for every schema version and protocol, that values common to every version match, and that a resolved user name has no embedded null. It also checks the console text and findings of the application, app-package, SID-owner, and duplicate analyses and the filter rankings, and runs duplicate deletion with scripted answers and a fake delete function. It resolves the well-known SYSTEM SID but otherwise does not touch the system. None changes system state. Run them from the build output, or set one as the startup project in Visual Studio; the exit code is nonzero if a test fails:
 
 ```powershell
 msbuild WindowsNetworkingTools.sln /m /p:Configuration=Debug /p:Platform=x64

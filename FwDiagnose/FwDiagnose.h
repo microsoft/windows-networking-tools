@@ -4,6 +4,7 @@
 #pragma once
 #include <string>
 #include <chrono>
+#include <cstdio>
 #include <iostream>
 #include <vector>
 #include <cstdint>
@@ -67,15 +68,49 @@ enum class PromptResponse : uint8_t
 	Skip,
 	All
 };
+
+//
+// PrintDeletionHeader
+//
+// Prints the heading of one category of rule deletion, with the answers its prompts accept.
+//
+// Parameters:
+//   str [in] - the category heading, e.g. "Deleting duplicate rules"
+//
+inline void
+PrintDeletionHeader(PCSTR str) noexcept
+{
+	std::printf(
+	    "     %s - will prompt for input (y/n/s/a)\n"
+	    "     - indicate 'Y' to delete duplicates of the one rule prompted\n"
+	    "     - indicate 'N' to not delete duplicates of the one rule prompted\n"
+	    "     - indicate 'S' to SKIP deleting any more rules from this store\n"
+	    "     - indicate 'A' to delete ALL duplicate rules from this store without further prompts\n",
+	    str);
+}
+inline constexpr auto* DeletionPrompt = "       Delete all duplicates of this rule";
+
+//
+// PromptForDeletion
+//
+// Asks whether to delete, until a valid answer is read.
+//
+// Parameters:
+//   deletion_prompt [in] - the question, printed before "(y/n/s/a)?"
+//   input           [in] - where the answers are read from; tests pass a scripted stream
+//
+// Returns:
+//   The answer. Skip when the input ends, so running out of input never approves a deletion.
+//
 inline PromptResponse
-PromptForDeletion(PCSTR deletion_prompt)
+PromptForDeletion(PCSTR deletion_prompt, std::wistream& input = std::wcin)
 {
 	std::wstring userInput;
 	for (;;)
 	{
 		std::printf("       %hs (y/n/s/a)? ", deletion_prompt);
 		userInput.clear();
-		if (!std::getline(std::wcin, userInput))
+		if (!std::getline(input, userInput))
 		{
 			// running out of input must never count as approving a deletion
 			std::printf("\n       - No more input\n");

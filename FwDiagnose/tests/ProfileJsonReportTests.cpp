@@ -7,6 +7,19 @@
 #include <iterator>
 #include <stdexcept>
 
+// NormalizedFirewallRule.cpp, compiled into this test, reads the command-line output flags
+bool
+VerboseOutputEnabled() noexcept
+{
+	return false;
+}
+
+bool
+DebugOutputEnabled() noexcept
+{
+	return false;
+}
+
 static void
 Check(bool condition, const char* message)
 {
@@ -916,6 +929,125 @@ try
 	Check(
 	    failedRankingText.find(L"\"filterScope\"") < failedRankingText.find(L"\"diagnostics\""),
 	    "Failed filter ranking fields out of order.");
+
+	// duplicate analysis: a set of two named rules, and a set of two rules with an application but no name
+	// or ID; the writer reads only the FW_RULE of each normalized rule
+	wchar_t duplicateIdA[] = L"{dup-a}";
+	wchar_t duplicateIdB[] = L"{dup-b}";
+	wchar_t duplicateNameA[] = L"Alpha";
+	wchar_t duplicateNameB[] = L"alpha copy";
+	wchar_t duplicateApplication[] = L"%SystemRoot%\\System32\\svchost.exe";
+	FW_RULE duplicateFwRules[4]{};
+	duplicateFwRules[0].wszRuleId = duplicateIdA;
+	duplicateFwRules[0].wszName = duplicateNameA;
+	duplicateFwRules[1].wszRuleId = duplicateIdB;
+	duplicateFwRules[1].wszName = duplicateNameB;
+	duplicateFwRules[2].wszLocalApplication = duplicateApplication;
+	duplicateFwRules[3].wszLocalApplication = duplicateApplication;
+	std::vector<NormalizedFirewallRule> duplicateRules;
+	for (const auto& fwRule : duplicateFwRules)
+	{
+		duplicateRules.emplace_back(&fwRule, FW_BINARY_VERSION_33);
+	}
+	DuplicateAnalysis duplicates;
+	duplicates.duplicateSets.push_back(
+	    {.duplicate_rule_begin = duplicateRules.begin(),
+	     .duplicate_rule_end = duplicateRules.begin() + 2,
+	     .nameCount = 2});
+	duplicates.duplicateSets.push_back(
+	    {.duplicate_rule_begin = duplicateRules.begin() + 2,
+	     .duplicate_rule_end = duplicateRules.end(),
+	     .nameCount = 1});
+	duplicates.duplicateRuleCount = 4;
+	for (const bool verbose : {false, true})
+	{
+		g_jsonReport.GetNamedObject(L"run").SetNamedValue(L"verbose", JsonValue::CreateBooleanValue(verbose));
+		WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WriteFilterRankingsJson(store, FilterRankings{.limit = 10}, L"analyze_rules");
+		WriteDuplicateAnalysisJson(store, duplicates, L"analyze_rules");
+		const auto duplicateStore = stores.GetAt(stores.Size() - 1).GetObject();
+		const auto section = duplicateStore.GetNamedObject(L"duplicateAnalysis");
+		const auto ignored = section.GetNamedArray(L"ignoredFields");
+		Check(
+		    section.GetNamedString(L"status") == L"completed" && ignored.Size() == 4 &&
+		        ignored.GetAt(0).GetString() == L"ruleId" && ignored.GetAt(1).GetString() == L"name" &&
+		        ignored.GetAt(2).GetString() == L"description" && ignored.GetAt(3).GetString() == L"schemaVersion" &&
+		        section.GetNamedNumber(L"duplicateSetCount") == 2 && section.GetNamedNumber(L"duplicateRuleCount") == 4,
+		    "Duplicate analysis fields incorrect.");
+		Check(section.HasKey(L"duplicateSets") == verbose, "Duplicate sets not limited to verbose output.");
+		if (verbose)
+		{
+			const auto sets = section.GetNamedArray(L"duplicateSets");
+			Check(sets.Size() == 2, "Duplicate set count incorrect.");
+			const auto named = sets.GetAt(0).GetObject();
+			const auto namedRules = named.GetNamedArray(L"rules");
+			Check(
+			    named.GetNamedNumber(L"ruleCount") == 2 &&
+			        named.GetNamedValue(L"application").ValueType() == JsonValueType::Null && namedRules.Size() == 2 &&
+			        namedRules.GetAt(0).GetObject().GetNamedString(L"ruleId") == L"{dup-a}" &&
+			        namedRules.GetAt(0).GetObject().GetNamedString(L"name") == L"Alpha" &&
+			        namedRules.GetAt(1).GetObject().GetNamedString(L"ruleId") == L"{dup-b}" &&
+			        namedRules.GetAt(1).GetObject().GetNamedString(L"name") == L"alpha copy",
+			    "Named duplicate set incorrect; names must keep their original case.");
+			const auto unnamed = sets.GetAt(1).GetObject();
+			const auto unnamedRules = unnamed.GetNamedArray(L"rules");
+			Check(
+			    unnamed.GetNamedNumber(L"ruleCount") == 2 &&
+			        unnamed.GetNamedString(L"application") == L"%SystemRoot%\\System32\\svchost.exe" &&
+			        unnamedRules.Size() == 2,
+			    "Duplicate set with an application incorrect.");
+			for (const auto& rule : unnamedRules)
+			{
+				Check(
+				    rule.GetObject().GetNamedValue(L"ruleId").ValueType() == JsonValueType::Null &&
+				        rule.GetObject().GetNamedValue(L"name").ValueType() == JsonValueType::Null,
+				    "An absent rule ID or name must be null.");
+			}
+			const auto setText = PrettifyJson(named);
+			Check(
+			    setText.find(L"\"ruleCount\"") < setText.find(L"\"application\"") &&
+			        setText.find(L"\"application\"") < setText.find(L"\"rules\"") &&
+			        setText.find(L"\"ruleId\"") < setText.find(L"\"name\""),
+			    "Duplicate set fields are not in the required order.");
+		}
+
+		size_t nextStoreKey = 0;
+		const auto duplicateStoreText = PrettifyJson(duplicateStore);
+		for (const auto* key : {L"store", L"filterRankings", L"duplicateAnalysis", L"status"})
+		{
+			const auto position = duplicateStoreText.find(std::wstring(L"\n  \"") + key + L"\":", nextStoreKey);
+			Check(position != std::wstring::npos, "Duplicate analysis is not after filterRankings.");
+			nextStoreKey = position + 1;
+		}
+
+		size_t nextKey = 0;
+		const auto sectionText = PrettifyJson(section);
+		for (const auto* key : {L"status", L"ignoredFields", L"duplicateSetCount", L"duplicateRuleCount"})
+		{
+			const auto position = sectionText.find(std::wstring(L"\n  \"") + key + L"\":", nextKey);
+			Check(
+			    position != std::wstring::npos,
+			    "Duplicate analysis fields are missing or not in the required order.");
+			nextKey = position + 1;
+		}
+		Check(
+		    !verbose || sectionText.find(L"\"duplicateRuleCount\"") < sectionText.find(L"\"duplicateSets\""),
+		    "Duplicate sets are not after the counts.");
+		Check(
+		    JsonObject::Parse(sectionText).Size() == section.Size(),
+		    "Ordered formatting lost duplicate analysis fields.");
+	}
+
+	// no duplicates: the counts are zero and verbose output has an empty list
+	WriteFirewallRuleStatusJson(store, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteDuplicateAnalysisJson(store, DuplicateAnalysis{}, L"analyze_rules");
+	const auto noDuplicates = stores.GetAt(stores.Size() - 1).GetObject().GetNamedObject(L"duplicateAnalysis");
+	Check(
+	    noDuplicates.GetNamedString(L"status") == L"completed" &&
+	        noDuplicates.GetNamedNumber(L"duplicateSetCount") == 0 &&
+	        noDuplicates.GetNamedNumber(L"duplicateRuleCount") == 0 &&
+	        noDuplicates.GetNamedArray(L"duplicateSets").Size() == 0,
+	    "Empty duplicate analysis incorrect.");
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
 	const auto readRunStatus = [&]()
@@ -936,8 +1068,8 @@ try
 	Check(readRunStatus() == L"failed", "A run that stopped early was not reported as failed.");
 
 	std::printf(
-	    "Profile, rule-status, application-analysis, package-analysis, SID-owner-analysis, and filter-ranking JSON "
-	    "tests passed.\n");
+	    "Profile, rule-status, application-analysis, package-analysis, SID-owner-analysis, filter-ranking, and "
+	    "duplicate-analysis JSON tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)
