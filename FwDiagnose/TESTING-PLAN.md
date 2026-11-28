@@ -1,6 +1,6 @@
 # FwDiagnose test plan
 
-Status (2026-11-27): rule printing, the per-store analyses, duplicate deletion, and the JSON report sections are covered (see the tables below). Next: the Phase 2 seams for `DeleteMissingAppRules` and `DeleteUnresolvedUserAccountRules`, which is step 1 of "What to do next" in JSON-OUTPUT-PLAN.md.
+Status (2026-11-27): rule printing, the per-store analyses, all three `-clean-rules` deletions, and the JSON report sections are covered (see the tables below). Next: Review 8, the `-clean-rules` action history in JSON-OUTPUT-PLAN.md.
 
 Principles: tests use synthetic data only, never read or change system firewall/WFP state, and return nonzero on failure. One test project per area, compiling the module's `.cpp` as a project source (like `FirewallRulePrintTests`), with stubs for global flags (`VerboseOutputEnabled`, `DebugOutputEnabled`).
 
@@ -19,7 +19,7 @@ Principles: tests use synthetic data only, never read or change system firewall/
 ## Phase 2 - seams for Windows APIs
 - Firewall: inject the FirewallAPI function table (already resolved at runtime in `LoadFirewallFunctions`) so `LoadFirewallRulesFromStore` can be fed synthetic rule arrays per store and version, including `ERROR_FILE_NOT_FOUND` and other failures.
 - App packages, IP properties, WFP enumerations: separate "collect" from "analyze" so analyses take vectors rather than globals.
-- Deletion paths (`DeleteMissingAppRules`, `DeleteUnresolvedUserAccountRules`, callout removal): pass the input stream and delete function in, as `DeleteDuplicateRules` does (done), and test with scripted answers and a fake delete function.
+- Deletion paths: `DeleteMissingAppRules` (`ApplicationAnalysis.cpp`), `DeleteUnresolvedUserAccountRules` (`UserOwnerAnalysis.cpp`), and `DeleteDuplicateRules` take the input stream and a `DeleteFirewallRuleFunction` (`RuleDeletion.h`), and are tested with scripted answers and a fake delete function (done: each answer, end of input, a failed deletion, rules not checked or already deleted, and a rule deleted by one phase not offered by a later one). Callout removal still needs this seam.
 
 ## Phase 3 - real firewall rules at each schema version (test machine only)
 - Script or test executable that opens the Local store at 2.27, 2.31, and 2.33 with `FWOpenPolicyStore`, adds rules in a dedicated rule group using a broad set of fields (service, application, package ID/PFN, owner SID, authorization lists, address keywords and lists, TCP/UDP ports and keywords, ICMPv4/v6 type/codes, interfaces, dynamic keywords), runs `-analyze-rules` and `-analyze-inbound-rules -verbose`, compares the output against expected label sets, and deletes the group even on failure.

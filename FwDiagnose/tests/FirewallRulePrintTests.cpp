@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <cstdio>
 #include <format>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <string_view>
@@ -1716,6 +1718,222 @@ TestDeleteDuplicateRulesSkipsDeletedRules()
 	    "the rules deleted earlier stay marked, and only the newly deleted rules are added");
 	Check(g_recorded_failures.empty(), "no failure is recorded");
 }
+
+wchar_t g_clean_rule_ids[7][8]{L"{c1}", L"{c2}", L"{c3}", L"{c4}", L"{c5}", L"{c6}", L"{c7}"};
+
+// DeleteMissingAppRules or DeleteUnresolvedUserAccountRules
+using DeleteRulesFunction =
+    void (*)(std::vector<NormalizedFirewallRule>&, std::wistream&, const DeleteFirewallRuleFunction&);
+
+//
+// MakeCleanupRules
+//
+// Returns:
+//   Seven rules {c1} to {c7}, each with a missing application and an owner SID, for the tests to set
+//   their check results on after normalizing them.
+//
+std::vector<FW_RULE>
+MakeCleanupRules()
+{
+	std::vector<FW_RULE> fw_rules;
+	for (auto& rule_id : g_clean_rule_ids)
+	{
+		auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+		fw_rule.wszRuleId = rule_id;
+		fw_rule.wszLocalApplication = g_missing_application;
+		fw_rule.wszLocalUserOwner = g_unmapped_sid;
+		fw_rules.push_back(fw_rule);
+	}
+	return fw_rules;
+}
+
+//
+// SetMissingAppResults
+//
+// Sets the missing-application check results so that DeleteMissingAppRules offers {c1}, {c4}, and {c7}:
+// {c1}, {c4}, {c7} missing; {c2} not checked; {c3} and {c6} found; {c5} missing but already deleted.
+//
+// Parameters:
+//   rules [in, out] - rules normalized from MakeCleanupRules
+//
+void
+SetMissingAppResults(std::vector<NormalizedFirewallRule>& rules)
+{
+	const std::optional<bool> exists[7]{false, std::nullopt, true, false, false, true, false};
+	for (size_t index = 0; index < rules.size(); ++index)
+	{
+		rules[index].local_application_exists = exists[index];
+	}
+	rules[4].is_rule_deleted = true;
+}
+
+//
+// SetUnresolvedOwnerResults
+//
+// Sets the owner check results so that DeleteUnresolvedUserAccountRules offers {c1}, {c4}, and {c7}:
+// {c1} and {c7} unresolved; {c2} not checked; {c3} resolved, profile not checked; {c4} resolved without
+// a local profile; {c5} unresolved but already deleted; {c6} resolved with a local profile.
+//
+// Parameters:
+//   rules [in, out] - rules normalized from MakeCleanupRules
+//
+void
+SetUnresolvedOwnerResults(std::vector<NormalizedFirewallRule>& rules)
+{
+	const std::optional<bool> resolved[7]{false, std::nullopt, true, true, false, true, false};
+	const std::optional<bool>
+	    has_profile[7]{std::nullopt, std::nullopt, std::nullopt, false, std::nullopt, true, std::nullopt};
+	for (size_t index = 0; index < rules.size(); ++index)
+	{
+		rules[index].successfully_resolved_user_name = resolved[index];
+		rules[index].successfully_resolved_user_name_with_local_profile = has_profile[index];
+	}
+	rules[4].is_rule_deleted = true;
+}
+
+//
+// RunDeleteRules
+//
+// Runs one deletion phase over rules with scripted answers and a fake delete function.
+//
+// Parameters:
+//   deleteRules [in]      - DeleteMissingAppRules or DeleteUnresolvedUserAccountRules
+//   rules       [in, out] - the rules to delete from; deleted rules are marked is_rule_deleted
+//   answers     [in]      - the user's input, one answer per line
+//   failing_id  [in]      - a rule ID the fake fails to delete with ERROR_ACCESS_DENIED, or nullptr
+//
+// Returns:
+//   The rule IDs the fake was asked to delete, in order, each followed by ';'. Also checks that exactly
+//   the rules marked deleted before, and the rules deleted without failure, are marked is_rule_deleted.
+//
+std::wstring
+RunDeleteRules(
+    DeleteRulesFunction deleteRules,
+    std::vector<NormalizedFirewallRule>& rules,
+    const wchar_t* answers,
+    const wchar_t* failing_id = nullptr)
+{
+	std::vector<bool> deleted_before;
+	for (const auto& rule : rules)
+	{
+		deleted_before.push_back(rule.is_rule_deleted);
+	}
+
+	std::wistringstream input(answers);
+	std::wstring attempted;
+	std::vector<std::wstring> deleted_now;
+	g_recorded_failures.clear();
+	{
+		SuppressStdout quiet;
+		deleteRules(
+		    rules,
+		    input,
+		    [&](PCWSTR rule_id) -> DWORD
+		    {
+			    attempted += rule_id;
+			    attempted += L';';
+			    if (failing_id && std::wstring_view(rule_id) == failing_id)
+			    {
+				    return ERROR_ACCESS_DENIED;
+			    }
+			    deleted_now.emplace_back(rule_id);
+			    return ERROR_SUCCESS;
+		    });
+	}
+
+	bool marks_match = true;
+	for (size_t index = 0; index < rules.size(); ++index)
+	{
+		const bool expected = deleted_before[index] ||
+		                      std::ranges::find(deleted_now, rules[index].fw_rule->wszRuleId) != deleted_now.end();
+		marks_match = marks_match && rules[index].is_rule_deleted == expected;
+	}
+	Check(marks_match, "exactly the rules deleted earlier or deleted without failure are marked deleted");
+	return attempted;
+}
+
+//
+// TestDeleteCleanupRules
+//
+// Checks, for DeleteMissingAppRules and DeleteUnresolvedUserAccountRules, which rules each answer
+// deletes, that rules not checked, OK, or already deleted are never offered, that running out of input
+// deletes nothing more, and that a failed deletion is recorded and leaves the rule unmarked.
+//
+void
+TestDeleteCleanupRules()
+{
+	const auto fw_rules = MakeCleanupRules();
+	for (const auto& [deleteRules, setResults, phase] :
+	     {std::tuple{&DeleteMissingAppRules, &SetMissingAppResults, "missing application: "},
+	      std::tuple{&DeleteUnresolvedUserAccountRules, &SetUnresolvedOwnerResults, "unresolved owner: "}})
+	{
+		const auto run = [&](const wchar_t* answers, const wchar_t* failing_id = nullptr)
+		{
+			auto rules = NormalizeRules(fw_rules);
+			setResults(rules);
+			return RunDeleteRules(deleteRules, rules, answers, failing_id);
+		};
+		const auto check = [phase](bool condition, const char* description)
+		{
+			const auto text = std::string(phase) + description;
+			Check(condition, text.c_str());
+		};
+
+		check(run(L"y\nn\ny\n") == L"{c1};{c7};", "'y' deletes the rule; 'n' keeps it and asks about the next");
+		check(
+		    run(L"n\nn\ny\n") == L"{c7};",
+		    "rules not checked, OK, or already deleted are never offered, so the third answer is the third offer");
+		check(run(L"n\na\n") == L"{c4};{c7};", "'a' deletes this and every remaining rule without asking again");
+		check(run(L"y\ns\ny\n") == L"{c1};", "'s' deletes nothing more");
+		check(run(L"Y\nx\nN\nS\n") == L"{c1};", "answers are case-insensitive; others ask again");
+		check(run(L"") == L"", "no input deletes nothing");
+		check(run(L"y\n") == L"{c1};", "running out of input counts as 's'");
+		check(g_recorded_failures.empty(), "no failure is recorded when every deletion succeeds");
+
+		check(run(L"a\n", L"{c4}") == L"{c1};{c4};{c7};", "a failed deletion does not stop the remaining deletions");
+		check(
+		    g_recorded_failures.size() == 1 && g_recorded_failures[0] == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED),
+		    "a failed deletion is recorded as an HRESULT");
+	}
+}
+
+//
+// TestCleanupPhasesSkipRulesDeletedEarlier
+//
+// Checks that a rule with both a missing application and an unresolved owner, deleted by
+// DeleteMissingAppRules, is not offered again by DeleteUnresolvedUserAccountRules, and that it is offered
+// again when its deletion failed.
+//
+void
+TestCleanupPhasesSkipRulesDeletedEarlier()
+{
+	auto fw_rules = MakeCleanupRules();
+	fw_rules.resize(2);
+	for (const auto failing_id : {static_cast<const wchar_t*>(nullptr), static_cast<const wchar_t*>(L"{c1}")})
+	{
+		auto rules = NormalizeRules(fw_rules);
+		// {c1} offends both checks, {c2} only the owner check
+		rules[0].local_application_exists = false;
+		rules[1].local_application_exists = true;
+		rules[0].successfully_resolved_user_name = false;
+		rules[1].successfully_resolved_user_name = false;
+
+		const auto app_attempted = RunDeleteRules(&DeleteMissingAppRules, rules, L"y\n", failing_id);
+		const auto owner_attempted = RunDeleteRules(&DeleteUnresolvedUserAccountRules, rules, L"y\nn\n");
+		if (!failing_id)
+		{
+			Check(
+			    app_attempted == L"{c1};" && owner_attempted == L"{c2};",
+			    "a rule deleted for its missing application is not offered again for its owner");
+		}
+		else
+		{
+			Check(
+			    app_attempted == L"{c1};" && owner_attempted == L"{c1};",
+			    "a rule whose deletion failed is offered again by the next phase");
+		}
+	}
+}
 } // namespace
 int
 wmain()
@@ -1747,6 +1965,8 @@ wmain()
 	TestDeleteDuplicateRules();
 	TestDuplicateAnalysisSkipsDeletedRules();
 	TestDeleteDuplicateRulesSkipsDeletedRules();
+	TestDeleteCleanupRules();
+	TestCleanupPhasesSkipRulesDeletedEarlier();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;
