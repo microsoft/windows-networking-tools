@@ -852,85 +852,6 @@ CheckForMissingAppPackage(FirewallPolicyObjects& policy)
 }
 
 static void
-DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, std::vector<NormalizedFirewallRule>& normalized_rules)
-{
-	bool delete_all_with_no_more_prompts = false;
-	bool printed_deletion_header = false;
-
-	for (auto& rule : normalized_rules)
-	{
-		if (rule.is_rule_deleted)
-		{
-			continue;
-		}
-
-		if (!rule.local_application_exists.has_value())
-		{
-			// this rule was not checked for app file existence, skip it
-			continue;
-		}
-
-		if (rule.local_application_exists.value() == true)
-		{
-			continue; // verified this file exists
-		}
-
-		if (!printed_deletion_header)
-		{
-			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting rules with an application exe referencing non-existing file");
-		}
-
-		std::printf(
-		    "\n"
-		    "     Application-exe:  '%ls'%ls  [%ls:  %ls]\n",
-		    rule.fw_rule->wszLocalApplication,
-		    rule.local_application_uses_per_user_variable ? PerUserVariableNote : L"",
-		    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-		    rule.rule_name.value.empty() ? rule.rule_id.c_str() : rule.rule_name.value.c_str());
-
-		if (!delete_all_with_no_more_prompts)
-		{
-			switch (PromptForDeletion(DeletionPrompt))
-			{
-			case PromptResponse::Yes:
-				// continue to delete this rule
-				break;
-
-			case PromptResponse::No:
-				std::printf("       - Skipping this rule\n");
-				continue;
-
-			case PromptResponse::Skip:
-				std::printf(
-				    "       - Skipping the remainder of the rules with an application exe referencing "
-				    "non-existing file in this store\n");
-				return;
-
-			case PromptResponse::All:
-				std::printf(
-				    "       - Deleting all rules with an application exe referencing non-existing file in this "
-				    "store\n");
-				delete_all_with_no_more_prompts = true;
-				break;
-			}
-		}
-
-		const auto deleteRuleError = g_FWDeleteFirewallRule(store_handle, rule.fw_rule->wszRuleId);
-		if (deleteRuleError != ERROR_SUCCESS)
-		{
-			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
-			RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
-		}
-		else
-		{
-			rule.is_rule_deleted = true;
-			std::printf("       - Successfully deleted the firewall rule\n");
-		}
-	}
-}
-
-static void
 CheckUnresolvedUserAccountRules(FirewallPolicyObjects& policy)
 {
 	const bool check_for_local_profile =
@@ -1136,108 +1057,6 @@ CheckUnresolvedUserAccountRules(FirewallPolicyObjects& policy)
 	    "%ls",
 	    PrintUserOwnerAnalysis(analysis, VerboseOutputEnabled() ? AnalysisOutput::Verbose : AnalysisOutput::Summary)
 	        .c_str());
-}
-
-static void
-DeleteUnresolvedUserAccountRules(
-    FW_POLICY_STORE_HANDLE store_handle, std::vector<NormalizedFirewallRule>& normalized_rules)
-{
-	bool delete_all_with_no_more_prompts = false;
-	bool printed_deletion_header = false;
-
-	for (auto& rule : normalized_rules)
-	{
-		if (rule.is_rule_deleted)
-		{
-			continue;
-		}
-
-		if (!rule.successfully_resolved_user_name.has_value())
-		{
-			// this rule was not checked for user account existence, skip it
-			continue;
-		}
-
-		// prompt to delete if:
-		// - rule does not have a valid user account
-		// - rule has a valid user account but does not have a local profile (only for App-Isolation and Interface-Isolation stores)
-		std::wstring rule_to_delete;
-		if (!rule.successfully_resolved_user_name.value())
-		{
-			rule_to_delete = wil::str_printf<std::wstring>(
-			    L"\n"
-			    L"  - Unresolved SID '%ls'  (%hs)  [%ls:  %ls]\n",
-			    rule.fw_rule->wszLocalUserOwner,
-			    rule.resolve_name_failure_string.c_str(),
-			    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-			    rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str());
-		}
-
-		if (rule.successfully_resolved_user_name_with_local_profile.has_value())
-		{
-			// name resolved - only prompt if checking for local profile and rule does not have a local profile
-			if (!rule.successfully_resolved_user_name_with_local_profile.value())
-			{
-				rule_to_delete = wil::str_printf<std::wstring>(
-				    L"\n"
-				    L"  - Valid SID but no local profile '%ls' (%ls\\%ls)\n"
-				    L"      [%ls:  %ls]\n",
-				    rule.fw_rule->wszLocalUserOwner,
-				    rule.local_user_domain_name.c_str(),
-				    rule.local_user_owner_name.c_str(),
-				    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
-				    rule.rule_name.value.empty() ? rule.fw_rule->wszRuleId : rule.rule_name.value.c_str());
-			}
-		}
-
-		if (rule_to_delete.empty())
-		{
-			continue;
-		}
-
-		if (!printed_deletion_header)
-		{
-			printed_deletion_header = true;
-			PrintDeletionHeader("Deleting rules with unresolved SIDs or SIDs without local profiles:\n");
-		}
-
-		std::printf("%ls", rule_to_delete.c_str());
-
-		if (!delete_all_with_no_more_prompts)
-		{
-			switch (PromptForDeletion(DeletionPrompt))
-			{
-			case PromptResponse::Yes:
-				// continue to delete this rule
-				break;
-
-			case PromptResponse::No:
-				std::printf("       - Skipping this rule\n");
-				continue;
-
-			case PromptResponse::Skip:
-				std::printf("       -Skipping the remainder of the rules with unresolved SIDs in this store\n");
-				return;
-
-			case PromptResponse::All:
-				std::printf("       - Deleting all rules with unresolved SIDs in this store\n");
-				delete_all_with_no_more_prompts = true;
-				break;
-			}
-		}
-
-		const auto deleteRuleError = g_FWDeleteFirewallRule(store_handle, rule.fw_rule->wszRuleId);
-		if (deleteRuleError != ERROR_SUCCESS)
-		{
-			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
-			RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
-		}
-		else
-		{
-			rule.is_rule_deleted = true;
-			std::printf("       - Successfully deleted the firewall rule\n");
-		}
-	}
 }
 
 //
@@ -2003,7 +1822,13 @@ ProcessFirewallRules()
 			if (CleanBrokenRulesEnabled())
 			{
 				std::printf("\n");
-				details::DeleteMissingAppRules(policy.store_handle, policy.normalizedRules);
+				DeleteMissingAppRules(
+				    policy.normalizedRules,
+				    std::wcin,
+				    [&policy](PCWSTR ruleId)
+				    {
+					    return g_FWDeleteFirewallRule(policy.store_handle, ruleId);
+				    });
 			}
 
 			if (VerboseOutputEnabled())
@@ -2017,7 +1842,13 @@ ProcessFirewallRules()
 			if (CleanBrokenRulesEnabled())
 			{
 				std::printf("\n");
-				details::DeleteUnresolvedUserAccountRules(policy.store_handle, policy.normalizedRules);
+				DeleteUnresolvedUserAccountRules(
+				    policy.normalizedRules,
+				    std::wcin,
+				    [&policy](PCWSTR ruleId)
+				    {
+					    return g_FWDeleteFirewallRule(policy.store_handle, ruleId);
+				    });
 			}
 
 			if (VerboseOutputEnabled())

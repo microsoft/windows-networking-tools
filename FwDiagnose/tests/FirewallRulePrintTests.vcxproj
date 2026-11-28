@@ -114,6 +114,7 @@
     <ClInclude Include="..\UserOwnerAnalysis.h" />
     <ClInclude Include="..\FilterRanking.h" />
     <ClInclude Include="..\DuplicateAnalysis.h" />
+    <ClInclude Include="..\RuleDeletion.h" />
     <ClInclude Include="..\NormalizedFirewallRule.h" />
     <ClInclude Include="..\NormalizedString.h" />
     <ClInclude Include="..\firewall.h" />

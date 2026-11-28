@@ -4,11 +4,13 @@
 #pragma once
 
 #include <cstdint>
+#include <istream>
 #include <string>
 #include <vector>
 #include <Windows.h>
 
 #include "AnalysisOutput.h"
+#include "RuleDeletion.h"
 
 // whether rule owners were checked against the local profiles in the registry
 enum class LocalProfileCheck : uint8_t
@@ -70,3 +72,7 @@ AnalyzeUserOwnerRules(std::vector<NormalizedFirewallRule>& rules, const LocalPro
 // the console text for one store's SID-owner analysis; empty when there is nothing to report
 std::wstring
 PrintUserOwnerAnalysis(const UserOwnerAnalysis& analysis, AnalysisOutput output);
+
+void
+DeleteUnresolvedUserAccountRules(
+    std::vector<NormalizedFirewallRule>& rules, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule);

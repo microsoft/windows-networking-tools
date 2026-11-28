@@ -4,11 +4,13 @@
 #pragma once
 
 #include <cstdint>
+#include <istream>
 #include <string>
 #include <vector>
 #include <Windows.h>
 
 #include "AnalysisOutput.h"
+#include "RuleDeletion.h"
 
 struct NormalizedFirewallRule;
 
@@ -57,3 +59,7 @@ AnalyzeApplicationRules(const std::vector<NormalizedFirewallRule>& rules, Applic
 // the console text for one store's application analysis; empty when there is nothing to report
 std::wstring
 PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput output);
+
+void
+DeleteMissingAppRules(
+    std::vector<NormalizedFirewallRule>& rules, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule);

@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstddef>
-#include <functional>
 #include <istream>
 #include <string>
 #include <vector>
@@ -13,6 +12,7 @@
 
 #include "AnalysisOutput.h"
 #include "NormalizedFirewallRule.h"
+#include "RuleDeletion.h"
 
 // rules that match on every setting except rule ID, name, description, and schema version
 struct DuplicateRuleSet
@@ -50,9 +50,6 @@ struct DuplicateKeepChoice
 
 std::vector<DuplicateKeepChoice>
 ReturnDuplicateKeepChoices(const DuplicateRuleSet& set);
-
-// deletes one rule by its rule ID and returns a Win32 error code, as FWDeleteFirewallRule does
-using DeleteFirewallRuleFunction = std::function<DWORD(PCWSTR ruleId)>;
 
 void
 DeleteDuplicateRules(

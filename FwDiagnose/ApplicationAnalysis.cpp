@@ -3,7 +3,9 @@
 
 #include "ApplicationAnalysis.h"
 #include "NormalizedFirewallRule.h"
+#include "FwDiagnose.h"
 
+#include <cstdio>
 #include <format>
 
 namespace
@@ -121,4 +123,98 @@ PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput out
 		}
 	}
 	return text;
+}
+
+//
+// DeleteMissingAppRules
+//
+// Asks, for each rule whose application file was checked and not found, whether to delete it, and
+// deletes it. Each failure is printed and passed to RecordOperationFailure.
+//
+// Parameters:
+//   rules      [in, out] - the store's rules, after the missing-application check; each rule deleted is marked
+//                          is_rule_deleted, and rules already marked are skipped
+//   input      [in] - where the answers are read from: std::wcin, or a scripted stream in tests. When it
+//                     ends, the answer counts as 's', so nothing more is deleted without an answer.
+//   deleteRule [in] - deletes one rule by rule ID; FWDeleteFirewallRule on the store's handle, or a
+//                     fake in tests
+//
+void
+DeleteMissingAppRules(
+    std::vector<NormalizedFirewallRule>& rules, std::wistream& input, const DeleteFirewallRuleFunction& deleteRule)
+{
+	bool delete_all_with_no_more_prompts = false;
+	bool printed_deletion_header = false;
+
+	for (auto& rule : rules)
+	{
+		if (rule.is_rule_deleted)
+		{
+			continue;
+		}
+
+		if (!rule.local_application_exists.has_value())
+		{
+			// this rule was not checked for app file existence, skip it
+			continue;
+		}
+
+		if (rule.local_application_exists.value() == true)
+		{
+			continue; // verified this file exists
+		}
+
+		if (!printed_deletion_header)
+		{
+			printed_deletion_header = true;
+			PrintDeletionHeader("Deleting rules with an application exe referencing non-existing file");
+		}
+
+		std::printf(
+		    "\n"
+		    "     Application-exe:  '%ls'%ls  [%ls:  %ls]\n",
+		    rule.fw_rule->wszLocalApplication,
+		    rule.local_application_uses_per_user_variable ? PerUserVariableNote : L"",
+		    rule.rule_name.value.empty() ? L"(no Rule Name) RuleId" : L"Rule Name",
+		    rule.rule_name.value.empty() ? rule.rule_id.c_str() : rule.rule_name.value.c_str());
+
+		if (!delete_all_with_no_more_prompts)
+		{
+			switch (PromptForDeletion(DeletionPrompt, input))
+			{
+			case PromptResponse::Yes:
+				// continue to delete this rule
+				break;
+
+			case PromptResponse::No:
+				std::printf("       - Skipping this rule\n");
+				continue;
+
+			case PromptResponse::Skip:
+				std::printf(
+				    "       - Skipping the remainder of the rules with an application exe referencing "
+				    "non-existing file in this store\n");
+				return;
+
+			case PromptResponse::All:
+				std::printf(
+				    "       - Deleting all rules with an application exe referencing non-existing file in this "
+				    "store\n");
+				delete_all_with_no_more_prompts = true;
+				break;
+			}
+		}
+
+		const auto deleteRuleError = deleteRule(rule.fw_rule->wszRuleId);
+		if (deleteRuleError != ERROR_SUCCESS)
+		{
+			std::printf("       - Failed to delete the firewall rule (0x%lx)\n", HRESULT_FROM_WIN32(deleteRuleError));
+			RecordOperationFailure(HRESULT_FROM_WIN32(deleteRuleError));
+		}
+		else
+		{
+			rule.is_rule_deleted = true;
+			std::printf("       - Successfully deleted the firewall rule\n");
+		}
+	}
 }
