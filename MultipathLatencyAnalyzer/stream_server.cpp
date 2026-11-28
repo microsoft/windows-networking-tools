@@ -8,7 +8,7 @@
 #include "time_utils.h"
 
 namespace multipath {
-StreamServer::StreamServer(ctl::ctSockaddr listenAddress) :
+StreamServer::StreamServer(const ctl::ctSockaddr& listenAddress) :
     m_listenAddress{std::move(listenAddress)}, m_socket{CreateDatagramSocket()}
 {
     constexpr int defaultSocketReceiveBufferSize = 1048576; // 1MB socket receive buffer

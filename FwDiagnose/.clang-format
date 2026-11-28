@@ -1,0 +1,6 @@
+BasedOnStyle: InheritParentConfig
+# Must be set here as well: clang-format 22 does not inherit this value from the parent file
+AlignAfterOpenBracket: AlwaysBreak
+UseTab: ForIndentation
+BreakAfterReturnType: All
+BreakAfterAttributes: Never

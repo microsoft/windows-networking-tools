@@ -7,7 +7,6 @@
 #include <functional>
 #include <iostream>
 #include <iomanip>
-#include <limits>
 #include <numeric>
 #include <ranges>
 #include <vector>
@@ -51,7 +50,7 @@ auto to_vector(R&& r, size_t sizeHint = 0)
     return v;
 }
 
-void PrintLatencyStatistics(LatencyData& data)
+void PrintLatencyStatistics(const LatencyData& data)
 {
     using namespace std::views;
 
@@ -86,9 +85,6 @@ void PrintLatencyStatistics(LatencyData& data)
     };
 
     auto received = [](const auto& timestamps) { return timestamps.second >= 0; };
-    auto receivedOnOneInterface = [](const LatencyMeasure& stat) {
-        return stat.m_primaryReceiveTimestamp >= 0 || stat.m_secondaryReceiveTimestamp >= 0;
-    };
     auto receivedFirstOnSecondary = [](const auto& stat) {
         return stat.m_secondaryReceiveTimestamp >= 0 &&
                (stat.m_primaryReceiveTimestamp < 0 || stat.m_secondaryReceiveTimestamp < stat.m_primaryReceiveTimestamp);
@@ -156,8 +152,8 @@ void PrintLatencyStatistics(LatencyData& data)
     const auto secondaryTimeSave = std::max(sumPrimaryLatencies - sumEffectiveLatencies, 0LL);
     auto effectiveTimestamps = latencies | transform(selectEffective) | filter(received);
     const auto runDuration = ConvertMicrosToSeconds(effectiveTimestamps.back().first - effectiveTimestamps.front().first);
-    const auto byteTransfered = aggregatedSentDatagrams * data.m_datagramSize / 1024;
-    const auto bitRate = runDuration > 0 ? byteTransfered * 8 / runDuration : 0;
+    const auto byteTransferred = aggregatedSentDatagrams * data.m_datagramSize / 1024;
+    const auto bitRate = runDuration > 0 ? byteTransferred * 8 / runDuration : 0;
 
     // Print 2 decimals, no scientific notation
     std::cout << std::setprecision(2) << std::fixed;
@@ -171,7 +167,7 @@ void PrintLatencyStatistics(LatencyData& data)
     std::cout << '\n';
     std::cout << "--- OVERVIEW ---\n";
     std::cout << '\n';
-    std::cout << byteTransfered << " kB (" << aggregatedSentDatagrams
+    std::cout << byteTransferred << " kB (" << aggregatedSentDatagrams
               << " datagrams) were sent in " << runDuration << " seconds. The effective bitrate was "
               << bitRate << " kb/s.\n";
     std::cout << '\n';

@@ -14,14 +14,14 @@ try
 {
     if (argc != 2)
     {
-        std::cout << "Must specity either Public or Private" << std::endl;
+        std::cout << "Must specity either Public or Private\n";
         return ERROR_INVALID_PARAMETER;
     }
 
     const std::wstring param(argv[1]);
 
     NLM_NETWORK_CATEGORY targetCategory{};
-    const auto bIgnoreCase = TRUE;
+    constexpr auto bIgnoreCase = TRUE;
     const auto privateComparison = CompareStringOrdinal(param.c_str(), -1, L"private", -1, bIgnoreCase);
     THROW_LAST_ERROR_IF(privateComparison == 0);
     if (privateComparison == CSTR_EQUAL)
@@ -38,13 +38,13 @@ try
         }
         else
         {
-            std::cout << "Must specity either Public or Private" << std::endl;
+            std::cout << "Must specity either Public or Private\n";
             return ERROR_INVALID_PARAMETER;
         }
     }
 
     const auto coinit = wil::CoInitializeEx();
-    auto nlmInstance = wil::CoCreateInstance<INetworkListManager>(CLSID_NetworkListManager);
+    const auto nlmInstance = wil::CoCreateInstance<INetworkListManager>(CLSID_NetworkListManager);
     wil::com_ptr<IEnumNetworks> nlmEnumNetworks;
     THROW_IF_FAILED(nlmInstance->GetNetworks(NLM_ENUM_NETWORK_CONNECTED, &nlmEnumNetworks));
 
@@ -63,37 +63,41 @@ try
         wil::unique_bstr currentDescription;
         THROW_IF_FAILED(nlmNetworkInstance->GetDescription(currentDescription.addressof()));
         NLM_NETWORK_CATEGORY currentCategory{};
-        std::wstring networkString(L"[Name: " + std::wstring(currentName.get()) + L", Description: " + std::wstring(currentDescription.get()) + L"]");
+        std::wstring networkString(
+            L"[Name: " + std::wstring(currentName.get()) + L", Description: " + std::wstring(currentDescription.get()) +
+            L"]");
 
         THROW_IF_FAILED(nlmNetworkInstance->GetCategory(&currentCategory));
         if (currentCategory == NLM_NETWORK_CATEGORY_DOMAIN_AUTHENTICATED)
         {
-            std::wcout << L"The Network " << networkString << L" is Domain Authenticated - not updating" << std::endl;
+            std::wcout << L"The Network " << networkString << L" is Domain Authenticated - not updating\n";
             continue;
         }
         if (currentCategory == targetCategory)
         {
-            std::wcout << L"The Network " << networkString << L" is already set to " << param << L" - not updating" << std::endl;
+            std::wcout << L"The Network " << networkString << L" is already set to " << param << L" - not updating\n";
             continue;
         }
 
         const auto hr = nlmNetworkInstance->SetCategory(targetCategory);
         if (SUCCEEDED(hr))
         {
-            std::wcout << "Successfully updated the Category for the Network " << networkString << L" to " << param << std::endl;
+            std::wcout << L"Successfully updated the Category for the Network " << networkString << L" to " << param
+                       << L"\n";
         }
         else if (hr == E_ACCESSDENIED)
         {
-            std::wcout << L"Failed to update the Network " << networkString << L" : Access Denied (must run as an Administrator)" << std::endl;
+            std::wcout << L"Failed to update the Network " << networkString
+                       << L" : Access Denied (must run as an Administrator)\n";
         }
         else
         {
-            std::wcout << L"Failed to update the Network " << networkString << " : " << std::hex << hr << std::endl;
+            std::wcout << L"Failed to update the Network " << networkString << " : " << std::hex << hr << "\n";
         }
     }
 }
 catch (...)
 {
     const auto hr = wil::ResultFromCaughtException();
-    std::cout << "Failure to instantiate INetworkListManager and find networks: " << std::hex << hr << std::endl;
+    std::cout << "Failure to instantiate INetworkListManager and find networks: " << std::hex << hr << "\n";
 }

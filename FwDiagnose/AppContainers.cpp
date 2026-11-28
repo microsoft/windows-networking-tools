@@ -1,0 +1,176 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+#include <iostream>
+#include <string>
+#include <tuple>
+#include <vector>
+#include <utility>
+
+#include <windows.h>
+
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.ApplicationModel.h>
+#include <winrt/Windows.Management.Deployment.h>
+
+#include "AppContainers.h"
+#include "NormalizedString.h"
+
+static std::vector<AppContainerPackage> g_app_packages;
+static HRESULT g_app_packages_load_result{E_PENDING};
+
+HRESULT
+GetAppPackagesLoadResult() noexcept
+{
+	return g_app_packages_load_result;
+}
+
+static const std::vector<AppContainerPackage>&
+ReadAllAppPackages() noexcept
+{
+	return g_app_packages;
+}
+
+void
+LoadAllAppPackages() noexcept
+try
+{
+	const winrt::Windows::Management::Deployment::PackageManager packageManager;
+	const auto packages = packageManager.FindPackages();
+	for (auto package : packages)
+	{
+		AppContainerPackage app_package{package.Id()};
+
+		switch (package.Id().Architecture())
+		{
+		case winrt::Windows::System::ProcessorArchitecture::X86:
+			app_package.architecture = L"x86";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::Arm:
+			app_package.architecture = L"ARM";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::X64:
+			app_package.architecture = L"x64";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::Neutral:
+			app_package.architecture = L"Neutral";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::Arm64:
+			app_package.architecture = L"ARM64";
+			break;
+		case winrt::Windows::System::ProcessorArchitecture::X86OnArm64:
+			app_package.architecture = L"x86OnARM64";
+			break;
+		default:
+			app_package.architecture = L"Unknown";
+			break;
+		}
+
+		g_app_packages.emplace_back(std::move(app_package));
+	}
+
+	g_app_packages_load_result = S_OK;
+}
+catch (const winrt::hresult_error& ex)
+{
+	g_app_packages_load_result = ex.code().value;
+	std::wcerr << L"Failed to load app packages: " << ex.message().c_str() << L" (0x" << std::hex << ex.code() << L")"
+	           << std::endl;
+}
+catch (const std::exception& ex)
+{
+	g_app_packages_load_result = wil::ResultFromCaughtException();
+	std::cerr << "Failed to load app packages: " << ex.what() << std::endl;
+}
+
+void
+PrintAllAppPackages()
+{
+	for (auto& package : g_app_packages)
+	{
+		std::wprintf(L"\n");
+		std::wprintf(L"Package: %ws\n", package.name.value.c_str());
+		std::wprintf(
+		    L"  Version: %hu.%hu.%hu.%hu\n",
+		    package.version.major,
+		    package.version.minor,
+		    package.version.build,
+		    package.version.revision);
+		std::wprintf(L"  Architecture: %ws\n", package.architecture.c_str());
+		std::wprintf(L"  ResourceId: %ws\n", package.resource_id.value.c_str());
+		std::wprintf(L"  Publisher: %ws\n", package.publisher.value.c_str());
+		std::wprintf(L"  PublisherId: %ws\n", package.publisher_id.value.c_str());
+		std::wprintf(L"  FullName: %ws\n", package.full_name.value.c_str());
+		std::wprintf(L"   - FullName SID: %ws\n", package.full_name_sid.c_str());
+		std::wprintf(L"  FamilyName: %ws\n", package.family_name.value.c_str());
+		std::wprintf(L"   - FamilyName SID: %ws\n", package.family_name_sid.c_str());
+	}
+}
+
+//
+// ReturnAppContainerSidFailures
+//
+// Lists the installed packages whose app-container SID could not be derived from the full name or the
+// family name.
+//
+// Returns:
+//   One entry per failed derivation, in package order; empty when every SID was derived or the packages
+//   were not loaded.
+//
+std::vector<AppContainerSidFailure>
+ReturnAppContainerSidFailures()
+{
+	std::vector<AppContainerSidFailure> failures;
+	for (const auto& package : ReadAllAppPackages())
+	{
+		if (FAILED(package.family_name_sid_error))
+		{
+			failures.push_back({package.family_name.value, PackageNameKind::FamilyName, package.family_name_sid_error});
+		}
+		if (FAILED(package.full_name_sid_error))
+		{
+			failures.push_back({package.full_name.value, PackageNameKind::FullName, package.full_name_sid_error});
+		}
+	}
+	return failures;
+}
+
+// return {family_name_sid, AppContainerName}
+std::tuple<std::wstring, AppContainerName>
+FindPackageSid(PCWSTR package_sid) noexcept
+{
+	const auto& app_packages = ReadAllAppPackages();
+	for (const auto& package : app_packages)
+	{
+		if (package.family_name_sid == package_sid)
+		{
+			return {package.family_name_sid, AppContainerName::SID};
+		}
+		if (package.full_name_sid == package_sid)
+		{
+			WI_ASSERT(false);
+			return {package.full_name_sid, AppContainerName::SID};
+		}
+	}
+	return {{}, AppContainerName::None};
+}
+
+// return {family_name, AppContainerName}
+std::tuple<std::wstring, AppContainerName>
+FindPackageFamilyName(const NormalizedString& package_family_name) noexcept
+{
+	const auto& app_packages = ReadAllAppPackages();
+	for (const auto& package : app_packages)
+	{
+		if (package.family_name == package_family_name)
+		{
+			return {package.family_name.value, AppContainerName::FamilyName};
+		}
+		if (package.full_name == package_family_name)
+		{
+			WI_ASSERT(false);
+			return {package.full_name.value, AppContainerName::FullName};
+		}
+	}
+	return {{}, AppContainerName::None};
+}

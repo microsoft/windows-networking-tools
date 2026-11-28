@@ -109,7 +109,7 @@ void MeasuredSocket::PingEchoServer()
 
     Log<LogLevel::Info>("Sending a ping on socket %zu\n", m_socket.get());
 
-    const auto sequenceNumber = -1;
+    constexpr auto sequenceNumber = -1;
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
 
@@ -131,7 +131,7 @@ void MeasuredSocket::CheckConnectivity()
         NetworkInformation::NetworkStatusChanged(winrt::auto_revoke, [this](const auto&) { PingEchoServer(); });
 
     // Check connectivity
-    const auto maxPingAttempts = 2;
+    constexpr auto maxPingAttempts = 2;
     for (auto i = 0; i < maxPingAttempts; ++i)
     {
         PingEchoServer();
@@ -159,7 +159,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
 
     DatagramSendRequest sendRequest{sequenceNumber, s_sharedSendBuffer};
     auto& buffers = sendRequest.GetBuffers();
-    const MeasuredSocket::SendResult sendState{sequenceNumber, sendRequest.GetQpc()};
+    const MeasuredSocket::SendResult sendState{.m_sequenceNumber = sequenceNumber, .m_sendTimestamp = sendRequest.GetQpc()};
 
     Log<LogLevel::All>("Sending sequence number %lld on socket %zu\n", sequenceNumber, m_socket.get());
 
@@ -202,7 +202,7 @@ void MeasuredSocket::SendDatagram(long long sequenceNumber, std::function<void(c
     }
 }
 
-void MeasuredSocket::PrepareToReceive(std::function<void(ReceiveResult&)> clientCallback) noexcept
+void MeasuredSocket::PrepareToReceive(const std::function<void(ReceiveResult&)>& clientCallback) noexcept
 {
     for (auto& s : m_receiveStates)
     {

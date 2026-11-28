@@ -1,25 +1,14 @@
-/*
-
-Copyright (c) Microsoft Corporation
-All rights reserved.
-
-Licensed under the Apache License, Version 2.0 (the ""License""); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
-
-THIS CODE IS PROVIDED ON AN  *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY OR NON-INFRINGEMENT.
-
-See the Apache Version 2.0 License for specific language governing permissions and limitations under the License.
-
-*/
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
 #pragma once
 
-// cpp headers
 #include <vector>
 #include <string>
 
-// os headers
 #include <Windows.h>
 #include <objbase.h>
+
 #include <wil/stl.h>
 #include <wil/com.h>
 #include <wil/resource.h>
@@ -29,12 +18,14 @@ See the Apache Version 2.0 License for specific language governing permissions a
 // since WMI has limitations on what VARIANT types it accepts
 namespace ctl
 {
-inline bool IsVariantEmptyOrNull(_In_ const VARIANT* variant) noexcept
+inline bool
+IsVariantEmptyOrNull(_In_opt_ const VARIANT* variant) noexcept
 {
-    return V_VT(variant) == VT_EMPTY || V_VT(variant) == VT_NULL;
+    return variant == nullptr || V_VT(variant) == VT_EMPTY || V_VT(variant) == VT_NULL;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const bool value)
+inline wil::unique_variant
+ctWmiMakeVariant(const bool value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_BOOL;
@@ -42,8 +33,10 @@ inline wil::unique_variant ctWmiMakeVariant(const bool value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ bool* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ bool* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -53,7 +46,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ bool* value)
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const char value)
+inline wil::unique_variant
+ctWmiMakeVariant(const char value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_UI1;
@@ -61,8 +55,10 @@ inline wil::unique_variant ctWmiMakeVariant(const char value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ char* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ char* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -72,7 +68,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ char* value)
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const unsigned char value)
+inline wil::unique_variant
+ctWmiMakeVariant(const unsigned char value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_UI1;
@@ -80,8 +77,10 @@ inline wil::unique_variant ctWmiMakeVariant(const unsigned char value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned char* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned char* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -91,7 +90,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned cha
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const short value)
+inline wil::unique_variant
+ctWmiMakeVariant(const short value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_I2;
@@ -99,8 +99,10 @@ inline wil::unique_variant ctWmiMakeVariant(const short value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ short* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ short* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -110,7 +112,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ short* value
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const unsigned short value)
+inline wil::unique_variant
+ctWmiMakeVariant(const unsigned short value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_I2;
@@ -118,8 +121,10 @@ inline wil::unique_variant ctWmiMakeVariant(const unsigned short value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned short* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned short* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -129,7 +134,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned sho
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const long value)
+inline wil::unique_variant
+ctWmiMakeVariant(const long value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_I4;
@@ -137,8 +143,10 @@ inline wil::unique_variant ctWmiMakeVariant(const long value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ long* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ long* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -148,7 +156,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ long* value)
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const unsigned long value)
+inline wil::unique_variant
+ctWmiMakeVariant(const unsigned long value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_I4;
@@ -156,8 +165,10 @@ inline wil::unique_variant ctWmiMakeVariant(const unsigned long value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned long* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned long* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -167,7 +178,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned lon
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const int value)
+inline wil::unique_variant
+ctWmiMakeVariant(const int value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_I4;
@@ -175,8 +187,10 @@ inline wil::unique_variant ctWmiMakeVariant(const int value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ int* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ int* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -186,7 +200,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ int* value)
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const unsigned int value)
+inline wil::unique_variant
+ctWmiMakeVariant(const unsigned int value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_I4;
@@ -194,8 +209,10 @@ inline wil::unique_variant ctWmiMakeVariant(const unsigned int value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned int* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned int* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -205,7 +222,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned int
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const float value)
+inline wil::unique_variant
+ctWmiMakeVariant(const float value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_R4;
@@ -213,8 +231,10 @@ inline wil::unique_variant ctWmiMakeVariant(const float value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ float* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ float* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -224,7 +244,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ float* value
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const double value)
+inline wil::unique_variant
+ctWmiMakeVariant(const double value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_R8;
@@ -232,8 +253,10 @@ inline wil::unique_variant ctWmiMakeVariant(const double value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ double* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ double* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -243,7 +266,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ double* valu
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(SYSTEMTIME value)
+inline wil::unique_variant
+ctWmiMakeVariant(SYSTEMTIME value)
 {
     wil::unique_variant localVariant;
     DOUBLE time{};
@@ -253,8 +277,10 @@ inline wil::unique_variant ctWmiMakeVariant(SYSTEMTIME value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ SYSTEMTIME* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ SYSTEMTIME* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -264,38 +290,65 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ SYSTEMTIME* 
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(_In_ const BSTR value) // NOLINT(misc-misplaced-const)
+inline wil::unique_variant
+ctWmiMakeVariant(_In_ const BSTR value) // NOLINT(misc-misplaced-const)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_BSTR;
-    V_BSTR(localVariant.addressof()) = SysAllocString(value);
-    THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+    if (!value)
+    {
+        V_BSTR(localVariant.addressof()) = nullptr;
+    }
+    else
+    {
+        V_BSTR(localVariant.addressof()) = SysAllocString(value);
+        THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+    }
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ BSTR* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ BSTR* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
     }
     THROW_HR_IF(E_INVALIDARG, V_VT(variant) != VT_BSTR);
-    *value = SysAllocString(V_BSTR(variant));
-    THROW_IF_NULL_ALLOC(*value);
+    if (V_BSTR(variant) == nullptr)
+    {
+        *value = nullptr;
+    }
+    else
+    {
+        *value = SysAllocString(V_BSTR(variant));
+        THROW_IF_NULL_ALLOC(*value);
+    }
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(_In_ PCWSTR value)
+inline wil::unique_variant
+ctWmiMakeVariant(_In_ PCWSTR value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_BSTR;
-    V_BSTR(localVariant.addressof()) = SysAllocString(value);
-    THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+    if (!value)
+    {
+        V_BSTR(localVariant.addressof()) = nullptr;
+    }
+    else
+    {
+        V_BSTR(localVariant.addressof()) = SysAllocString(value);
+        THROW_IF_NULL_ALLOC(V_BSTR(localVariant.addressof()));
+    }
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::wstring* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::wstring* value)
 {
+    value->clear();
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -306,7 +359,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::wstri
 }
 
 // Even though VARIANT's support 64-bit integers, WMI passes them around as BSTRs
-inline wil::unique_variant ctWmiMakeVariant(const unsigned long long value)
+inline wil::unique_variant
+ctWmiMakeVariant(const unsigned long long value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_BSTR;
@@ -315,9 +369,10 @@ inline wil::unique_variant ctWmiMakeVariant(const unsigned long long value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned long long* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ unsigned long long* value)
 {
-    *value = 0;
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -328,7 +383,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ unsigned lon
 }
 
 // Even though VARIANT's support 64-bit integers, WMI passes them around as BSTRs
-inline wil::unique_variant ctWmiMakeVariant(_In_ const long long value)
+inline wil::unique_variant
+ctWmiMakeVariant(_In_ const long long value)
 {
     wil::unique_variant localVariant;
     V_VT(localVariant.addressof()) = VT_BSTR;
@@ -337,9 +393,10 @@ inline wil::unique_variant ctWmiMakeVariant(_In_ const long long value)
     return localVariant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ long long* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Out_ long long* value)
 {
-    *value = 0;
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -350,7 +407,8 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Out_ long long* v
 }
 
 template <typename T>
-wil::unique_variant ctWmiMakeVariant(const wil::com_ptr<T>& value) noexcept
+wil::unique_variant
+ctWmiMakeVariant(const wil::com_ptr<T>& value) noexcept
 {
     wil::unique_variant variant;
     V_VT(&variant) = VT_UNKNOWN;
@@ -361,8 +419,10 @@ wil::unique_variant ctWmiMakeVariant(const wil::com_ptr<T>& value) noexcept
 }
 
 template <typename T>
-bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ wil::com_ptr<T>* value)
+bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ wil::com_ptr<T>* value)
 {
+    *value = {};
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -373,17 +433,23 @@ bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ wil::com_ptr<T>* 
 }
 
 template <typename T>
-bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<wil::com_ptr<T>>* value)
+bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<wil::com_ptr<T>>* value)
 {
+    value->clear();
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
     }
     THROW_HR_IF(E_INVALIDARG, V_VT(variant) != (VT_UNKNOWN | VT_ARRAY));
 
-    IUnknown** iUnknownArray;
+    IUnknown** iUnknownArray{};
     THROW_IF_FAILED(::SafeArrayAccessData(variant->parray, reinterpret_cast<void**>(&iUnknownArray)));
-    const auto unAccessArray = wil::scope_exit([&]() noexcept { SafeArrayUnaccessData(variant->parray); });
+    const auto unAccessArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayUnaccessData(variant->parray);
+        });
 
     std::vector<wil::com_ptr<T>> tempData;
     for (auto loop = 0ul; loop < variant->parray->rgsabound[0].cElements; ++loop)
@@ -396,11 +462,16 @@ bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<wil::
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const std::vector<std::wstring>& data)
+inline wil::unique_variant
+ctWmiMakeVariant(const std::vector<std::wstring>& data)
 {
     auto* const tempSafeArray = SafeArrayCreateVector(VT_BSTR, 0, static_cast<ULONG>(data.size()));
     THROW_IF_NULL_ALLOC(tempSafeArray);
-    auto guardArray = wil::scope_exit([&]() noexcept { SafeArrayDestroy(tempSafeArray); });
+    auto guardArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayDestroy(tempSafeArray);
+        });
 
     for (size_t loop = 0; loop < data.size(); ++loop)
     {
@@ -422,8 +493,10 @@ inline wil::unique_variant ctWmiMakeVariant(const std::vector<std::wstring>& dat
     return variant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<std::wstring>* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<std::wstring>* value)
 {
+    value->clear();
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -432,7 +505,11 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
 
     BSTR* stringArray{};
     THROW_IF_FAILED(::SafeArrayAccessData(variant->parray, reinterpret_cast<void**>(&stringArray)));
-    const auto unAccessArray = wil::scope_exit([&]() noexcept { SafeArrayUnaccessData(variant->parray); });
+    const auto unAccessArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayUnaccessData(variant->parray);
+        });
 
     std::vector<std::wstring> tempData;
     for (auto loop = 0ul; loop < variant->parray->rgsabound[0].cElements; ++loop)
@@ -443,11 +520,16 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const std::vector<uint32_t>& data)
+inline wil::unique_variant
+ctWmiMakeVariant(const std::vector<uint32_t>& data)
 {
     auto* const tempSafeArray = SafeArrayCreateVector(VT_UI4, 0, static_cast<ULONG>(data.size()));
     THROW_IF_NULL_ALLOC(tempSafeArray);
-    auto guardArray = wil::scope_exit([&]() noexcept { SafeArrayDestroy(tempSafeArray); });
+    auto guardArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayDestroy(tempSafeArray);
+        });
 
     for (size_t loop = 0; loop < data.size(); ++loop)
     {
@@ -468,8 +550,10 @@ inline wil::unique_variant ctWmiMakeVariant(const std::vector<uint32_t>& data)
     return variant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<uint32_t>* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<uint32_t>* value)
 {
+    value->clear();
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -478,7 +562,11 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
 
     uint32_t* intArray{};
     THROW_IF_FAILED(::SafeArrayAccessData(variant->parray, reinterpret_cast<void**>(&intArray)));
-    const auto unAccessArray = wil::scope_exit([&]() noexcept { SafeArrayUnaccessData(variant->parray); });
+    const auto unAccessArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayUnaccessData(variant->parray);
+        });
 
     std::vector<uint32_t> tempData;
     for (auto loop = 0ul; loop < variant->parray->rgsabound[0].cElements; ++loop)
@@ -489,12 +577,17 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const std::vector<unsigned short>& data)
+inline wil::unique_variant
+ctWmiMakeVariant(const std::vector<unsigned short>& data)
 {
     // WMI marshaller complains type mismatch using VT_UI2 | VT_ARRAY, and VT_I4 | VT_ARRAY works fine.
     auto* const tempSafeArray = SafeArrayCreateVector(VT_I4, 0, static_cast<ULONG>(data.size()));
     THROW_IF_NULL_ALLOC(tempSafeArray);
-    auto guardArray = wil::scope_exit([&]() noexcept { SafeArrayDestroy(tempSafeArray); });
+    auto guardArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayDestroy(tempSafeArray);
+        });
 
     for (size_t loop = 0; loop < data.size(); ++loop)
     {
@@ -516,18 +609,24 @@ inline wil::unique_variant ctWmiMakeVariant(const std::vector<unsigned short>& d
     return variant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<unsigned short>* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<unsigned short>* value)
 {
-    // WMI marshaller complains type mismatch using VT_UI2 | VT_ARRAY, and VT_I4 | VT_ARRAY works fine.
+    value->clear();
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
     }
+    // WMI marshaller complains type mismatch using VT_UI2 | VT_ARRAY, while VT_I4 | VT_ARRAY works fine.
     THROW_HR_IF(E_INVALIDARG, V_VT(variant) != (VT_I4 | VT_ARRAY));
 
     long* intArray{};
     THROW_IF_FAILED(::SafeArrayAccessData(variant->parray, reinterpret_cast<void**>(&intArray)));
-    const auto unAccessArray = wil::scope_exit([&]() noexcept { SafeArrayUnaccessData(variant->parray); });
+    const auto unAccessArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayUnaccessData(variant->parray);
+        });
 
     std::vector<unsigned short> tempData;
     for (auto loop = 0ul; loop < variant->parray->rgsabound[0].cElements; ++loop)
@@ -539,11 +638,16 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
     return true;
 }
 
-inline wil::unique_variant ctWmiMakeVariant(const std::vector<unsigned char>& data)
+inline wil::unique_variant
+ctWmiMakeVariant(const std::vector<unsigned char>& data)
 {
     auto* const tempSafeArray = SafeArrayCreateVector(VT_UI1, 0, static_cast<ULONG>(data.size()));
     THROW_IF_NULL_ALLOC(tempSafeArray);
-    auto guardArray = wil::scope_exit([&]() noexcept { SafeArrayDestroy(tempSafeArray); });
+    auto guardArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayDestroy(tempSafeArray);
+        });
 
     for (size_t loop = 0; loop < data.size(); ++loop)
     {
@@ -564,8 +668,10 @@ inline wil::unique_variant ctWmiMakeVariant(const std::vector<unsigned char>& da
     return variant;
 }
 
-inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vector<unsigned char>* value)
+inline bool
+ctWmiReadFromVariant(_In_opt_ const VARIANT* variant, _Inout_ std::vector<unsigned char>* value)
 {
+    value->clear();
     if (IsVariantEmptyOrNull(variant))
     {
         return false;
@@ -574,7 +680,11 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
 
     unsigned char* charArray{};
     THROW_IF_FAILED(::SafeArrayAccessData(variant->parray, reinterpret_cast<void**>(&charArray)));
-    const auto unAccessArray = wil::scope_exit([&]() noexcept { SafeArrayUnaccessData(variant->parray); });
+    const auto unAccessArray = wil::scope_exit(
+        [&]() noexcept
+        {
+            SafeArrayUnaccessData(variant->parray);
+        });
 
     std::vector<unsigned char> tempData;
     for (auto loop = 0ul; loop < variant->parray->rgsabound[0].cElements; ++loop)
@@ -584,4 +694,35 @@ inline bool ctWmiReadFromVariant(_In_ const VARIANT* variant, _Inout_ std::vecto
     value->swap(tempData);
     return true;
 }
+
+inline std::wstring
+VariantToString(_In_ const VARIANT* variant)
+{
+    if (V_VT(variant) == VT_EMPTY)
+    {
+        return L"<empty>";
+    }
+    if (V_VT(variant) == VT_NULL)
+    {
+        return L"<null>";
+    }
+    if (V_VT(variant) == VT_BOOL)
+    {
+        return V_BOOL(variant) ? L"true" : L"false";
+    }
+    if (V_VT(variant) == VT_BSTR)
+    {
+        return (V_BSTR(variant) == nullptr) ? std::wstring{} : V_BSTR(variant);
+    }
+
+    // all other types, try to just use VariantChangeType
+    wil::unique_variant stringVariant;
+    THROW_IF_FAILED(::VariantChangeType(stringVariant.addressof(), variant, 0, VT_BSTR));
+    return V_BSTR(stringVariant.addressof());
 }
+inline std::wstring
+VariantToString(_In_ const wil::unique_variant& variant)
+{
+    return VariantToString(const_cast<wil::unique_variant*>(&variant)->addressof());
+}
+} // namespace ctl
