@@ -1549,6 +1549,173 @@ TestDeleteDuplicateRules()
 	    g_recorded_failures.size() == 1 && g_recorded_failures[0] == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED),
 	    "a failed deletion is recorded as an HRESULT");
 }
+
+wchar_t g_deleted_copy_id[] = L"{d0}";
+
+//
+// MakeRulesWithDeletedDuplicates
+//
+// Returns:
+//   The rules of MakeDuplicateRules plus a third UDP "zz" copy {d0}, which sorts first in its set. Mark
+//   rules deleted with MarkRulesDeleted after normalizing them.
+//
+std::vector<FW_RULE>
+MakeRulesWithDeletedDuplicates()
+{
+	auto fw_rules = MakeDuplicateRules();
+	auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+	fw_rule.wIpProtocol = IPPROTO_UDP;
+	fw_rule.wszName = g_zz_lower_name;
+	fw_rule.wszRuleId = g_deleted_copy_id;
+	fw_rules.push_back(fw_rule);
+	return fw_rules;
+}
+
+//
+// MarkRulesDeleted
+//
+// Marks {d0} and {d6} is_rule_deleted, as an earlier -clean-rules phase would. That leaves the UDP set
+// {d0};{d1};{d2} with two live rules (the deleted one sorting first), and the outbound set {d5};{d6}
+// with one (the deleted one sorting last).
+//
+// Parameters:
+//   rules [in, out] - rules normalized from MakeRulesWithDeletedDuplicates
+//
+void
+MarkRulesDeleted(std::vector<NormalizedFirewallRule>& rules)
+{
+	for (auto& rule : rules)
+	{
+		const std::wstring_view rule_id = rule.fw_rule->wszRuleId;
+		if (rule_id == g_deleted_copy_id || rule_id == g_duplicate_rule_ids[5])
+		{
+			rule.is_rule_deleted = true;
+		}
+	}
+}
+
+//
+// MarkedDeletedIds
+//
+// Parameters:
+//   rules [in] - rules normalized from MakeRulesWithDeletedDuplicates
+//
+// Returns:
+//   The rule IDs of the rules marked is_rule_deleted, sorted, each followed by ';'.
+//
+std::wstring
+MarkedDeletedIds(const std::vector<NormalizedFirewallRule>& rules)
+{
+	std::vector<std::wstring> ids;
+	for (const auto& rule : rules)
+	{
+		if (rule.is_rule_deleted)
+		{
+			ids.emplace_back(rule.fw_rule->wszRuleId);
+		}
+	}
+	std::ranges::sort(ids);
+	std::wstring text;
+	for (const auto& id : ids)
+	{
+		text += id + L";";
+	}
+	return text;
+}
+
+//
+// TestDuplicateAnalysisSkipsDeletedRules
+//
+// Checks that rules already marked is_rule_deleted are left out of the sets and the count, that a set
+// left with one live rule is not reported, and that a set's first rule (the one kept by default) is live.
+//
+void
+TestDuplicateAnalysisSkipsDeletedRules()
+{
+	const auto fw_rules = MakeRulesWithDeletedDuplicates();
+	auto rules = NormalizeRules(fw_rules);
+	MarkRulesDeleted(rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+
+	Check(
+	    analysis.duplicateSets.size() == 2 && analysis.duplicateRuleCount == 4,
+	    "deleted rules are not counted, and a set with one live rule left is not a set of duplicates");
+	bool any_deleted_in_a_set = false;
+	bool lone_live_rule_in_a_set = false;
+	for (const auto& set : analysis.duplicateSets)
+	{
+		for (auto rule = set.duplicate_rule_begin; rule != set.duplicate_rule_end; ++rule)
+		{
+			any_deleted_in_a_set = any_deleted_in_a_set || rule->is_rule_deleted;
+			lone_live_rule_in_a_set =
+			    lone_live_rule_in_a_set || std::wstring_view(rule->fw_rule->wszRuleId) == g_duplicate_rule_ids[4];
+		}
+	}
+	Check(!any_deleted_in_a_set, "no set contains a rule already deleted");
+	Check(!lone_live_rule_in_a_set, "the one live rule left of a set is not in any set");
+	if (analysis.duplicateSets.size() != 2)
+	{
+		return;
+	}
+	Check(
+	    RuleIdsOf(analysis.duplicateSets[0]) == L"{d3};{d4};" && RuleIdsOf(analysis.duplicateSets[1]) == L"{d1};{d2};",
+	    "the live rules of a set with a deleted rule are still a set, and its first rule is live");
+	Check(
+	    rules.size() >= 2 && rules[rules.size() - 1].is_rule_deleted && rules[rules.size() - 2].is_rule_deleted,
+	    "the deleted rules are sorted after the rules not deleted");
+	Check(
+	    PrintDuplicateAnalysis(analysis, AnalysisOutput::Summary) ==
+	        L"  * Summary of duplicate analysis of firewall rules:\n"
+	        L"   - count of sets of duplicate rules: 2\n"
+	        L"   - count of rules in sets of duplicate rules: 4\n",
+	    "the summary counts only the live rules");
+}
+
+//
+// TestDeleteDuplicateRulesSkipsDeletedRules
+//
+// Checks that DeleteDuplicateRules, after an earlier phase deleted some copies, never deletes a rule
+// again, keeps a live rule of each set, and deletes the other live copies.
+//
+void
+TestDeleteDuplicateRulesSkipsDeletedRules()
+{
+	const auto fw_rules = MakeRulesWithDeletedDuplicates();
+	auto rules = NormalizeRules(fw_rules);
+	MarkRulesDeleted(rules);
+	const auto analysis = AnalyzeDuplicateRules(rules);
+	std::wistringstream input(L"a\n1\n");
+	std::wstring attempted;
+	g_recorded_failures.clear();
+	{
+		SuppressStdout quiet;
+		DeleteDuplicateRules(
+		    analysis,
+		    input,
+		    [&attempted](PCWSTR rule_id) -> DWORD
+		    {
+			    attempted += rule_id;
+			    attempted += L';';
+			    return ERROR_SUCCESS;
+		    });
+	}
+
+	Check(
+	    attempted.find(g_deleted_copy_id) == std::wstring::npos &&
+	        attempted.find(g_duplicate_rule_ids[5]) == std::wstring::npos,
+	    "a rule already deleted is not deleted again");
+	Check(
+	    attempted.find(g_duplicate_rule_ids[0]) == std::wstring::npos,
+	    "a live rule is kept, not the deleted copy that sorts first in its set");
+	Check(
+	    attempted.find(g_duplicate_rule_ids[4]) == std::wstring::npos,
+	    "the one live rule left of a set is not deleted");
+	Check(attempted == L"{d4};{d2};", "the live copies that are not kept are deleted");
+	Check(
+	    MarkedDeletedIds(rules) == L"{d0};{d2};{d4};{d6};",
+	    "the rules deleted earlier stay marked, and only the newly deleted rules are added");
+	Check(g_recorded_failures.empty(), "no failure is recorded");
+}
 } // namespace
 int
 wmain()
@@ -1578,6 +1745,8 @@ wmain()
 	TestDuplicateAnalysisWithoutDuplicates();
 	TestDuplicateKeepChoices();
 	TestDeleteDuplicateRules();
+	TestDuplicateAnalysisSkipsDeletedRules();
+	TestDeleteDuplicateRulesSkipsDeletedRules();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

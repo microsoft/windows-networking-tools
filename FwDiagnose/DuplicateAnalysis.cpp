@@ -85,11 +85,13 @@ IsOrderedByNameThenId(const NormalizedFirewallRule& lhs, const NormalizedFirewal
 // AnalyzeDuplicateRules
 //
 // Finds the sets of rules that match on every setting except rule ID, name, description, and schema
-// version (RuleDetailsComparison with comparison_policy_compare_all).
+// version (RuleDetailsComparison with comparison_policy_compare_all). Rules already marked
+// is_rule_deleted (by an earlier -clean-rules phase) are left out, so a set with one rule left is not
+// reported, and no deleted rule is kept or deleted again.
 //
 // Parameters:
-//   rules [in, out] - the store's rules; sorted in place so that each set of duplicate rules is
-//                     adjacent, and within a set by name and then by rule ID
+//   rules [in, out] - the store's rules; sorted in place so that the rules not deleted come first, each
+//                     set of duplicate rules is adjacent, and within a set by name and then by rule ID
 //
 // Returns:
 //   The sets of duplicate rules, ordered by the name of their first rule, and how many rules they
@@ -102,6 +104,10 @@ AnalyzeDuplicateRules(std::vector<NormalizedFirewallRule>& rules)
 	    rules,
 	    [](const NormalizedFirewallRule& lhs, const NormalizedFirewallRule& rhs) noexcept
 	    {
+		    if (lhs.is_rule_deleted != rhs.is_rule_deleted)
+		    {
+			    return rhs.is_rule_deleted;
+		    }
 		    const auto comparison = RuleDetailsComparison(lhs, rhs);
 		    if (comparison != 0)
 		    {
@@ -110,12 +116,19 @@ AnalyzeDuplicateRules(std::vector<NormalizedFirewallRule>& rules)
 		    return IsOrderedByNameThenId(lhs, rhs);
 	    });
 
+	const auto remaining_rules_end = std::ranges::find_if(
+	    rules,
+	    [](const NormalizedFirewallRule& rule) noexcept
+	    {
+		    return rule.is_rule_deleted;
+	    });
+
 	DuplicateAnalysis analysis;
-	for (auto first = rules.begin(); first != rules.end();)
+	for (auto first = rules.begin(); first != remaining_rules_end;)
 	{
 		const auto last = std::find_if(
 		    first + 1,
-		    rules.end(),
+		    remaining_rules_end,
 		    [&first](const NormalizedFirewallRule& rule) noexcept
 		    {
 			    return RuleDetailsComparison(*first, rule) != 0;

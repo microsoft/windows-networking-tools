@@ -852,12 +852,12 @@ CheckForMissingAppPackage(FirewallPolicyObjects& policy)
 }
 
 static void
-DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<NormalizedFirewallRule>& normalized_rules)
+DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, std::vector<NormalizedFirewallRule>& normalized_rules)
 {
 	bool delete_all_with_no_more_prompts = false;
 	bool printed_deletion_header = false;
 
-	for (const auto& rule : normalized_rules)
+	for (auto& rule : normalized_rules)
 	{
 		if (rule.is_rule_deleted)
 		{
@@ -924,6 +924,7 @@ DeleteMissingAppRules(FW_POLICY_STORE_HANDLE store_handle, const std::vector<Nor
 		}
 		else
 		{
+			rule.is_rule_deleted = true;
 			std::printf("       - Successfully deleted the firewall rule\n");
 		}
 	}
@@ -1139,12 +1140,12 @@ CheckUnresolvedUserAccountRules(FirewallPolicyObjects& policy)
 
 static void
 DeleteUnresolvedUserAccountRules(
-    FW_POLICY_STORE_HANDLE store_handle, const std::vector<NormalizedFirewallRule>& normalized_rules)
+    FW_POLICY_STORE_HANDLE store_handle, std::vector<NormalizedFirewallRule>& normalized_rules)
 {
 	bool delete_all_with_no_more_prompts = false;
 	bool printed_deletion_header = false;
 
-	for (const auto& rule : normalized_rules)
+	for (auto& rule : normalized_rules)
 	{
 		if (rule.is_rule_deleted)
 		{
@@ -1233,6 +1234,7 @@ DeleteUnresolvedUserAccountRules(
 		}
 		else
 		{
+			rule.is_rule_deleted = true;
 			std::printf("       - Successfully deleted the firewall rule\n");
 		}
 	}

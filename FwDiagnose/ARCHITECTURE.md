@@ -193,7 +193,7 @@ Found by reading the code, last checked at commit `6ca81b1`; none were reproduce
 |---|---|
 | `DebugBreak()` in the shared ETW record parser; without a debugger the process crashes, and a C++ `try` does not catch it. | `ctl\ctEtwRecord.hpp` |
 | Debug output `<<-->>` left in inbound analysis. | `AnalyzeInboundRules` |
-| `is_rule_deleted` is set only by duplicate deletion, the last cleanup phase, so the checks for it in the earlier missing-application and unresolved-SID phases never fire. | `Delete*Rules` |
+| Under `-clean-rules`, the unresolved-SID analysis and filter rankings still count rules deleted by the earlier missing-application phase, while duplicate analysis leaves deleted rules out. Reporting only; nothing is deleted twice. | `AnalyzeUserOwnerRules`, `AnalyzeFilterRankings` |
 | Under `-clean-rules`, the read-only stores are skipped without analysis, although the `StoreAllowsOnlyReadAccess` comment and the skip message suggest they are still reported on. | `ProcessFirewallRules` |
 | Unused code: `InitializeWfpPerfCounters` and `ReadWfpPerfCounters` have no callers, and `GetRulesWithAppPackages` is declared but never defined. | `WfpCounters.*`, `FirewallRules.h` |
 
