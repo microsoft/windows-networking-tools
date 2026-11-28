@@ -57,6 +57,39 @@ ReturnJsonErrorObject(HRESULT error)
 	return details;
 }
 
+//
+// SetJsonPackageIdentity
+//
+// Adds the app package a rule applies to, to the rule's JSON entry: packageId, packageIdSource,
+// packageIdError (only when the package ID could not be derived), and packageFamilyName.
+//
+// Parameters:
+//   entry    [in] - the rule's entry; JsonObject is ref-counted, so the caller's object is updated
+//   identity [in] - the rule's package identity; nothing is added when it is nullopt
+//
+void
+SetJsonPackageIdentity(const JsonObject& entry, const std::optional<RulePackageIdentity>& identity)
+{
+	if (!identity.has_value())
+	{
+		return;
+	}
+
+	entry.SetNamedValue(
+	    L"packageId",
+	    identity->packageId.has_value() ? String(*identity->packageId) : JsonValue::CreateNullValue());
+	entry.SetNamedValue(
+	    L"packageIdSource",
+	    String(identity->packageIdSource == PackageIdSource::Rule ? L"rule" : L"derived_from_family_name"));
+	if (FAILED(identity->packageIdError))
+	{
+		entry.SetNamedValue(L"packageIdError", ReturnJsonErrorObject(identity->packageIdError));
+	}
+	entry.SetNamedValue(
+	    L"packageFamilyName",
+	    identity->packageFamilyName.has_value() ? String(*identity->packageFamilyName) : JsonValue::CreateNullValue());
+}
+
 // Windows::Data::Json::JsonObject is a ref-counted object - not a deep copy
 JsonObject
 ReturnJsonDiagnosticObject(PCWSTR property, PCWSTR operation, HRESULT error, std::wstring_view message)
@@ -168,6 +201,7 @@ ReturnJsonResultObject(PCWSTR command)
 
 	JsonObject result;
 	result.SetNamedValue(L"command", String(command));
+	// FinishProfileJsonReport sets the final status
 	result.SetNamedValue(L"status", String(L"partial"));
 
 	JsonObject data;
@@ -175,18 +209,19 @@ ReturnJsonResultObject(PCWSTR command)
 	data.SetNamedValue(L"stores", JsonArray{});
 	result.SetNamedValue(L"data", data);
 
-	JsonObject pending;
-	pending.SetNamedValue(L"severity", String(L"warning"));
-	pending.SetNamedValue(L"code", String(L"json_export_incomplete"));
-	pending.SetNamedValue(
-	    L"message",
-	    String(
-	        L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, "
-	        L"SID-owner analysis, filter rankings, duplicate analysis, and -clean-rules deletions are exported. Other "
-	        L"console output for this command is not yet exported."));
-
 	JsonArray diagnostics;
-	diagnostics.Append(pending);
+	if (std::wstring_view(command) == L"shields_up_change")
+	{
+		JsonObject pending;
+		pending.SetNamedValue(L"severity", String(L"warning"));
+		pending.SetNamedValue(L"code", String(L"json_export_incomplete"));
+		pending.SetNamedValue(
+		    L"message",
+		    String(
+		        L"Only the firewall-profile configuration is exported for a Shields Up change. The change itself is "
+		        L"not yet exported."));
+		diagnostics.Append(pending);
+	}
 
 	result.SetNamedValue(L"diagnostics", diagnostics);
 	g_jsonResults.Append(result);
@@ -223,9 +258,9 @@ StoreJsonName(FW_STORE_TYPE storeType)
 	}
 }
 
-// the most recent record for the store, which WriteFirewallRuleStatusJson writes before any other store analysis
+// the most recent record for the store, or nullptr when there is none
 JsonObject
-ReturnJsonStoreObject(PCWSTR command, FW_STORE_TYPE storeType)
+FindJsonStoreObject(PCWSTR command, FW_STORE_TYPE storeType)
 {
 	const auto stores = ReturnJsonResultObject(command).GetNamedObject(L"data").GetNamedArray(L"stores");
 	const std::wstring_view storeName = StoreJsonName(storeType);
@@ -237,7 +272,86 @@ ReturnJsonStoreObject(PCWSTR command, FW_STORE_TYPE storeType)
 			return store;
 		}
 	}
-	THROW_HR_MSG(E_UNEXPECTED, "The store record must be written before its analyses.");
+	return nullptr;
+}
+
+// the most recent record for the store, which WriteFirewallRuleStatusJson writes before any other store analysis
+JsonObject
+ReturnJsonStoreObject(PCWSTR command, FW_STORE_TYPE storeType)
+{
+	auto store = FindJsonStoreObject(command, storeType);
+	THROW_HR_IF_MSG(E_UNEXPECTED, !store, "The store record must be written before its analyses.");
+	return store;
+}
+
+//
+// IsJsonResultComplete
+//
+// Decides whether everything a command's result reports finished: no result diagnostic, every
+// firewall profile completed, every store completed, not present, or skipped, no store section
+// partial or failed, and no error diagnostic on a store.
+//
+// Parameters:
+//   result [in] - one entry of the report's results
+//
+// Returns:
+//   true when the result can be marked completed.
+//
+bool
+IsJsonResultComplete(const JsonObject& result)
+{
+	if (result.GetNamedArray(L"diagnostics").Size() != 0)
+	{
+		return false;
+	}
+
+	const auto data = result.GetNamedObject(L"data");
+	for (const auto& profile : data.GetNamedArray(L"firewallProfiles"))
+	{
+		if (profile.GetObject().GetNamedString(L"status") != L"completed")
+		{
+			return false;
+		}
+	}
+
+	for (const auto& value : data.GetNamedArray(L"stores"))
+	{
+		const auto store = value.GetObject();
+		const std::wstring_view status = store.GetNamedString(L"status");
+		if (status != L"completed" && status != L"not_present" && status != L"skipped")
+		{
+			return false;
+		}
+
+		for (const auto& member : store)
+		{
+			if (member.Value().ValueType() != JsonValueType::Object)
+			{
+				continue;
+			}
+			const auto section = member.Value().GetObject();
+			if (section.HasKey(L"status"))
+			{
+				const std::wstring_view sectionStatus = section.GetNamedString(L"status");
+				if (sectionStatus == L"partial" || sectionStatus == L"failed")
+				{
+					return false;
+				}
+			}
+		}
+
+		if (store.HasKey(L"diagnostics"))
+		{
+			for (const auto& diagnostic : store.GetNamedArray(L"diagnostics"))
+			{
+				if (diagnostic.GetObject().GetNamedString(L"severity") == L"error")
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
 }
 
 JsonObject
@@ -416,9 +530,11 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                                       L"reason",
 		                                                       L"applicationRuleCount",
 		                                                       L"missingApplicationRuleCount",
+		                                                       L"uncheckedApplicationRuleCount",
 		                                                       L"perUserVariableRuleCount",
 		                                                       L"serviceProfileVariableRuleCount",
 		                                                       L"serviceProfileVariableRules",
+		                                                       L"uncheckedApplicationRules",
 		                                                       L"missingApplicationRules"};
 
 		constexpr std::wstring_view packageAnalysisOrder[]{L"status",
@@ -435,6 +551,7 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                                     L"localUserOwnerRuleCount",
 		                                                     L"unresolvedSidRuleCount",
 		                                                     L"localProfileCheck",
+		                                                     L"missingLocalProfileRulesRecreated",
 		                                                     L"missingLocalProfileRuleCount",
 		                                                     L"unresolvedSidRules",
 		                                                     L"missingLocalProfileRules",
@@ -460,6 +577,8 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                             L"name",
 		                                             L"application",
 		                                             L"packageId",
+		                                             L"packageIdSource",
+		                                             L"packageIdError",
 		                                             L"packageFamilyName",
 		                                             L"localUserOwnerSid",
 		                                             L"domain",
@@ -500,6 +619,10 @@ PrettifyJson(const IJsonValue& value, size_t depth = 0)
 		                                                 L"ruleId",
 		                                                 L"name",
 		                                                 L"application",
+		                                                 L"packageId",
+		                                                 L"packageIdSource",
+		                                                 L"packageIdError",
+		                                                 L"packageFamilyName",
 		                                                 L"localUserOwnerSid",
 		                                                 L"decision",
 		                                                 L"approvalSource",
@@ -717,6 +840,32 @@ InitializeProfileJsonReport(PCWSTR path, const std::vector<PCWSTR>& arguments)
 	g_jsonReport.SetNamedValue(L"diagnostics", JsonArray{});
 }
 
+//
+// ProfileJsonReportHasIncompleteCommand
+//
+// Checks the requested commands for one whose console output is not fully exported, which is only a
+// Shields Up change.
+//
+// Returns:
+//   true when JSON output is enabled and a Shields Up change was requested.
+//
+bool
+ProfileJsonReportHasIncompleteCommand()
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return false;
+	}
+	for (const auto& command : g_jsonReport.GetNamedObject(L"run").GetNamedArray(L"requestedCommands"))
+	{
+		if (command.GetString() == L"shields_up_change")
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void
 FinishProfileJsonReport(int exitCode, ReportRunOutcome outcome)
 {
@@ -725,10 +874,27 @@ FinishProfileJsonReport(int exitCode, ReportRunOutcome outcome)
 		return;
 	}
 
+	// a result RecordProfileJsonFailure marked failed stays failed
+	bool allCompleted = g_jsonReport.GetNamedArray(L"diagnostics").Size() == 0;
+	for (const auto& value : g_jsonResults)
+	{
+		auto result = value.GetObject();
+		if (result.GetNamedString(L"status") != L"failed")
+		{
+			result.SetNamedValue(L"status", String(IsJsonResultComplete(result) ? L"completed" : L"partial"));
+		}
+		allCompleted = allCompleted && result.GetNamedString(L"status") == L"completed";
+	}
+
 	auto run = g_jsonReport.GetNamedObject(L"run");
 	run.SetNamedValue(L"finishedAt", String(Timestamp()));
 	run.SetNamedValue(L"exitCode", JsonValue::CreateNumberValue(exitCode));
-	run.SetNamedValue(L"status", String(outcome == ReportRunOutcome::RanToEnd ? L"partial" : L"failed"));
+	run.SetNamedValue(
+	    L"status",
+	    String(
+	        outcome == ReportRunOutcome::StoppedEarly ? L"failed"
+	        : exitCode == 0 && allCompleted           ? L"completed"
+	                                                  : L"partial"));
 
 	const auto bytes = winrt::to_string(PrettifyJson(g_jsonReport) + L"\n");
 	size_t offset = 0;
@@ -991,6 +1157,7 @@ WriteFirewallRuleStatusJson(
 						detail.SetNamedValue(
 						    L"statusHex",
 						    String(std::format(L"0x{:08X}", static_cast<uint32_t>(rule->fw_rule->Status))));
+						SetJsonPackageIdentity(detail, rule->package_identity);
 						details.Append(detail);
 					}
 
@@ -1045,12 +1212,19 @@ WriteApplicationAnalysisJson(const FirewallPolicyObjects& policy, const Applicat
 				entry.SetNamedValue(L"error", ReturnJsonErrorObject(finding.error));
 				break;
 			}
+			case ApplicationFindingReason::EnvironmentExpansionFailed:
+			{
+				entry.SetNamedValue(L"reason", String(L"environment_expansion_failed"));
+				entry.SetNamedValue(L"error", ReturnJsonErrorObject(finding.error));
+				break;
+			}
 			case ApplicationFindingReason::ServiceProfileEnvironmentVariable:
 			{
 				// the list name already states why these rules are reported
 				break;
 			}
 			}
+			SetJsonPackageIdentity(entry, finding.packageIdentity);
 			entries.Append(entry);
 		}
 		return entries;
@@ -1064,14 +1238,19 @@ WriteApplicationAnalysisJson(const FirewallPolicyObjects& policy, const Applicat
 	}
 	else
 	{
-		section.SetNamedValue(L"status", String(L"completed"));
+		// a rule whose file could not be checked leaves part of the analysis undone
+		section.SetNamedValue(
+		    L"status",
+		    String(analysis.uncheckedApplicationRules.empty() ? L"completed" : L"partial"));
 	}
 
 	section.SetNamedValue(L"applicationRuleCount", count(analysis.applicationRuleCount));
 	section.SetNamedValue(L"missingApplicationRuleCount", count(analysis.missingApplicationRules.size()));
+	section.SetNamedValue(L"uncheckedApplicationRuleCount", count(analysis.uncheckedApplicationRules.size()));
 	section.SetNamedValue(L"perUserVariableRuleCount", count(analysis.perUserVariableRuleCount));
 	section.SetNamedValue(L"serviceProfileVariableRuleCount", count(analysis.serviceProfileVariableRules.size()));
 	section.SetNamedValue(L"serviceProfileVariableRules", ruleEntries(analysis.serviceProfileVariableRules));
+	section.SetNamedValue(L"uncheckedApplicationRules", ruleEntries(analysis.uncheckedApplicationRules));
 	if (g_jsonReport.GetNamedObject(L"run").GetNamedBoolean(L"verbose"))
 	{
 		section.SetNamedValue(L"missingApplicationRules", ruleEntries(analysis.missingApplicationRules));
@@ -1124,13 +1303,22 @@ WritePackageAnalysisJson(const FirewallPolicyObjects& policy, const PackageAnaly
 				entry.SetNamedValue(L"ruleId", nullableString(finding.ruleId));
 				entry.SetNamedValue(L"name", nullableString(finding.name));
 				entry.SetNamedValue(packageKey, nullableString(finding.package));
+				SetJsonPackageIdentity(entry, finding.packageIdentity);
 				entries.Append(entry);
 			}
 		}
 		return entries;
 	};
 
-	section.SetNamedValue(L"status", String(L"completed"));
+	// a package whose SID could not be derived from its family name cannot be matched to the rules that name
+	// it by package ID; a full-name failure is informational, because rules use the family-name SID
+	const bool familyNameFailed = std::ranges::any_of(
+	    analysis.sidFailures,
+	    [](const AppContainerSidFailure& failure)
+	    {
+		    return failure.kind == PackageNameKind::FamilyName;
+	    });
+	section.SetNamedValue(L"status", String(familyNameFailed ? L"partial" : L"completed"));
 	section.SetNamedValue(L"packageIdRuleCount", count(analysis.packageIdRuleCount));
 	section.SetNamedValue(L"missingPackageIdRuleCount", count(analysis.MissingCount(PackageReference::PackageId)));
 	section.SetNamedValue(L"packageFamilyNameRuleCount", count(analysis.packageFamilyNameRuleCount));
@@ -1143,6 +1331,32 @@ WritePackageAnalysisJson(const FirewallPolicyObjects& policy, const PackageAnaly
 		section.SetNamedValue(
 		    L"missingPackageFamilyNameRules",
 		    ruleEntries(PackageReference::PackageFamilyName, L"packageFamilyName"));
+	}
+	if (!analysis.sidFailures.empty())
+	{
+		JsonArray diagnostics;
+		for (const auto& failure : analysis.sidFailures)
+		{
+			const bool familyName = failure.kind == PackageNameKind::FamilyName;
+			auto diagnostic = ReturnJsonDiagnosticObject(
+			    L"installedPackages",
+			    L"derive_app_container_sid",
+			    failure.error,
+			    familyName
+			        ? L"The app-container SID could not be derived from this installed package's family name, so "
+			          L"rules naming it by package ID are reported as referencing a missing package."
+			        : L"The app-container SID could not be derived from this installed package's full name. Rules "
+			          L"use the family-name SID, so this does not affect the analysis.");
+			diagnostic.SetNamedValue(L"code", String(L"app_container_sid_not_derived"));
+			if (!familyName)
+			{
+				diagnostic.SetNamedValue(L"severity", String(L"info"));
+			}
+			diagnostic.GetNamedObject(L"subject")
+			    .SetNamedValue(familyName ? L"packageFamilyName" : L"packageFullName", String(failure.packageName));
+			diagnostics.Append(diagnostic);
+		}
+		section.SetNamedValue(L"diagnostics", diagnostics);
 	}
 
 	ReturnJsonStoreObject(command, policy.store_type).SetNamedValue(L"packageAnalysis", section);
@@ -1177,17 +1391,21 @@ WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerA
 	case LocalProfileCheck::NotApplicable:
 	{
 		section.SetNamedValue(L"localProfileCheck", String(L"not_applicable"));
+		// only the isolation stores are checked: Windows re-creates their rules for profiles that come back
+		section.SetNamedValue(L"missingLocalProfileRulesRecreated", JsonValue::CreateBooleanValue(false));
 		break;
 	}
 	case LocalProfileCheck::Completed:
 	{
 		section.SetNamedValue(L"localProfileCheck", String(L"completed"));
+		section.SetNamedValue(L"missingLocalProfileRulesRecreated", JsonValue::CreateBooleanValue(true));
 		section.SetNamedValue(L"missingLocalProfileRuleCount", count(analysis.missingLocalProfileRules.size()));
 		break;
 	}
 	case LocalProfileCheck::Failed:
 	{
 		section.SetNamedValue(L"localProfileCheck", String(L"failed"));
+		section.SetNamedValue(L"missingLocalProfileRulesRecreated", JsonValue::CreateBooleanValue(true));
 		auto diagnostic = ReturnJsonDiagnosticObject(
 		    L"localProfiles",
 		    L"read_profile_list",
@@ -1217,6 +1435,7 @@ WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerA
 			        finding.reason == UserOwnerResolveFailure::InvalidSidString ? L"invalid_sid_string"
 			                                                                    : L"account_lookup_failed"));
 			entry.SetNamedValue(L"error", ReturnJsonErrorObject(finding.error));
+			SetJsonPackageIdentity(entry, finding.packageIdentity);
 			unresolved.Append(entry);
 		}
 		section.SetNamedValue(L"unresolvedSidRules", unresolved);
@@ -1230,6 +1449,7 @@ WriteUserOwnerAnalysisJson(const FirewallPolicyObjects& policy, const UserOwnerA
 			entry.SetNamedValue(L"localUserOwnerSid", nullableString(finding.localUserOwnerSid));
 			entry.SetNamedValue(L"domain", nullableString(finding.domain));
 			entry.SetNamedValue(L"user", nullableString(finding.user));
+			SetJsonPackageIdentity(entry, finding.packageIdentity);
 			missing.Append(entry);
 		}
 		section.SetNamedValue(L"missingLocalProfileRules", missing);
@@ -1375,6 +1595,7 @@ WriteDuplicateAnalysisJson(const FirewallPolicyObjects& policy, const DuplicateA
 				JsonObject ruleEntry;
 				ruleEntry.SetNamedValue(L"ruleId", nullableString(rule->fw_rule->wszRuleId));
 				ruleEntry.SetNamedValue(L"name", nullableString(rule->fw_rule->wszName));
+				SetJsonPackageIdentity(ruleEntry, rule->package_identity);
 				rules.Append(ruleEntry);
 			}
 			entry.SetNamedValue(L"rules", rules);
@@ -1489,6 +1710,7 @@ WriteCleanupJson(const FirewallPolicyObjects& policy, const StoreCleanup& cleanu
 				ruleEntry.SetNamedValue(L"name", nullableString(record.name));
 				ruleEntry.SetNamedValue(L"outcome", String(DeletionOutcomeName(record.outcome)));
 				ruleEntry.SetNamedValue(L"error", errorValue(record));
+				SetJsonPackageIdentity(ruleEntry, record.packageIdentity);
 				rules.Append(ruleEntry);
 			}
 			entry.SetNamedValue(
@@ -1514,6 +1736,7 @@ WriteCleanupJson(const FirewallPolicyObjects& policy, const StoreCleanup& cleanu
 			{
 				entry.SetNamedValue(L"localUserOwnerSid", nullableString(record.localUserOwnerSid));
 			}
+			SetJsonPackageIdentity(entry, record.packageIdentity);
 			entry.SetNamedValue(L"outcome", String(DeletionOutcomeName(record.outcome)));
 			entry.SetNamedValue(L"error", errorValue(record));
 		}
@@ -1587,4 +1810,59 @@ WriteCleanupSkippedStoreJson(const FirewallPolicyObjects& policy, PCWSTR command
 	entry.SetNamedValue(L"store", String(StoreJsonName(policy.store_type)));
 	entry.SetNamedValue(L"reason", store.GetNamedValue(L"reason"));
 	summary.GetNamedArray(L"skippedStores").Append(entry);
+}
+
+//
+// WriteStoreInterruptedJson
+//
+// Records that an error stopped the analysis of a store. When the store's record was already written,
+// a completed record is marked partial and keeps the sections written before the error; otherwise a
+// failed record is written. Either way the record gets a store_analysis_interrupted diagnostic. Does
+// nothing when JSON output is not enabled.
+//
+// Parameters:
+//   policy  [in] - the store whose analysis stopped
+//   command [in] - the JSON command the store record belongs to, e.g. L"analyze_rules"
+//   step    [in] - the analysis step that was running, e.g. L"check_duplicates"
+//   error   [in] - the error that stopped the analysis
+//   detail  [in] - the exception text, or nullptr
+//
+void
+WriteStoreInterruptedJson(const FirewallPolicyObjects& policy, PCWSTR command, PCWSTR step, HRESULT error, PCSTR detail)
+{
+	if (!ProfileJsonReportEnabled())
+	{
+		return;
+	}
+
+	std::wstring message = L"An error stopped the analysis of this store; the sections written before it are kept.";
+	if (detail)
+	{
+		message += L" ";
+		message += winrt::to_hstring(detail);
+	}
+	auto diagnostic = ReturnJsonDiagnosticObject(L"store", step, error, message);
+	diagnostic.SetNamedValue(L"code", String(L"store_analysis_interrupted"));
+	diagnostic.GetNamedObject(L"subject").SetNamedValue(L"store", String(StoreJsonName(policy.store_type)));
+
+	auto store = FindJsonStoreObject(command, policy.store_type);
+	if (!store)
+	{
+		store = JsonObject{};
+		store.SetNamedValue(L"store", String(StoreJsonName(policy.store_type)));
+		store.SetNamedValue(L"displayName", String(winrt::to_hstring(policy.store_type_string)));
+		store.SetNamedValue(L"status", String(L"failed"));
+		store.SetNamedValue(L"diagnostics", JsonArray{});
+		ReturnJsonResultObject(command).GetNamedObject(L"data").GetNamedArray(L"stores").Append(store);
+	}
+	else if (store.GetNamedString(L"status") == L"completed")
+	{
+		store.SetNamedValue(L"status", String(L"partial"));
+	}
+
+	if (!store.HasKey(L"diagnostics"))
+	{
+		store.SetNamedValue(L"diagnostics", JsonArray{});
+	}
+	store.GetNamedArray(L"diagnostics").Append(diagnostic);
 }

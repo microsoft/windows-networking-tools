@@ -18,9 +18,11 @@ MakeFinding(const NormalizedFirewallRule& rule, ApplicationFindingReason reason)
 	    rule.fw_rule->wszName,
 	    rule.fw_rule->wszLocalApplication,
 	    reason,
-	    rule.local_application_lookup_error,
+	    reason == ApplicationFindingReason::EnvironmentExpansionFailed ? rule.local_application_expand_error
+	                                                                   : rule.local_application_lookup_error,
 	    rule.rule_name.value.c_str(),
-	    rule.local_application_failure_string.c_str()};
+	    rule.local_application_failure_string.c_str(),
+	    rule.package_identity};
 }
 
 std::wstring
@@ -50,6 +52,12 @@ AnalyzeApplicationRules(const std::vector<NormalizedFirewallRule>& rules, Applic
 			    MakeFinding(rule, ApplicationFindingReason::ServiceProfileEnvironmentVariable));
 		}
 
+		if (FAILED(rule.local_application_expand_error))
+		{
+			analysis.uncheckedApplicationRules.push_back(
+			    MakeFinding(rule, ApplicationFindingReason::EnvironmentExpansionFailed));
+		}
+
 		if (rule.local_application_exists.has_value() && !rule.local_application_exists.value())
 		{
 			if (rule.local_application_uses_per_user_variable)
@@ -76,7 +84,8 @@ PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput out
 		        L"as the Firewall on 64-bit Windows - use the 64-bit build\n";
 	}
 
-	if (!verbose && analysis.missingApplicationRules.empty() && analysis.serviceProfileVariableRules.empty())
+	if (!verbose && analysis.missingApplicationRules.empty() && analysis.serviceProfileVariableRules.empty() &&
+	    analysis.uncheckedApplicationRules.empty())
 	{
 		return text;
 	}
@@ -105,6 +114,21 @@ PrintApplicationAnalysis(const ApplicationAnalysis& analysis, AnalysisOutput out
 			text += std::format(
 			    L"     WARNING: Application-exe:  '{}'  {}\n",
 			    FirewallRuleTextToString(finding.application),
+			    RuleConsoleLabel(finding.displayName, finding.ruleId));
+		}
+	}
+
+	if (!analysis.uncheckedApplicationRules.empty())
+	{
+		text += std::format(
+		    L"   - count of rules with an application exe that could not be checked: {}\n",
+		    analysis.uncheckedApplicationRules.size());
+		for (const auto& finding : analysis.uncheckedApplicationRules)
+		{
+			text += std::format(
+			    L"     Application-exe:  '{}'  ({}) {}\n",
+			    FirewallRuleTextToString(finding.application),
+			    Widen(finding.failureText),
 			    RuleConsoleLabel(finding.displayName, finding.ruleId));
 		}
 	}

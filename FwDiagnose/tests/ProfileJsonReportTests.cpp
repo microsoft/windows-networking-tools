@@ -391,9 +391,11 @@ try
 		     {L"status",
 		      L"applicationRuleCount",
 		      L"missingApplicationRuleCount",
+		      L"uncheckedApplicationRuleCount",
 		      L"perUserVariableRuleCount",
 		      L"serviceProfileVariableRuleCount",
 		      L"serviceProfileVariableRules",
+		      L"uncheckedApplicationRules",
 		      L"missingApplicationRules"})
 		{
 			const auto position = sectionText.find(std::wstring(L"\n  \"") + key + L"\":", nextKey);
@@ -454,12 +456,14 @@ try
 		for (const auto* key :
 		     {L"applicationRuleCount",
 		      L"missingApplicationRuleCount",
+		      L"uncheckedApplicationRuleCount",
 		      L"perUserVariableRuleCount",
 		      L"serviceProfileVariableRuleCount"})
 		{
 			Check(empty.GetNamedNumber(key) == 0, "Empty analysis count not zero.");
 		}
 		Check(empty.GetNamedArray(L"serviceProfileVariableRules").Size() == 0, "Empty warning list not empty.");
+		Check(empty.GetNamedArray(L"uncheckedApplicationRules").Size() == 0, "Empty unchecked list not written.");
 		Check(
 		    verbose ? empty.GetNamedArray(L"missingApplicationRules").Size() == 0
 		            : !empty.HasKey(L"missingApplicationRules"),
@@ -660,7 +664,8 @@ try
 		const auto section = ownerStore.GetNamedObject(L"userOwnerAnalysis");
 		Check(
 		    section.GetNamedString(L"status") == L"completed" &&
-		        section.GetNamedString(L"localProfileCheck") == L"completed",
+		        section.GetNamedString(L"localProfileCheck") == L"completed" &&
+		        section.GetNamedBoolean(L"missingLocalProfileRulesRecreated"),
 		    "SID-owner analysis status incorrect.");
 		Check(
 		    section.GetNamedNumber(L"localUserOwnerRuleCount") == 5 &&
@@ -688,6 +693,7 @@ try
 		      L"localUserOwnerRuleCount",
 		      L"unresolvedSidRuleCount",
 		      L"localProfileCheck",
+		      L"missingLocalProfileRulesRecreated",
 		      L"missingLocalProfileRuleCount",
 		      L"unresolvedSidRules",
 		      L"missingLocalProfileRules"})
@@ -760,6 +766,7 @@ try
 		Check(
 		    empty.GetNamedString(L"status") == L"completed" &&
 		        empty.GetNamedString(L"localProfileCheck") == L"not_applicable" &&
+		        !empty.GetNamedBoolean(L"missingLocalProfileRulesRecreated") &&
 		        empty.GetNamedNumber(L"localUserOwnerRuleCount") == 0 &&
 		        empty.GetNamedNumber(L"unresolvedSidRuleCount") == 0 && !empty.HasKey(L"missingLocalProfileRuleCount"),
 		    "Empty SID-owner analysis incorrect.");
@@ -781,6 +788,7 @@ try
 	Check(
 	    partialOwners.GetNamedString(L"status") == L"partial" &&
 	        partialOwners.GetNamedString(L"localProfileCheck") == L"failed" &&
+	        partialOwners.GetNamedBoolean(L"missingLocalProfileRulesRecreated") &&
 	        partialOwners.GetNamedNumber(L"localUserOwnerRuleCount") == 3 &&
 	        !partialOwners.HasKey(L"missingLocalProfileRuleCount"),
 	    "Partial SID-owner analysis incorrect.");
@@ -1050,14 +1058,17 @@ try
 	    "Empty duplicate analysis incorrect.");
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
-	const auto readRunStatus = [&]()
+	const auto readReport = [&]()
 	{
 		std::ifstream file(outputPath, std::ios::binary);
 		const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-		return std::wstring(
-		    JsonObject::Parse(winrt::to_hstring(text)).GetNamedObject(L"run").GetNamedString(L"status"));
+		return JsonObject::Parse(winrt::to_hstring(text));
 	};
-	Check(readRunStatus() == L"partial", "Successful run not reported as partial.");
+	const auto readRunStatus = [&]()
+	{
+		return std::wstring(readReport().GetNamedObject(L"run").GetNamedString(L"status"));
+	};
+	Check(readRunStatus() == L"partial", "A run whose stores failed or were not collected not reported as partial.");
 
 	InitializeProfileJsonReport(outputPath, {L"-analyze-rules"});
 	FinishProfileJsonReport(E_ACCESSDENIED, ReportRunOutcome::RanToEnd);
@@ -1304,14 +1315,9 @@ try
 	        noProfile.GetNamedString(L"decision") == L"no",
 	    "Missing-local-profile action incorrect.");
 
-	const auto incomplete = g_jsonResults.GetAt(0).GetObject().GetNamedArray(L"diagnostics").GetAt(0).GetObject();
 	Check(
-	    incomplete.GetNamedString(L"code") == L"json_export_incomplete" &&
-	        incomplete.GetNamedString(L"message") ==
-	            L"Firewall-profile configuration, rule-status analysis, application analysis, app-package analysis, "
-	            L"SID-owner analysis, filter rankings, duplicate analysis, and -clean-rules deletions are exported. "
-	            L"Other console output for this command is not yet exported.",
-	    "The json_export_incomplete message does not list -clean-rules deletions.");
+	    g_jsonResults.GetAt(0).GetObject().GetNamedArray(L"diagnostics").Size() == 0,
+	    "-clean-rules is fully exported, so its result must have no json_export_incomplete diagnostic.");
 
 	// cleanupSummary across stores: the cleaned store above, a store interrupted after one deletion, a store
 	// with nothing to clean, a store skipped because it cannot be modified locally, and one not skipped
@@ -1409,10 +1415,613 @@ try
 	    keysInOrder(PrettifyJson(data), {L"firewallProfiles", L"stores", L"cleanupSummary"}),
 	    "cleanupSummary is not after the stores.");
 	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+	Check(
+	    readReport().GetNamedArray(L"results").GetAt(0).GetObject().GetNamedString(L"status") == L"partial",
+	    "A -clean-rules result with an interrupted cleanup is not partial.");
+
+	// result and run status: a result is completed only when everything it reports finished
+	FirewallProfileData completedProfile;
+	completedProfile.name = L"Public";
+	FirewallPolicyObjects statusStore;
+	statusStore.store_type = FW_STORE_TYPE_LOCAL;
+	statusStore.store_type_string = "Local";
+	statusStore.load_result = S_OK;
+	FirewallPolicyObjects absentRsop;
+	absentRsop.store_type = FW_STORE_TYPE_GP_RSOP;
+	absentRsop.store_type_string = "Group Policy (RSOP)";
+	absentRsop.load_result = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	FirewallPolicyObjects gpoStatusStore;
+	gpoStatusStore.store_type = FW_STORE_TYPE_GPO;
+	gpoStatusStore.store_type_string = "Group Policy";
+	gpoStatusStore.load_result = S_OK;
+	FW_RULE statusSkippedFwRule{};
+	FirewallPolicyObjects skippedStatusStore;
+	skippedStatusStore.store_type = FW_STORE_TYPE_GP_RSOP;
+	skippedStatusStore.store_type_string = "Group Policy (RSOP)";
+	skippedStatusStore.load_result = S_OK;
+	skippedStatusStore.normalizedRules.emplace_back(&statusSkippedFwRule, FW_BINARY_VERSION_33);
+	// a profile, a completed store with every analysis, and an RSOP store that is not present
+	const auto writeCompletedResult = [&](PCWSTR command)
+	{
+		WriteFirewallProfileJson(completedProfile, command);
+		WriteFirewallRuleStatusJson(statusStore, 0, {}, command, RuleStatusAnalysis::Performed);
+		WriteApplicationAnalysisJson(statusStore, ApplicationAnalysis{}, command);
+		WritePackageAnalysisJson(statusStore, PackageAnalysis{}, command);
+		WriteUserOwnerAnalysisJson(statusStore, UserOwnerAnalysis{}, command);
+		WriteFilterRankingsJson(statusStore, FilterRankings{.limit = 10}, command);
+		WriteDuplicateAnalysisJson(statusStore, DuplicateAnalysis{}, command);
+		WriteFirewallRuleStatusJson(absentRsop, 0, {}, command, RuleStatusAnalysis::Performed);
+	};
+	// runs a report and returns the first result's status and the run's status
+	const auto reportStatus = [&](const std::vector<PCWSTR>& arguments,
+	                              const auto& write,
+	                              int exitCode = 0,
+	                              ReportRunOutcome outcome = ReportRunOutcome::RanToEnd)
+	{
+		InitializeProfileJsonReport(outputPath, arguments);
+		write();
+		FinishProfileJsonReport(exitCode, outcome);
+		const auto report = readReport();
+		return std::pair{
+		    std::wstring(report.GetNamedArray(L"results").GetAt(0).GetObject().GetNamedString(L"status")),
+		    std::wstring(report.GetNamedObject(L"run").GetNamedString(L"status"))};
+	};
+	using StatusPair = std::pair<std::wstring, std::wstring>;
+	const StatusPair allCompleted{L"completed", L"completed"};
+	const StatusPair resultPartial{L"partial", L"partial"};
+	const StatusPair runPartial{L"completed", L"partial"};
+	const auto analyzeCompleted = [&]()
+	{
+		writeCompletedResult(L"analyze_rules");
+	};
+	Check(
+	    reportStatus({L"-analyze-rules"}, analyzeCompleted) == allCompleted,
+	    "A fully exported -analyze-rules run is not completed.");
+	Check(
+	    readReport().GetNamedArray(L"results").GetAt(0).GetObject().GetNamedArray(L"diagnostics").Size() == 0,
+	    "An -analyze-rules result has a diagnostic.");
+	Check(
+	    reportStatus(
+	        {L"-clean-rules"},
+	        [&]()
+	        {
+		        writeCompletedResult(L"clean_rules");
+		        WriteCleanupJson(statusStore, StoreCleanup{}, L"clean_rules", S_OK);
+	        }) == allCompleted,
+	    "A fully exported -clean-rules run is not completed.");
+	Check(
+	    readReport().GetNamedArray(L"results").GetAt(0).GetObject().GetNamedArray(L"diagnostics").Size() == 0,
+	    "A -clean-rules result has a diagnostic.");
+	Check(
+	    reportStatus({L"-analyze-rules"}, analyzeCompleted, 1) == runPartial,
+	    "A nonzero exit code must make only the run partial.");
+	Check(
+	    reportStatus({L"-analyze-rules"}, analyzeCompleted, 1, ReportRunOutcome::StoppedEarly) ==
+	        StatusPair{L"completed", L"failed"},
+	    "A run that stopped early must be failed.");
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        WriteFirewallRuleStatusJson(
+		            skippedStatusStore,
+		            0,
+		            {},
+		            L"analyze_rules",
+		            RuleStatusAnalysis::NotPerformed);
+	        }) == allCompleted,
+	    "A skipped store must not make the result partial.");
+	for (const auto loadResult : {E_ACCESSDENIED, E_PENDING, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)})
+	{
+		Check(
+		    reportStatus(
+		        {L"-analyze-rules"},
+		        [&]()
+		        {
+			        analyzeCompleted();
+			        gpoStatusStore.load_result = loadResult;
+			        WriteFirewallRuleStatusJson(gpoStatusStore, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+			        gpoStatusStore.load_result = S_OK;
+		        }) == resultPartial,
+		    "A failed, not-collected, or not-present store with an error must make the result partial.");
+	}
+	for (const auto* severity : {L"error", L"warning"})
+	{
+		Check(
+		    reportStatus(
+		        {L"-analyze-rules"},
+		        [&]()
+		        {
+			        analyzeCompleted();
+			        auto diagnostic = ReturnJsonDiagnosticObject(L"rules", L"test", E_FAIL, L"Test diagnostic.");
+			        diagnostic.SetNamedValue(L"severity", String(severity));
+			        FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_LOCAL)
+			            .GetNamedArray(L"diagnostics")
+			            .Append(diagnostic);
+		        }) == (std::wstring_view(severity) == L"error" ? resultPartial : allCompleted),
+		    "Only an error diagnostic on a store may make the result partial.");
+	}
+	ApplicationAnalysis uncheckedApplications;
+	uncheckedApplications.applicationRuleCount = 1;
+	uncheckedApplications.uncheckedApplicationRules.push_back(
+	    {.ruleId = L"unchecked-rule",
+	     .name = L"Unchecked rule",
+	     .application = L"%TEST%\\app.exe",
+	     .reason = ApplicationFindingReason::EnvironmentExpansionFailed,
+	     .error = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY)});
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        WriteApplicationAnalysisJson(statusStore, uncheckedApplications, L"analyze_rules");
+	        }) == resultPartial,
+	    "A partial store section must make the result partial.");
+	PackageAnalysis packagesNotLoaded;
+	packagesNotLoaded.packagesLoadResult = E_ACCESSDENIED;
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        WritePackageAnalysisJson(statusStore, packagesNotLoaded, L"analyze_rules");
+	        }) == resultPartial,
+	    "A failed store section must make the result partial.");
+	const AppContainerSidFailure familySidFailure{L"Bad.Family_x", PackageNameKind::FamilyName, E_INVALIDARG};
+	const AppContainerSidFailure fullSidFailure{L"Bad.Full_1.0.0.0_x64__x", PackageNameKind::FullName, E_INVALIDARG};
+	for (const auto& sidFailure : {familySidFailure, fullSidFailure})
+	{
+		PackageAnalysis withSidFailure;
+		withSidFailure.sidFailures = {sidFailure};
+		Check(
+		    reportStatus(
+		        {L"-analyze-rules"},
+		        [&]()
+		        {
+			        analyzeCompleted();
+			        WritePackageAnalysisJson(statusStore, withSidFailure, L"analyze_rules");
+		        }) == (sidFailure.kind == PackageNameKind::FamilyName ? resultPartial : allCompleted),
+		    "Only a family-name SID failure may make the result partial.");
+	}
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        WriteStoreInterruptedJson(statusStore, L"analyze_rules", L"analyze_duplicates", E_OUTOFMEMORY, nullptr);
+	        }) == resultPartial,
+	    "An interrupted store must make the result partial.");
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        WriteFirewallProfileJson(profile, L"analyze_rules");
+	        }) == resultPartial,
+	    "A profile with diagnostics must make the result partial.");
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        RecordProfileJsonFailure(L"analyze_rules", E_ACCESSDENIED, "Profiles could not be read.");
+	        }) == StatusPair{L"failed", L"partial"},
+	    "A result RecordProfileJsonFailure marked failed must stay failed.");
+	Check(
+	    reportStatus(
+	        {L"-analyze-rules"},
+	        [&]()
+	        {
+		        analyzeCompleted();
+		        RecordProfileJsonFailure(nullptr, E_ACCESSDENIED, "Profiles could not be read.");
+	        }) == runPartial,
+	    "A report diagnostic must keep the run from being completed.");
+
+	// a Shields Up change exports only the profiles, so its result is partial with a warning
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules", L"-enable-shields-up:public"});
+	Check(ProfileJsonReportHasIncompleteCommand(), "A Shields Up change is not reported as incomplete.");
+	analyzeCompleted();
+	WriteFirewallProfileJson(completedProfile, L"shields_up_change");
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+	Check(!ProfileJsonReportHasIncompleteCommand(), "An incomplete command reported after the report finished.");
+	const auto shieldsReport = readReport();
+	const auto shieldsResults = shieldsReport.GetNamedArray(L"results");
+	Check(shieldsResults.Size() == 2, "One result per command expected.");
+	const auto shieldsResult = shieldsResults.GetAt(1).GetObject();
+	const auto shieldsDiagnostics = shieldsResult.GetNamedArray(L"diagnostics");
+	Check(
+	    shieldsResult.GetNamedString(L"command") == L"shields_up_change" &&
+	        shieldsResult.GetNamedString(L"status") == L"partial" && shieldsDiagnostics.Size() == 1 &&
+	        shieldsDiagnostics.GetAt(0).GetObject().GetNamedString(L"code") == L"json_export_incomplete" &&
+	        shieldsDiagnostics.GetAt(0).GetObject().GetNamedString(L"severity") == L"warning" &&
+	        shieldsDiagnostics.GetAt(0).GetObject().GetNamedString(L"message") ==
+	            L"Only the firewall-profile configuration is exported for a Shields Up change. The change itself is "
+	            L"not yet exported.",
+	    "The Shields Up result must be partial with a json_export_incomplete warning.");
+	Check(
+	    shieldsResults.GetAt(0).GetObject().GetNamedString(L"status") == L"completed" &&
+	        shieldsReport.GetNamedObject(L"run").GetNamedString(L"status") == L"partial",
+	    "A Shields Up change must make only its own result and the run partial.");
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules", L"-verbose"});
+	Check(!ProfileJsonReportHasIncompleteCommand(), "-analyze-rules reported as incomplete.");
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+
+	// an error that stopped a store's analysis
+	const std::wstring interruptedMessage =
+	    L"An error stopped the analysis of this store; the sections written before it are kept.";
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules"});
+	WriteFirewallRuleStatusJson(statusStore, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteApplicationAnalysisJson(statusStore, ApplicationAnalysis{}, L"analyze_rules");
+	WriteStoreInterruptedJson(statusStore, L"analyze_rules", L"analyze_packages", E_OUTOFMEMORY, "bad allocation");
+	const auto interruptedLocal = FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_LOCAL);
+	const auto interruptedLocalDiagnostics = interruptedLocal.GetNamedArray(L"diagnostics");
+	Check(
+	    interruptedLocal.GetNamedString(L"status") == L"partial" && interruptedLocal.HasKey(L"applicationAnalysis") &&
+	        interruptedLocalDiagnostics.Size() == 1,
+	    "An interrupted store must be partial and keep the sections written before the error.");
+	const auto storeInterruption = interruptedLocalDiagnostics.GetAt(0).GetObject();
+	Check(
+	    storeInterruption.GetNamedString(L"code") == L"store_analysis_interrupted" &&
+	        storeInterruption.GetNamedString(L"severity") == L"error" &&
+	        storeInterruption.GetNamedString(L"operation") == L"analyze_packages" &&
+	        storeInterruption.GetNamedObject(L"subject").GetNamedString(L"property") == L"store" &&
+	        storeInterruption.GetNamedObject(L"subject").GetNamedString(L"store") == L"local" &&
+	        storeInterruption.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x8007000E" &&
+	        storeInterruption.GetNamedString(L"message") == interruptedMessage + L" bad allocation",
+	    "The store_analysis_interrupted diagnostic is incorrect.");
+	WriteStoreInterruptedJson(gpoStatusStore, L"analyze_rules", L"load_firewall_rules", E_FAIL, nullptr);
+	const auto interruptedGpo = FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_GPO);
+	Check(
+	    interruptedGpo && interruptedGpo.GetNamedString(L"store") == L"group_policy" &&
+	        interruptedGpo.GetNamedString(L"displayName") == L"Group Policy" &&
+	        interruptedGpo.GetNamedString(L"status") == L"failed" &&
+	        interruptedGpo.GetNamedArray(L"diagnostics").Size() == 1 &&
+	        interruptedGpo.GetNamedArray(L"diagnostics").GetAt(0).GetObject().GetNamedString(L"message") ==
+	            interruptedMessage,
+	    "A store interrupted before its record was written must get a failed record.");
+	WriteStoreInterruptedJson(gpoStatusStore, L"analyze_rules", L"load_firewall_rules", E_FAIL, nullptr);
+	Check(
+	    interruptedGpo.GetNamedString(L"status") == L"failed" &&
+	        interruptedGpo.GetNamedArray(L"diagnostics").Size() == 2 &&
+	        ReturnJsonResultObject(L"analyze_rules").GetNamedObject(L"data").GetNamedArray(L"stores").Size() == 2,
+	    "A second interruption must add a diagnostic to the same failed record.");
+	WriteFirewallRuleStatusJson(absentRsop, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteStoreInterruptedJson(absentRsop, L"analyze_rules", L"analyze_rules", E_FAIL, nullptr);
+	const auto interruptedRsop = FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_GP_RSOP);
+	Check(
+	    interruptedRsop.GetNamedString(L"status") == L"not_present" &&
+	        interruptedRsop.GetNamedArray(L"diagnostics").Size() == 1,
+	    "A store record without diagnostics must get a diagnostics array.");
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+	const auto interruptedReport = readReport();
+	Check(
+	    interruptedReport.GetNamedArray(L"results").GetAt(0).GetObject().GetNamedString(L"status") == L"partial" &&
+	        interruptedReport.GetNamedObject(L"run").GetNamedString(L"status") == L"partial",
+	    "A report with an interrupted store must be partial.");
+	WriteStoreInterruptedJson(statusStore, L"analyze_rules", L"analyze_packages", E_FAIL, nullptr);
+	Check(!ProfileJsonReportEnabled(), "Writing an interruption after the report finished enabled the report.");
+
+	// the package identity is added to every rule entry
+	const RulePackageIdentity fromRuleIdentity{
+	    .packageId = L"S-1-15-2-1",
+	    .packageIdSource = PackageIdSource::Rule,
+	    .packageFamilyName = L"Contoso.App_8wekyb3d8bbwe"};
+	const RulePackageIdentity derivedIdentity{
+	    .packageId = L"S-1-15-2-2",
+	    .packageIdSource = PackageIdSource::DerivedFromFamilyName,
+	    .packageFamilyName = L"Derived.App_x"};
+	const RulePackageIdentity notDerivedIdentity{
+	    .packageId = std::nullopt,
+	    .packageIdSource = PackageIdSource::DerivedFromFamilyName,
+	    .packageFamilyName = L"Not.Derived_x",
+	    .packageIdError = E_INVALIDARG};
+	const RulePackageIdentity idOnlyIdentity{.packageId = L"S-1-15-2-3", .packageFamilyName = std::nullopt};
+	const auto optionalStringIs = [&](const JsonObject& entry, PCWSTR key, const std::optional<std::wstring>& value)
+	{
+		return value.has_value() ? entry.HasKey(key) && std::wstring_view(entry.GetNamedString(key)) == *value
+		                         : isNull(entry, key);
+	};
+	const auto hasIdentity = [&](const JsonObject& entry, const std::optional<RulePackageIdentity>& identity)
+	{
+		if (!identity.has_value())
+		{
+			return !entry.HasKey(L"packageId") && !entry.HasKey(L"packageIdSource") &&
+			       !entry.HasKey(L"packageIdError") && !entry.HasKey(L"packageFamilyName");
+		}
+		return optionalStringIs(entry, L"packageId", identity->packageId) &&
+		       entry.GetNamedString(L"packageIdSource") ==
+		           (identity->packageIdSource == PackageIdSource::Rule ? L"rule" : L"derived_from_family_name") &&
+		       (FAILED(identity->packageIdError) ? entry.GetNamedObject(L"packageIdError").GetNamedNumber(L"code") ==
+		                                               static_cast<uint32_t>(identity->packageIdError)
+		                                         : !entry.HasKey(L"packageIdError")) &&
+		       optionalStringIs(entry, L"packageFamilyName", identity->packageFamilyName);
+	};
+
+	FW_RULE identityFwRules[3]{};
+	wchar_t identityRuleIds[3][8]{L"{id-0}", L"{id-1}", L"{id-2}"};
+	std::vector<NormalizedFirewallRule> identityRules;
+	for (size_t index = 0; index < ARRAYSIZE(identityFwRules); ++index)
+	{
+		identityFwRules[index].wszRuleId = identityRuleIds[index];
+		identityRules.emplace_back(&identityFwRules[index], FW_BINARY_VERSION_33);
+	}
+	identityRules[0].package_identity = derivedIdentity;
+	identityRules[1].package_identity = fromRuleIdentity;
+	RuleStatusCategories identityCategories;
+	identityCategories.partiallyIgnored.rules = {&identityRules[0], &identityRules[2]};
+	FirewallPolicyObjects identityStore;
+	identityStore.store_type = FW_STORE_TYPE_LOCAL;
+	identityStore.store_type_string = "Local";
+	identityStore.load_result = S_OK;
+
+	ApplicationAnalysis identityApplications;
+	identityApplications.applicationRuleCount = 4;
+	identityApplications.serviceProfileVariableRules.push_back(
+	    {.ruleId = L"service-rule",
+	     .application = L"%APPDATA%\\app.exe",
+	     .reason = ApplicationFindingReason::ServiceProfileEnvironmentVariable,
+	     .packageIdentity = fromRuleIdentity});
+	identityApplications.uncheckedApplicationRules.push_back(
+	    {.ruleId = L"unchecked-rule",
+	     .application = L"%TEST%\\app.exe",
+	     .reason = ApplicationFindingReason::EnvironmentExpansionFailed,
+	     .error = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY),
+	     .packageIdentity = derivedIdentity});
+	identityApplications.missingApplicationRules.push_back(
+	    {.ruleId = L"missing-rule",
+	     .name = L"Missing rule",
+	     .application = L"C:\\missing\\app.exe",
+	     .reason = ApplicationFindingReason::FileLookupFailed,
+	     .error = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),
+	     .packageIdentity = notDerivedIdentity});
+	identityApplications.missingApplicationRules.push_back(
+	    {.ruleId = L"no-package-rule",
+	     .application = L"C:\\missing\\other.exe",
+	     .reason = ApplicationFindingReason::FileLookupFailed,
+	     .error = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)});
+	PackageAnalysis identityPackages;
+	identityPackages.packageIdRuleCount = 1;
+	identityPackages.packageFamilyNameRuleCount = 1;
+	identityPackages.missingPackageRules.push_back(
+	    {.ruleId = L"id-rule",
+	     .reference = PackageReference::PackageId,
+	     .package = L"S-1-15-2-1",
+	     .packageIdentity = fromRuleIdentity});
+	identityPackages.missingPackageRules.push_back(
+	    {.ruleId = L"family-rule",
+	     .reference = PackageReference::PackageFamilyName,
+	     .package = L"Derived.App_x",
+	     .packageIdentity = derivedIdentity});
+	UserOwnerAnalysis identityOwners;
+	identityOwners.localProfileCheck = LocalProfileCheck::Completed;
+	identityOwners.localUserOwnerRuleCount = 2;
+	identityOwners.unresolvedSidRules.push_back(
+	    {.ruleId = L"bad-sid-rule",
+	     .localUserOwnerSid = L"not-a-sid",
+	     .reason = UserOwnerResolveFailure::InvalidSidString,
+	     .error = HRESULT_FROM_WIN32(ERROR_INVALID_SID),
+	     .packageIdentity = notDerivedIdentity});
+	identityOwners.missingLocalProfileRules.push_back(
+	    {.ruleId = L"no-profile-rule",
+	     .localUserOwnerSid = L"S-1-5-21-1-2-3-1002",
+	     .domain = L"CONTOSO",
+	     .user = L"alice",
+	     .packageIdentity = idOnlyIdentity});
+	DuplicateAnalysis identityDuplicates;
+	identityDuplicates.duplicateSets.push_back(
+	    {.duplicate_rule_begin = identityRules.begin(), .duplicate_rule_end = identityRules.end(), .nameCount = 1});
+	identityDuplicates.duplicateRuleCount = 3;
+	auto identityRecord = [](PCWSTR ruleId, const std::optional<RulePackageIdentity>& identity)
+	{
+		return RuleDeletionRecord{
+		    .ruleId = ruleId,
+		    .application = L"C:\\missing\\app.exe",
+		    .localUserOwnerSid = L"not-a-sid",
+		    .packageIdentity = identity,
+		    .outcome = DeletionOutcome::Succeeded};
+	};
+	StoreCleanup identityCleanup;
+	identityCleanup.actions.push_back(
+	    {.reason = CleanupReason::MissingApplication,
+	     .decision = CleanupDecision::Yes,
+	     .approvalSource = ApprovalSource::Prompt,
+	     .rules = {identityRecord(L"{c1}", derivedIdentity)}});
+	identityCleanup.actions.push_back(
+	    {.reason = CleanupReason::UnresolvedUserOwner,
+	     .decision = CleanupDecision::Yes,
+	     .approvalSource = ApprovalSource::Prompt,
+	     .rules = {identityRecord(L"{c2}", notDerivedIdentity)}});
+	identityCleanup.actions.push_back(
+	    {.reason = CleanupReason::Duplicate,
+	     .decision = CleanupDecision::No,
+	     .rules = {identityRecord(L"{d1}", fromRuleIdentity), identityRecord(L"{d2}", std::nullopt)}});
+
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules", L"-verbose"});
+	WriteFirewallRuleStatusJson(identityStore, 0, identityCategories, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteApplicationAnalysisJson(identityStore, identityApplications, L"analyze_rules");
+	WritePackageAnalysisJson(identityStore, identityPackages, L"analyze_rules");
+	WriteUserOwnerAnalysisJson(identityStore, identityOwners, L"analyze_rules");
+	WriteDuplicateAnalysisJson(identityStore, identityDuplicates, L"analyze_rules");
+	WriteCleanupJson(identityStore, identityCleanup, L"analyze_rules", S_OK);
+	const auto identityStoreRecord = FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_LOCAL);
+
+	const auto statusRules = identityStoreRecord.GetNamedObject(L"ruleDetails")
+	                             .GetNamedArray(L"categories")
+	                             .GetAt(0)
+	                             .GetObject()
+	                             .GetNamedArray(L"rules");
+	Check(
+	    statusRules.Size() == 2 && hasIdentity(statusRules.GetAt(0).GetObject(), derivedIdentity) &&
+	        hasIdentity(statusRules.GetAt(1).GetObject(), std::nullopt),
+	    "Rule-status entries do not have their package identity.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(statusRules.GetAt(0).GetObject()),
+	        {L"ruleId", L"name", L"packageId", L"packageIdSource", L"packageFamilyName", L"status", L"statusHex"}),
+	    "Rule-status entry package fields out of order.");
+
+	const auto identityApplicationSection = identityStoreRecord.GetNamedObject(L"applicationAnalysis");
+	const auto identityMissingApplications = identityApplicationSection.GetNamedArray(L"missingApplicationRules");
+	Check(
+	    hasIdentity(
+	        identityApplicationSection.GetNamedArray(L"serviceProfileVariableRules").GetAt(0).GetObject(),
+	        fromRuleIdentity) &&
+	        hasIdentity(
+	            identityApplicationSection.GetNamedArray(L"uncheckedApplicationRules").GetAt(0).GetObject(),
+	            derivedIdentity) &&
+	        hasIdentity(identityMissingApplications.GetAt(0).GetObject(), notDerivedIdentity) &&
+	        hasIdentity(identityMissingApplications.GetAt(1).GetObject(), std::nullopt),
+	    "Application entries do not have their package identity.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(identityMissingApplications.GetAt(0).GetObject()),
+	        {L"ruleId",
+	         L"name",
+	         L"application",
+	         L"packageId",
+	         L"packageIdSource",
+	         L"packageIdError",
+	         L"packageFamilyName",
+	         L"reason",
+	         L"error"}),
+	    "Application entry package fields out of order.");
+
+	const auto identityPackageSection = identityStoreRecord.GetNamedObject(L"packageAnalysis");
+	Check(
+	    hasIdentity(
+	        identityPackageSection.GetNamedArray(L"missingPackageIdRules").GetAt(0).GetObject(),
+	        fromRuleIdentity) &&
+	        hasIdentity(
+	            identityPackageSection.GetNamedArray(L"missingPackageFamilyNameRules").GetAt(0).GetObject(),
+	            derivedIdentity),
+	    "Package entries do not have their package identity.");
+
+	const auto identityOwnerSection = identityStoreRecord.GetNamedObject(L"userOwnerAnalysis");
+	const auto identityUnresolved = identityOwnerSection.GetNamedArray(L"unresolvedSidRules").GetAt(0).GetObject();
+	const auto identityNoProfile = identityOwnerSection.GetNamedArray(L"missingLocalProfileRules").GetAt(0).GetObject();
+	Check(
+	    hasIdentity(identityUnresolved, notDerivedIdentity) && hasIdentity(identityNoProfile, idOnlyIdentity),
+	    "SID-owner entries do not have their package identity.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(identityUnresolved),
+	        {L"ruleId",
+	         L"name",
+	         L"packageId",
+	         L"packageIdSource",
+	         L"packageIdError",
+	         L"packageFamilyName",
+	         L"localUserOwnerSid",
+	         L"reason",
+	         L"error"}) &&
+	        keysInOrder(
+	            PrettifyJson(identityNoProfile),
+	            {L"packageId", L"packageIdSource", L"packageFamilyName", L"localUserOwnerSid", L"domain", L"user"}),
+	    "SID-owner entry package fields out of order.");
+
+	const auto identitySetRules = identityStoreRecord.GetNamedObject(L"duplicateAnalysis")
+	                                  .GetNamedArray(L"duplicateSets")
+	                                  .GetAt(0)
+	                                  .GetObject()
+	                                  .GetNamedArray(L"rules");
+	Check(
+	    identitySetRules.Size() == 3 && hasIdentity(identitySetRules.GetAt(0).GetObject(), derivedIdentity) &&
+	        hasIdentity(identitySetRules.GetAt(1).GetObject(), fromRuleIdentity) &&
+	        hasIdentity(identitySetRules.GetAt(2).GetObject(), std::nullopt),
+	    "Duplicate set entries do not have their package identity.");
+
+	const auto identityActions = identityStoreRecord.GetNamedObject(L"cleanup").GetNamedArray(L"actions");
+	const auto identityOwnerAction = identityActions.GetAt(1).GetObject();
+	const auto identityDuplicateRules = identityActions.GetAt(2).GetObject().GetNamedArray(L"rules");
+	Check(
+	    hasIdentity(identityActions.GetAt(0).GetObject(), derivedIdentity) &&
+	        hasIdentity(identityOwnerAction, notDerivedIdentity) &&
+	        hasIdentity(identityDuplicateRules.GetAt(0).GetObject(), fromRuleIdentity) &&
+	        hasIdentity(identityDuplicateRules.GetAt(1).GetObject(), std::nullopt),
+	    "Cleanup actions do not have their rules' package identity.");
+	Check(
+	    keysInOrder(
+	        PrettifyJson(identityOwnerAction),
+	        {L"action",
+	         L"reason",
+	         L"ruleId",
+	         L"name",
+	         L"packageId",
+	         L"packageIdSource",
+	         L"packageIdError",
+	         L"packageFamilyName",
+	         L"localUserOwnerSid",
+	         L"decision",
+	         L"outcome",
+	         L"error"}),
+	    "Cleanup action package fields out of order.");
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
+
+	// a rule whose application path could not be expanded is listed even without -verbose, and not counted
+	// as missing
+	InitializeProfileJsonReport(outputPath, {L"-analyze-rules"});
+	WriteFirewallRuleStatusJson(statusStore, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+	WriteApplicationAnalysisJson(statusStore, uncheckedApplications, L"analyze_rules");
+	const auto uncheckedSection =
+	    FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_LOCAL).GetNamedObject(L"applicationAnalysis");
+	const auto uncheckedRules = uncheckedSection.GetNamedArray(L"uncheckedApplicationRules");
+	Check(
+	    uncheckedSection.GetNamedString(L"status") == L"partial" &&
+	        uncheckedSection.GetNamedNumber(L"uncheckedApplicationRuleCount") == 1 &&
+	        uncheckedSection.GetNamedNumber(L"missingApplicationRuleCount") == 0 &&
+	        !uncheckedSection.HasKey(L"missingApplicationRules") && uncheckedRules.Size() == 1,
+	    "An unchecked application must make the section partial and be listed without -verbose.");
+	const auto uncheckedEntry = uncheckedRules.GetAt(0).GetObject();
+	Check(
+	    uncheckedEntry.GetNamedString(L"ruleId") == L"unchecked-rule" &&
+	        uncheckedEntry.GetNamedString(L"reason") == L"environment_expansion_failed" &&
+	        uncheckedEntry.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070008",
+	    "The unchecked application entry is incorrect.");
+
+	// SID failures: a family-name failure is an error that makes the section partial; a full-name failure
+	// is informational
+	for (const auto& sidFailure : {familySidFailure, fullSidFailure})
+	{
+		const bool familyName = sidFailure.kind == PackageNameKind::FamilyName;
+		PackageAnalysis withSidFailure;
+		withSidFailure.sidFailures = {sidFailure};
+		WriteFirewallRuleStatusJson(statusStore, 0, {}, L"analyze_rules", RuleStatusAnalysis::Performed);
+		WritePackageAnalysisJson(statusStore, withSidFailure, L"analyze_rules");
+		const auto sidSection =
+		    FindJsonStoreObject(L"analyze_rules", FW_STORE_TYPE_LOCAL).GetNamedObject(L"packageAnalysis");
+		const auto sidDiagnostics = sidSection.GetNamedArray(L"diagnostics");
+		Check(
+		    sidSection.GetNamedString(L"status") == (familyName ? L"partial" : L"completed") &&
+		        sidDiagnostics.Size() == 1 &&
+		        keysInOrder(
+		            PrettifyJson(sidSection),
+		            {L"status", L"missingPackageFamilyNameRuleCount", L"diagnostics"}),
+		    "The package section status for a SID failure is incorrect.");
+		const auto sidDiagnostic = sidDiagnostics.GetAt(0).GetObject();
+		const auto sidSubject = sidDiagnostic.GetNamedObject(L"subject");
+		Check(
+		    sidDiagnostic.GetNamedString(L"severity") == (familyName ? L"error" : L"info") &&
+		        sidDiagnostic.GetNamedString(L"code") == L"app_container_sid_not_derived" &&
+		        sidDiagnostic.GetNamedString(L"operation") == L"derive_app_container_sid" &&
+		        sidDiagnostic.GetNamedObject(L"error").GetNamedString(L"hex") == L"0x80070057" &&
+		        sidSubject.GetNamedString(L"property") == L"installedPackages" &&
+		        sidSubject.GetNamedString(familyName ? L"packageFamilyName" : L"packageFullName") ==
+		            sidFailure.packageName &&
+		        !sidSubject.HasKey(familyName ? L"packageFullName" : L"packageFamilyName"),
+		    "The app_container_sid_not_derived diagnostic is incorrect.");
+	}
+	FinishProfileJsonReport(0, ReportRunOutcome::RanToEnd);
 
 	std::printf(
 	    "Profile, rule-status, application-analysis, package-analysis, SID-owner-analysis, filter-ranking, "
-	    "duplicate-analysis, and -clean-rules JSON tests passed.\n");
+	    "duplicate-analysis, -clean-rules, package-identity, and result-status JSON tests passed.\n");
 	return 0;
 }
 catch (const std::exception& ex)

@@ -19,6 +19,9 @@
 #include <io.h>
 #include <wil/network.h>
 #include <Windows.h>
+#include <sddl.h>
+#include <userenv.h>
+#include <wil/resource.h>
 
 #include "..\NormalizedFirewallRule.h"
 #include "..\ApplicationAnalysis.h"
@@ -738,7 +741,7 @@ TestPackageAnalysisWithNoPackageRules()
 {
 	size_t lookupCount = 0;
 	std::vector<NormalizedFirewallRule> none;
-	const auto empty = AnalyzePackageRules(none, S_OK, InstalledPackageLookups(lookupCount));
+	const auto empty = AnalyzePackageRules(none, S_OK, InstalledPackageLookups(lookupCount), {});
 	Check(empty.packageIdRuleCount == 0 && empty.packageFamilyNameRuleCount == 0, "no rules have no package rules");
 	Check(
 	    PrintPackageAnalysis(empty, AnalysisOutput::Summary) == PackageCounts(0, 0, 0, 0),
@@ -751,7 +754,7 @@ TestPackageAnalysisWithNoPackageRules()
 	rule.wszPackageId = g_missing_package_id;
 	std::vector<NormalizedFirewallRule> rules;
 	rules.emplace_back(&rule, FW_BINARY_VERSION_33);
-	const auto failed = AnalyzePackageRules(rules, E_ACCESSDENIED, InstalledPackageLookups(lookupCount));
+	const auto failed = AnalyzePackageRules(rules, E_ACCESSDENIED, InstalledPackageLookups(lookupCount), {});
 	Check(lookupCount == 0, "no package is looked up when the installed packages could not be loaded");
 	Check(
 	    failed.packageIdRuleCount == 0 && failed.missingPackageRules.empty() && !rules[0].missing_package_id &&
@@ -796,7 +799,7 @@ TestPackageAnalysisWithEveryKindOfPackageRule()
 	}
 
 	size_t lookupCount = 0;
-	const auto analysis = AnalyzePackageRules(rules, S_OK, InstalledPackageLookups(lookupCount));
+	const auto analysis = AnalyzePackageRules(rules, S_OK, InstalledPackageLookups(lookupCount), {});
 	Check(analysis.packageIdRuleCount == 2, "only non-empty package IDs are counted");
 	Check(analysis.packageFamilyNameRuleCount == 3, "the 2.27 rule's package family name is not counted");
 	Check(analysis.MissingCount(PackageReference::PackageId) == 1, "one package ID is missing");
@@ -2824,6 +2827,303 @@ TestCleanupRecordsSurviveReorderedRules()
 		}
 	}
 }
+
+// a family name longer than the 64 characters an app-container name can have
+wchar_t g_long_package_family_name[] =
+    L"Contoso.ThisPackageFamilyNameIsLongerThanAnAppContainerNameCanBe_8wekyb3d8bbwe";
+wchar_t g_package_identity_rule_ids[2][20]{L"{IDENTITY-RULE-0}", L"{IDENTITY-RULE-1}"};
+wchar_t g_unchecked_application[] = L"C:\\FwDiagnoseTest-unchecked\\app.exe";
+wchar_t g_unchecked_rule_name[] = L"Unchecked rule";
+
+//
+// ExpectedPackageId
+//
+// Derives the app-container SID string for a package family name with the Windows API, for comparison with
+// the package ID a rule derives.
+//
+// Parameters:
+//   family_name [in]  - the package family name
+//   error       [out] - S_OK, or the failure deriving or converting the SID
+//
+// Returns:
+//   The SID string; empty when error is a failure.
+//
+std::wstring
+ExpectedPackageId(PCWSTR family_name, HRESULT& error)
+{
+	wil::unique_sid sid;
+	error = DeriveAppContainerSidFromAppContainerName(family_name, sid.addressof());
+	if (FAILED(error))
+	{
+		return {};
+	}
+	wil::unique_hlocal_string text;
+	if (!ConvertSidToStringSidW(sid.get(), text.addressof()))
+	{
+		error = HRESULT_FROM_WIN32(GetLastError());
+		return {};
+	}
+	return text.get();
+}
+
+bool
+SamePackageIdentity(const std::optional<RulePackageIdentity>& left, const std::optional<RulePackageIdentity>& right)
+{
+	if (!left.has_value() || !right.has_value())
+	{
+		return left.has_value() == right.has_value();
+	}
+	return left->packageId == right->packageId && left->packageIdSource == right->packageIdSource &&
+	       left->packageFamilyName == right->packageFamilyName && left->packageIdError == right->packageIdError;
+}
+
+void
+TestRulePackageIdentity()
+{
+	HRESULT expected_error{};
+	const auto expected_id = ExpectedPackageId(g_package_family_name, expected_error);
+	Check(SUCCEEDED(expected_error) && expected_id.starts_with(L"S-1-15-2-"), "the test derives an app-container SID");
+
+	// MakeRule sets only a package family name
+	const auto family_only = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+	const NormalizedFirewallRule derived{&family_only, FW_BINARY_VERSION_33};
+	Check(
+	    derived.package_identity.has_value() && derived.package_identity->packageId == expected_id &&
+	        derived.package_identity->packageIdSource == PackageIdSource::DerivedFromFamilyName &&
+	        derived.package_identity->packageFamilyName == g_package_family_name &&
+	        derived.package_identity->packageIdError == S_OK,
+	    "a rule with only a package family name derives its package ID from it");
+	Check(
+	    SamePackageIdentity(
+	        NormalizedFirewallRule{&family_only, FW_BINARY_VERSION_33}.package_identity,
+	        derived.package_identity),
+	    "the derived package ID is the same every time");
+
+	auto empty_id = family_only;
+	empty_id.wszPackageId = g_empty_string;
+	Check(
+	    SamePackageIdentity(
+	        NormalizedFirewallRule{&empty_id, FW_BINARY_VERSION_33}.package_identity,
+	        derived.package_identity),
+	    "an empty package ID is derived from the family name");
+
+	auto both = family_only;
+	both.wszPackageId = g_package_id;
+	const NormalizedFirewallRule from_rule{&both, FW_BINARY_VERSION_33};
+	Check(
+	    from_rule.package_identity.has_value() && from_rule.package_identity->packageId == g_package_id &&
+	        from_rule.package_identity->packageIdSource == PackageIdSource::Rule &&
+	        from_rule.package_identity->packageFamilyName == g_package_family_name &&
+	        from_rule.package_identity->packageIdError == S_OK,
+	    "a rule's own package ID is used rather than derived");
+
+	auto id_only = both;
+	id_only.wszPackageFamilyName = nullptr;
+	const NormalizedFirewallRule without_family{&id_only, FW_BINARY_VERSION_33};
+	Check(
+	    without_family.package_identity.has_value() && without_family.package_identity->packageId == g_package_id &&
+	        without_family.package_identity->packageIdSource == PackageIdSource::Rule &&
+	        !without_family.package_identity->packageFamilyName.has_value(),
+	    "a rule with only a package ID has no package family name");
+
+	auto invalid = family_only;
+	invalid.wszPackageFamilyName = g_long_package_family_name;
+	ExpectedPackageId(g_long_package_family_name, expected_error);
+	Check(FAILED(expected_error), "an app-container SID cannot be derived from a name longer than 64 characters");
+	const NormalizedFirewallRule not_derived{&invalid, FW_BINARY_VERSION_33};
+	Check(
+	    not_derived.package_identity.has_value() && !not_derived.package_identity->packageId.has_value() &&
+	        not_derived.package_identity->packageIdSource == PackageIdSource::DerivedFromFamilyName &&
+	        not_derived.package_identity->packageFamilyName == g_long_package_family_name &&
+	        not_derived.package_identity->packageIdError == expected_error,
+	    "a package ID that cannot be derived is absent and keeps the failure");
+
+	auto no_package = family_only;
+	no_package.wszPackageFamilyName = nullptr;
+	Check(
+	    !NormalizedFirewallRule{&no_package, FW_BINARY_VERSION_33}.package_identity.has_value(),
+	    "a rule without a package has no package identity");
+	Check(
+	    !NormalizedFirewallRule{&family_only, FW_BINARY_VERSION_31}.package_identity.has_value(),
+	    "a package family name the requested schema version cannot carry is ignored");
+}
+
+//
+// TestFindingsKeepPackageIdentity
+//
+// The findings and deletion records copy the rule's package identity, so each still describes its own rule
+// after the store's rules are reordered.
+//
+void
+TestFindingsKeepPackageIdentity()
+{
+	std::vector<FW_RULE> fw_rules(2, MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP));
+	for (size_t index = 0; index < fw_rules.size(); ++index)
+	{
+		fw_rules[index].wszRuleId = g_package_identity_rule_ids[index];
+		fw_rules[index].wszLocalApplication = g_missing_application;
+	}
+	// fw_rules[0] has a missing package family name, so its package ID is derived, and an owner that is not a
+	// SID string; fw_rules[1] has a missing package ID and an owner without a local profile
+	fw_rules[0].wszPackageFamilyName = g_missing_package_family_name;
+	fw_rules[0].wszLocalUserOwner = g_invalid_sid;
+	fw_rules[1].wszPackageId = g_missing_package_id;
+	fw_rules[1].wszPackageFamilyName = nullptr;
+	auto rules = NormalizeRules(fw_rules);
+	// set after normalization so the test does not depend on an account lookup
+	fw_rules[1].wszLocalUserOwner = g_no_profile_sid;
+	rules[1].successfully_resolved_user_name = true;
+	rules[1].local_user_domain_name = L"CONTOSO";
+	rules[1].local_user_owner_name = L"alice";
+	const auto identity0 = rules[0].package_identity;
+	const auto identity1 = rules[1].package_identity;
+	Check(
+	    identity0.has_value() && identity0->packageIdSource == PackageIdSource::DerivedFromFamilyName &&
+	        identity1.has_value() && identity1->packageIdSource == PackageIdSource::Rule,
+	    "the rules have different package identities");
+
+	size_t lookupCount = 0;
+	const auto applications = AnalyzeApplicationRules(rules, ApplicationFileCheck::Completed);
+	const auto packages = AnalyzePackageRules(rules, S_OK, InstalledPackageLookups(lookupCount), {});
+	const auto owners = AnalyzeUserOwnerRules(rules, {.check = LocalProfileCheck::Completed});
+	const auto record0 = ReturnRuleDeletionRecord(rules[0]);
+	const auto record1 = ReturnRuleDeletionRecord(rules[1]);
+	std::ranges::reverse(rules);
+
+	if (!RunningUnderWow64())
+	{
+		Check(
+		    applications.missingApplicationRules.size() == 2 &&
+		        SamePackageIdentity(applications.missingApplicationRules[0].packageIdentity, identity0) &&
+		        SamePackageIdentity(applications.missingApplicationRules[1].packageIdentity, identity1),
+		    "the application findings keep their rules' package identities");
+	}
+	Check(
+	    packages.missingPackageRules.size() == 2 &&
+	        packages.missingPackageRules[0].reference == PackageReference::PackageFamilyName &&
+	        SamePackageIdentity(packages.missingPackageRules[0].packageIdentity, identity0) &&
+	        packages.missingPackageRules[1].reference == PackageReference::PackageId &&
+	        SamePackageIdentity(packages.missingPackageRules[1].packageIdentity, identity1),
+	    "the package findings keep their rules' package identities");
+	Check(
+	    owners.unresolvedSidRules.size() == 1 &&
+	        SamePackageIdentity(owners.unresolvedSidRules[0].packageIdentity, identity0) &&
+	        owners.missingLocalProfileRules.size() == 1 &&
+	        SamePackageIdentity(owners.missingLocalProfileRules[0].packageIdentity, identity1),
+	    "the SID-owner findings keep their rules' package identities");
+	Check(
+	    SamePackageIdentity(record0.packageIdentity, identity0) &&
+	        SamePackageIdentity(record1.packageIdentity, identity1),
+	    "the deletion records keep their rules' package identities");
+}
+
+//
+// TestApplicationAnalysisWithUncheckedApplication
+//
+// ExpandEnvironmentStringsW cannot be made to fail here, so the rule's fields are set the way
+// CheckIfLocalApplicationExists sets them when the expansion fails: the file is not checked.
+//
+void
+TestApplicationAnalysisWithUncheckedApplication()
+{
+	auto fw_rule = MakeRule(FW_BINARY_VERSION_33, IPPROTO_TCP);
+	fw_rule.wszLocalApplication = g_unchecked_application;
+	fw_rule.wszName = g_unchecked_rule_name;
+	std::vector<NormalizedFirewallRule> rules;
+	rules.emplace_back(&fw_rule, FW_BINARY_VERSION_33);
+	rules[0].local_application_exists.reset();
+	rules[0].local_application_lookup_error = S_OK;
+	rules[0].local_application_expand_error = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
+	rules[0].local_application_failure_string = "Failed to expand environment variables (0x80070008)";
+
+	const auto analysis = AnalyzeApplicationRules(rules, ApplicationFileCheck::Completed);
+	Check(analysis.applicationRuleCount == 1, "an unchecked application rule is still an application rule");
+	Check(analysis.missingApplicationRules.empty(), "an unchecked application is not counted as missing");
+	if (analysis.uncheckedApplicationRules.size() == 1)
+	{
+		const auto& unchecked = analysis.uncheckedApplicationRules[0];
+		Check(
+		    unchecked.reason == ApplicationFindingReason::EnvironmentExpansionFailed &&
+		        unchecked.error == HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY),
+		    "an unchecked application keeps the expansion failure, not the lookup result");
+	}
+	else
+	{
+		Check(false, "the rule whose path could not be expanded is unchecked");
+	}
+
+	const std::wstring counts = std::wstring{ApplicationSummaryHeader} +
+	                            L"   - count of rules with an application exe: 1\n" +
+	                            L"   - count of rules with an application exe referencing non-existing file: 0\n";
+	const std::wstring unchecked =
+	    L"   - count of rules with an application exe that could not be checked: 1\n"
+	    L"     Application-exe:  'C:\\FwDiagnoseTest-unchecked\\app.exe'  (Failed to expand environment variables "
+	    L"(0x80070008)) [Rule Name:  unchecked rule]\n";
+	Check(
+	    PrintApplicationAnalysis(analysis, AnalysisOutput::Summary) == counts + unchecked,
+	    "the summary prints the unchecked rules even when nothing is missing");
+	Check(
+	    PrintApplicationAnalysis(analysis, AnalysisOutput::Verbose) == counts + PerUserCountLine + L"0\n" + unchecked,
+	    "verbose output prints the unchecked rules");
+}
+
+void
+TestPackageAnalysisWithSidFailures()
+{
+	const AppContainerSidFailure familyFailure{L"Bad.Family_x", PackageNameKind::FamilyName, E_INVALIDARG};
+	const AppContainerSidFailure fullFailure{
+	    L"Bad.Full_1.0.0.0_x64__x",
+	    PackageNameKind::FullName,
+	    HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER)};
+	std::vector<NormalizedFirewallRule> none;
+	size_t lookupCount = 0;
+
+	const auto notLoaded =
+	    AnalyzePackageRules(none, E_ACCESSDENIED, InstalledPackageLookups(lookupCount), {familyFailure, fullFailure});
+	Check(notLoaded.sidFailures.empty(), "the SID failures are dropped when the installed packages were not loaded");
+	const auto loaded =
+	    AnalyzePackageRules(none, S_OK, InstalledPackageLookups(lookupCount), {fullFailure, familyFailure});
+	Check(
+	    loaded.sidFailures.size() == 2 && loaded.sidFailures[0].packageName == fullFailure.packageName &&
+	        loaded.sidFailures[0].kind == PackageNameKind::FullName &&
+	        loaded.sidFailures[0].error == fullFailure.error &&
+	        loaded.sidFailures[1].packageName == familyFailure.packageName &&
+	        loaded.sidFailures[1].kind == PackageNameKind::FamilyName &&
+	        loaded.sidFailures[1].error == familyFailure.error,
+	    "the SID failures are kept in order when the installed packages were loaded");
+
+	const auto counts = PackageCounts(0, 0, 0, 0);
+	const std::wstring familyLine =
+	    L"   - WARNING: count of installed packages whose app-container SID could not be derived from the family "
+	    L"name (rules naming them by package ID are reported as referencing a non-existing package): 1\n";
+	const std::wstring fullLine =
+	    L"   - count of installed packages whose app-container SID could not be derived from the full name (rules "
+	    L"use the family name, so this does not affect the analysis): 1\n";
+
+	const auto familyOnly = AnalyzePackageRules(none, S_OK, InstalledPackageLookups(lookupCount), {familyFailure});
+	Check(
+	    PrintPackageAnalysis(familyOnly, AnalysisOutput::Summary) == counts + familyLine,
+	    "the summary warns about a family-name failure without listing the packages");
+	Check(
+	    PrintPackageAnalysis(familyOnly, AnalysisOutput::Verbose) ==
+	        counts + familyLine + L"     'Bad.Family_x'  (0x80070057)\n",
+	    "verbose output lists the packages whose family-name SID could not be derived");
+
+	const auto fullOnly = AnalyzePackageRules(none, S_OK, InstalledPackageLookups(lookupCount), {fullFailure});
+	Check(
+	    PrintPackageAnalysis(fullOnly, AnalysisOutput::Summary) == counts,
+	    "the summary does not mention a full-name failure");
+	Check(
+	    PrintPackageAnalysis(fullOnly, AnalysisOutput::Verbose) ==
+	        counts + fullLine + L"     'Bad.Full_1.0.0.0_x64__x'  (0x80070057)\n",
+	    "verbose output lists a full-name failure without a warning");
+
+	Check(
+	    PrintPackageAnalysis(loaded, AnalysisOutput::Verbose) == counts + familyLine +
+	                                                                 L"     'Bad.Family_x'  (0x80070057)\n" + fullLine +
+	                                                                 L"     'Bad.Full_1.0.0.0_x64__x'  (0x80070057)\n",
+	    "verbose output lists family-name failures before full-name failures");
+}
 } // namespace
 int
 wmain()
@@ -2868,6 +3168,10 @@ wmain()
 	TestUserOwnerAnalysisSkipsDeletedRules();
 	TestCleanupConsoleTextAfterSkip();
 	TestCleanupRecordsSurviveReorderedRules();
+	TestRulePackageIdentity();
+	TestFindingsKeepPackageIdentity();
+	TestApplicationAnalysisWithUncheckedApplication();
+	TestPackageAnalysisWithSidFailures();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

@@ -278,6 +278,7 @@
     <ClInclude Include="FilterRanking.h" />
     <ClInclude Include="DuplicateAnalysis.h" />
     <ClInclude Include="RuleDeletion.h" />
+    <ClInclude Include="RulePackageIdentity.h" />
     <ClInclude Include="TcpipEvents.h" />
     <ClInclude Include="WfpCounters.h" />
     <ClInclude Include="WfpEvents.h" />

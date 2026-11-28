@@ -4,11 +4,16 @@
 #include "PackageAnalysis.h"
 #include "NormalizedFirewallRule.h"
 
+#include <algorithm>
 #include <format>
+#include <utility>
 
 PackageAnalysis
 AnalyzePackageRules(
-    std::vector<NormalizedFirewallRule>& rules, HRESULT packagesLoadResult, const PackageLookups& lookups)
+    std::vector<NormalizedFirewallRule>& rules,
+    HRESULT packagesLoadResult,
+    const PackageLookups& lookups,
+    std::vector<AppContainerSidFailure>&& sidFailures)
 {
 	PackageAnalysis analysis;
 	analysis.packagesLoadResult = packagesLoadResult;
@@ -18,6 +23,7 @@ AnalyzePackageRules(
 		return analysis;
 	}
 
+	analysis.sidFailures = std::move(sidFailures);
 	for (auto& rule : rules)
 	{
 		const PCWSTR package_id = rule.fw_rule->wszPackageId; // the package ID SID
@@ -32,7 +38,8 @@ AnalyzePackageRules(
 				     rule.fw_rule->wszName,
 				     PackageReference::PackageId,
 				     package_id,
-				     rule.rule_name.value.c_str()});
+				     rule.rule_name.value.c_str(),
+				     rule.package_identity});
 			}
 		}
 
@@ -49,7 +56,8 @@ AnalyzePackageRules(
 				     rule.fw_rule->wszName,
 				     PackageReference::PackageFamilyName,
 				     package_family_name,
-				     rule.rule_name.value.c_str()});
+				     rule.rule_name.value.c_str(),
+				     rule.package_identity});
 			}
 		}
 	}
@@ -75,6 +83,42 @@ PrintPackageAnalysis(const PackageAnalysis& analysis, AnalysisOutput output)
 	text += std::format(
 	    L"   - count of rules with a package family name referencing a non-existing package: {}\n",
 	    analysis.MissingCount(PackageReference::PackageFamilyName));
+	const auto familyNameFailures =
+	    std::ranges::count(analysis.sidFailures, PackageNameKind::FamilyName, &AppContainerSidFailure::kind);
+	const auto fullNameFailures = analysis.sidFailures.size() - static_cast<size_t>(familyNameFailures);
+	const auto appendFailures = [&](PackageNameKind kind)
+	{
+		for (const auto& failure : analysis.sidFailures)
+		{
+			if (failure.kind == kind)
+			{
+				text += std::format(
+					L"     '{}'  (0x{:08X})\n",
+					failure.packageName,
+					static_cast<uint32_t>(failure.error));
+			}
+		}
+	};
+	if (familyNameFailures > 0)
+	{
+		text += std::format(
+		    L"   - WARNING: count of installed packages whose app-container SID could not be derived from the family "
+		    L"name (rules naming them by package ID are reported as referencing a non-existing package): {}\n",
+		    familyNameFailures);
+		if (output == AnalysisOutput::Verbose)
+		{
+			appendFailures(PackageNameKind::FamilyName);
+		}
+	}
+	// informational only: rules use the family-name SID
+	if (fullNameFailures > 0 && output == AnalysisOutput::Verbose)
+	{
+		text += std::format(
+		    L"   - count of installed packages whose app-container SID could not be derived from the full name "
+		    L"(rules use the family name, so this does not affect the analysis): {}\n",
+		    fullNameFailures);
+		appendFailures(PackageNameKind::FullName);
+	}
 
 	if (output == AnalysisOutput::Verbose && !analysis.missingPackageRules.empty())
 	{

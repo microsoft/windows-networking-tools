@@ -213,9 +213,10 @@ PrintUsage() noexcept
 	    "                             that is waiting to be signaled to restore the removed callout\n"
 	    "\n"
 	    "  -verbose : Output additional verbose details of rules and WFP objects\n"
-	    "  -json <path> : Also write firewall profiles and rule-status analysis to UTF-8 JSON (overwrites path)\n"
+	    "  -json <path> : Also write the results to UTF-8 JSON (overwrites path)\n"
 	    "                 Currently supports -analyze-rules, -clean-rules, and Shields Up commands only.\n"
-	    "                 Other console output is not yet exported; the report is marked partial.\n");
+	    "                 -analyze-rules and -clean-rules are fully exported; a Shields Up change exports only\n"
+	    "                 the firewall profiles, and its result is marked partial.\n");
 }
 
 static int
@@ -796,10 +797,10 @@ try
 	if (jsonPath)
 	{
 		InitializeProfileJsonReport(jsonPath, std::vector<PCWSTR>(arguments.begin() + 1, arguments.end()));
-		std::printf(
-		    "  NOTE: JSON export currently includes firewall profiles, rule-status analysis, application analysis, "
-		    "app-package analysis, SID-owner analysis, filter rankings, duplicate analysis, and -clean-rules "
-		    "deletions only.\n");
+		if (ProfileJsonReportHasIncompleteCommand())
+		{
+			std::printf("  NOTE: JSON export of a Shields Up change currently includes only the firewall profiles.\n");
+		}
 	}
 	const auto exitCode = RunFwDiagnose(static_cast<int>(arguments.size()), arguments.data());
 

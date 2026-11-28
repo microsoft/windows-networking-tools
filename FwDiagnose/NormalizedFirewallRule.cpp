@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <netfw.h>
 #include <sddl.h>
+#include <userenv.h>
 #include "FwDiagnose.h"
 
 #include "NormalizedFirewallRule.h"
@@ -303,10 +304,22 @@ ToString(FW_RULE_FLAGS2 flag)
 	return result;
 }
 
+//
+// ExpandString
+//
+// Expands the environment variables in a rule's application path, as this process sees them.
+//
+// Parameters:
+//   original_filename [in]  - the path from the rule
+//   error             [out] - S_OK, or the failure from ExpandEnvironmentStringsW
+//
+// Returns:
+//   The expanded path; empty when the expansion failed.
+//
 static std::wstring
-ExpandString(const std::wstring& original_filename)
+ExpandString(const std::wstring& original_filename, HRESULT& error)
 {
-	// resolve any environment variables in the string, then verify it exists
+	error = S_OK;
 	std::wstring expanded_string;
 	expanded_string.resize(original_filename.size() + 10, L' ');
 
@@ -319,12 +332,10 @@ ExpandString(const std::wstring& original_filename)
 		if (expanded_size == 0)
 		{
 			const auto gle = GetLastError();
+			error = gle == ERROR_SUCCESS ? E_UNEXPECTED : HRESULT_FROM_WIN32(gle);
 			if (VerboseOutputEnabled())
 			{
-				std::printf(
-				    "Failed to ExpandEnvironmentStrings(%ls) (0x%lx)",
-				    original_filename.c_str(),
-				    HRESULT_FROM_WIN32(gle));
+				std::printf("Failed to ExpandEnvironmentStrings(%ls) (0x%lx)\n", original_filename.c_str(), error);
 			}
 			expanded_string = {};
 			break;
@@ -384,12 +395,13 @@ ProcessForStringResource(std::wstring& string_value)
 	const auto file_name = string_value.substr(1, comma - 1);
 	auto string_index = string_value.substr(comma + 1);
 
-	const auto expanded_file_name = ExpandString(file_name);
+	HRESULT expand_error{S_OK};
+	const auto expanded_file_name = ExpandString(file_name, expand_error);
 	if (expanded_file_name.empty())
 	{
 		if (VerboseOutputEnabled())
 		{
-			std::printf("Failed to expand the file name '%ls'\n", file_name.c_str());
+			std::printf("Failed to expand the file name '%ls' (0x%lx)\n", file_name.c_str(), expand_error);
 		}
 		return;
 	}
@@ -651,6 +663,59 @@ NormalizedFirewallRule::NormalizedFirewallRule(const FW_RULE* fwRule, WORD reque
 		normalized_package_family_name.swap(temp_name);
 	}
 	AppendValue(package_family_name);
+	ProcessPackageIdentity();
+}
+
+//
+// ProcessPackageIdentity
+//
+// Sets package_identity for a rule with a package ID or a package family name. When the rule has only a
+// family name, the package ID (the app-container SID) is derived from it; that works whether or not the
+// package is installed.
+//
+void
+NormalizedFirewallRule::ProcessPackageIdentity()
+{
+	const PCWSTR package_id = fw_rule->wszPackageId;
+	const PCWSTR package_family_name = PackageFamilyName();
+	const bool has_package_id = package_id && package_id[0] != L'\0';
+	const bool has_package_family_name = package_family_name && package_family_name[0] != L'\0';
+	if (!has_package_id && !has_package_family_name)
+	{
+		return;
+	}
+
+	RulePackageIdentity identity;
+	if (has_package_family_name)
+	{
+		identity.packageFamilyName = package_family_name;
+	}
+
+	if (has_package_id)
+	{
+		identity.packageId = package_id;
+	}
+	else
+	{
+		identity.packageIdSource = PackageIdSource::DerivedFromFamilyName;
+		wil::unique_sid app_container_sid;
+		identity.packageIdError =
+		    DeriveAppContainerSidFromAppContainerName(package_family_name, app_container_sid.addressof());
+		if (SUCCEEDED(identity.packageIdError))
+		{
+			wil::unique_hlocal_string sid_string;
+			if (ConvertSidToStringSidW(app_container_sid.get(), sid_string.addressof()))
+			{
+				identity.packageId = sid_string.get();
+			}
+			else
+			{
+				const auto gle = GetLastError();
+				identity.packageIdError = gle == ERROR_SUCCESS ? E_UNEXPECTED : HRESULT_FROM_WIN32(gle);
+			}
+		}
+	}
+	package_identity = std::move(identity);
 }
 
 static std::wstring
@@ -1134,10 +1199,19 @@ NormalizedFirewallRule::CheckIfLocalApplicationExists()
 		return;
 	}
 
-	const auto expanded_string = details::ExpandString(original_filename);
+	HRESULT expand_error{S_OK};
+	const auto expanded_string = details::ExpandString(original_filename, expand_error);
+	if (FAILED(expand_error))
+	{
+		// the file could not be checked, which does not mean it is missing
+		local_application_expand_error = expand_error;
+		local_application_failure_string = std::format(
+		    "Failed to expand environment variables (0x{:08X})",
+		    static_cast<uint32_t>(local_application_expand_error));
+		return;
+	}
 	if (expanded_string.empty())
 	{
-		// failed to expand the string, cannot check if it exists
 		return;
 	}
 
@@ -2003,5 +2077,6 @@ ReturnRuleDeletionRecord(const NormalizedFirewallRule& rule)
 	record.name = copy(rule.fw_rule->wszName);
 	record.application = copy(rule.fw_rule->wszLocalApplication);
 	record.localUserOwnerSid = copy(rule.fw_rule->wszLocalUserOwner);
+	record.packageIdentity = rule.package_identity;
 	return record;
 }

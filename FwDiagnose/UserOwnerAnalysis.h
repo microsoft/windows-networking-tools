@@ -11,6 +11,7 @@
 
 #include "AnalysisOutput.h"
 #include "RuleDeletion.h"
+#include "RulePackageIdentity.h"
 
 // whether rule owners were checked against the local profiles in the registry
 enum class LocalProfileCheck : uint8_t
@@ -43,6 +44,8 @@ struct UnresolvedSidFinding
 	PCWSTR displayName{L""};
 	// ASCII
 	PCSTR failureText{""};
+	// copied, because the rules are reordered before some findings are written
+	std::optional<RulePackageIdentity> packageIdentity;
 };
 
 struct MissingLocalProfileFinding
@@ -53,6 +56,7 @@ struct MissingLocalProfileFinding
 	PCWSTR domain{L""};
 	PCWSTR user{L""};
 	PCWSTR displayName{L""};
+	std::optional<RulePackageIdentity> packageIdentity;
 };
 
 struct UserOwnerAnalysis

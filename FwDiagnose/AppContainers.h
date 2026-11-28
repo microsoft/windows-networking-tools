@@ -14,6 +14,7 @@
 
 #include "FwDiagnose.h"
 #include "NormalizedString.h"
+#include "PackageAnalysis.h"
 
 #include <wil/resource.h>
 
@@ -57,9 +58,13 @@ struct AppContainerPackage
 	NormalizedString name;
 	NormalizedString full_name;
 	std::wstring full_name_sid;
+	// S_OK unless full_name_sid could not be derived
+	HRESULT full_name_sid_error{S_OK};
 
 	NormalizedString family_name;
 	std::wstring family_name_sid;
+	// S_OK unless family_name_sid could not be derived
+	HRESULT family_name_sid_error{S_OK};
 
 	NormalizedString publisher;
 	NormalizedString publisher_id;
@@ -77,6 +82,19 @@ struct AppContainerPackage
 
   private:
 	void
+	RecordSidError(AppContainerName container_name_type, HRESULT error) noexcept
+	{
+		if (container_name_type == AppContainerName::FullName)
+		{
+			full_name_sid_error = error;
+		}
+		else
+		{
+			family_name_sid_error = error;
+		}
+	}
+
+	void
 	ResolveAppContainerNameToSid(PCWSTR app_container_name, AppContainerName container_name_type) noexcept
 	{
 		wil::unique_sid app_container_sid{};
@@ -88,6 +106,7 @@ struct AppContainerPackage
 			{
 				std::printf("  -- Failed to derive AppContainer SID from FullName : 0x%lx\n", hr);
 			}
+			RecordSidError(container_name_type, hr);
 			return;
 		}
 
@@ -102,6 +121,7 @@ struct AppContainerPackage
 				    "  -- Failed to convert AppContainer SID to string. Error: 0x%lx\n",
 				    HRESULT_FROM_WIN32(gle));
 			}
+			RecordSidError(container_name_type, gle == ERROR_SUCCESS ? E_UNEXPECTED : HRESULT_FROM_WIN32(gle));
 			return;
 		}
 
@@ -140,3 +160,7 @@ std::tuple<std::wstring, AppContainerName>
 FindPackageSid(PCWSTR package_sid) noexcept;
 std::tuple<std::wstring, AppContainerName>
 FindPackageFamilyName(const NormalizedString& package_family_name) noexcept;
+
+// the installed packages whose app-container SIDs could not be derived, from LoadAllAppPackages
+std::vector<AppContainerSidFailure>
+ReturnAppContainerSidFailures();

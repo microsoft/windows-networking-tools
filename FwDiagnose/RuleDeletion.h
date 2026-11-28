@@ -11,6 +11,8 @@
 
 #include <Windows.h>
 
+#include "RulePackageIdentity.h"
+
 struct NormalizedFirewallRule;
 
 // deletes one rule by its rule ID and returns a Win32 error code, as FWDeleteFirewallRule does
@@ -66,6 +68,7 @@ struct RuleDeletionRecord
 	std::optional<std::wstring> name;
 	std::optional<std::wstring> application;
 	std::optional<std::wstring> localUserOwnerSid;
+	std::optional<RulePackageIdentity> packageIdentity;
 	DeletionOutcome outcome{DeletionOutcome::NotAttempted};
 	// HRESULT_FROM_WIN32 of the deletion's error when the outcome is Failed
 	HRESULT error{S_OK};

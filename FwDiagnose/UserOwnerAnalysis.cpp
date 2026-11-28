@@ -47,7 +47,8 @@ AnalyzeUserOwnerRules(std::vector<NormalizedFirewallRule>& rules, const LocalPro
 			     rule.resolve_name_failure,
 			     rule.resolve_name_error,
 			     rule.rule_name.value.c_str(),
-			     rule.resolve_name_failure_string.c_str()});
+			     rule.resolve_name_failure_string.c_str(),
+			     rule.package_identity});
 		}
 		else if (localProfiles.check == LocalProfileCheck::Completed)
 		{
@@ -67,7 +68,8 @@ AnalyzeUserOwnerRules(std::vector<NormalizedFirewallRule>& rules, const LocalPro
 				     owner,
 				     rule.local_user_domain_name.c_str(),
 				     rule.local_user_owner_name.c_str(),
-				     rule.rule_name.value.c_str()});
+				     rule.rule_name.value.c_str(),
+				     rule.package_identity});
 			}
 		}
 	}

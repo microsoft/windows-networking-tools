@@ -2,23 +2,23 @@
 
 ## Current status and next steps
 
-Last updated 2026-11-27, at commit `d6a114b` on branch `khorton/FirewallRuleAnalysis` (pushed), plus Review 8 (not committed yet).
+Last updated 2026-11-28, at commit `19e22a3` on branch `khorton/FirewallRuleAnalysis` (pushed), plus Review 9 (not committed yet).
 
 ### Where we left off
 
 - Reviews 1-7 (section 9) are implemented, tested, documented, and pushed. Every per-store analysis that `-analyze-rules` prints is now in the JSON report: `firewallProfiles`, and per store `ruleDetails`, `applicationAnalysis`, `packageAnalysis`, `userOwnerAnalysis`, `filterRankings`, and `duplicateAnalysis`.
 - Each analysis lives in its own module (`ApplicationAnalysis`, `PackageAnalysis`, `UserOwnerAnalysis`, `FilterRanking`, `DuplicateAnalysis`) and returns one result that both the console text and the JSON are written from.
 - All three `-clean-rules` deletions take the input stream and delete function as parameters and are tested with scripted answers and a fake delete function: `DeleteMissingAppRules` (`ApplicationAnalysis.cpp`), `DeleteUnresolvedUserAccountRules` (`UserOwnerAnalysis.cpp`), and `DeleteDuplicateRules` (`DuplicateAnalysis.cpp`). The shared `DeleteFirewallRuleFunction` type is in `RuleDeletion.h`.
-- Every report is still marked `partial` with a `json_export_incomplete` warning (`ProfileJsonReport.cpp`, about line 180), and the console prints a NOTE listing the exported sections (`FwDiagnose.cpp`, about line 800).
-- Tests: `NormalizedStringTests`, `FirewallRulePrintTests` (1394 checks), and `ProfileJsonReportTests` all pass.
+- `-analyze-rules` and `-clean-rules` are fully exported (Review 9). Their results and the run can now be `completed`; only a Shields Up change keeps the `json_export_incomplete` warning and the console NOTE.
+- Tests: `NormalizedStringTests`, `FirewallRulePrintTests` (1421 checks), and `ProfileJsonReportTests` all pass.
 - **Fixed after resuming:** under `-clean-rules`, duplicate deletion could delete rules the user chose to keep. The missing-application and unresolved-SID phases never set `is_rule_deleted`, and duplicate analysis did not check it; copies of a duplicate share every setting, so the duplicate phase could keep a copy an earlier phase had deleted and delete the copies the user kept. Now all three phases mark the rules they delete, and `AnalyzeDuplicateRules` leaves deleted rules out of the sets (a set with one rule left is not a duplicate). `TestDuplicateAnalysisSkipsDeletedRules` and `TestDeleteDuplicateRulesSkipsDeletedRules` cover the duplicate part; `-analyze-rules` output is unchanged.
-- Review 8 is implemented: `-clean-rules` reports one action per rule or set of duplicates it proposed, with the decision, approval, and outcome, per-store and total counts, and the read-only stores it skipped. The SID-owner analysis now leaves out rules deleted earlier in the run; filter rankings stay a before-cleanup snapshot.
+- Review 8 (`19e22a3`): `-clean-rules` reports one action per rule or set of duplicates it proposed, with the decision, approval, and outcome, per-store and total counts, and the read-only stores it skipped. The SID-owner analysis now leaves out rules deleted earlier in the run; filter rankings stay a before-cleanup snapshot.
+- Review 9 is implemented: computed result and run status, interrupted stores, package identity on every rule entry, path-expansion failures, installed-package SID failures, and `missingLocalProfileRulesRecreated` (section 9).
 
 ### What to do next, in order
 
-1. **Review 9: finish `-analyze-rules`.** Check whether any console output of `-analyze-rules` is still not exported. If nothing is left, stop marking `analyze_rules` partial: drop its `json_export_incomplete` warning, let `run.status` become `completed`, and update the console NOTE, `-?` help (`FwDiagnose.cpp`, about line 218), COMMAND-LINE.md, and the tests.
-2. **Then the other commands**, one review each, in this order: `-analyze-inbound-rules` (currently rejected with `-json`), `-list-app-packages`, `-analyze-app-package-rules`, `-analyze-wfp`, Shields Up outcomes, and callout removal and restoration.
-3. **Later:** `-jsonl` for `-wfp-events` and `-tcpip-events` (sections 4-6), and formal JSON Schema files (section 7, step 1).
+1. **The other commands**, one review each, in this order: `-analyze-inbound-rules` (currently rejected with `-json`), `-list-app-packages`, `-analyze-app-package-rules`, `-analyze-wfp`, Shields Up outcomes, and callout removal and restoration.
+2. **Later:** `-jsonl` for `-wfp-events` and `-tcpip-events` (sections 4-6), and formal JSON Schema files (section 7, step 1).
 
 ### How each review is done
 
@@ -39,8 +39,8 @@ Every round that changes code ends with an independent review by **vault** and *
 | Deletion bug (done) | **forge** fixed it; **tester** wrote the duplicate-phase tests; reviewed by vault, bug-hunter, and security-sdl. |
 | Testable deletions (done) | **forge** added the parameters and moved the functions; **tester** wrote the scripted-answer tests; reviewed by vault, bug-hunter, sal-contracts, and security-sdl. |
 | Review 8 (done) | **cipher** proposed the design; **forge** implemented it; **tester** wrote the tests; reviewed by vault, bug-hunter, and security-sdl. |
-| 1. Review 9 | **forge** checks for unexported output and removes the partial marking; **vault** validates. |
-| 2. Other commands | **forge** and **tester** for each; for callout removal, **sal-contracts** also checks the filter lock and the `TerminateProcess` exit path. |
+| Review 9 | **forge** audited for unexported output and implemented the design; **tester** wrote the tests; reviewed by code-review and security-review. |
+| 1. Other commands | **forge** and **tester** for each; for callout removal, **sal-contracts** also checks the filter lock and the `TerminateProcess` exit path. |
 | Later | **sal-contracts** for thread-safe `-jsonl` event recording; **vm-deployer**, only with approval, for the firewall-changing tests (TESTING-PLAN Phases 3-4). |
 
 Follow `.github/copilot-instructions.md`: tabs, CRLF, no BOM; format only the changed lines with clang-format; `.has_value()`; `enum class` rather than bool parameters; `NormalizedString::AlphabeticalCompare` for any sort a user sees. Every new function gets a comment banner with its purpose, its `[in]`/`[out]` parameters, and its return value, and unusual C++ constructs are explained.
@@ -450,7 +450,7 @@ This document is a plan, not an implementation of the feature. The design uses s
 
 Status: approved and implemented for firewall-profile configuration.
 
-The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, per-store SID-owner analysis, per-store filter rankings, and per-store duplicate analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. Until the remaining schemas are implemented, reports are marked `partial` and include a `json_export_incomplete` warning. Other command combinations and `-jsonl` are not yet supported. Example:
+The current `-json <path>` implementation exports firewall-profile configuration, per-store rule-status analysis, per-store application analysis, per-store app-package analysis, per-store SID-owner analysis, per-store filter rankings, and per-store duplicate analysis for `-analyze-rules` and `-clean-rules`, and firewall-profile configuration for Shields Up commands, with optional `-verbose`. A Shields Up change exports only the firewall-profile configuration, so its result is `partial` with a `json_export_incomplete` warning; `-analyze-rules` and `-clean-rules` results are `completed` when every section completed (Review 9). Other command combinations and `-jsonl` are not yet supported. Example:
 
 ```powershell
 .\FwDiagnose\x64\Debug\FwDiagnose.exe -analyze-rules -json .\firewall-profiles.json
@@ -1026,3 +1026,75 @@ Each record copies the rule's ID, name, application, and owner SID when the acti
 
 - `AnalyzeUserOwnerRules` leaves out rules the missing-application phase deleted, so its findings match what the unresolved-SID phase prompts. `-analyze-rules` output is unchanged.
 - Filter rankings stay a snapshot from before the cleanup: the WFP filters are read once, before any deletion, so leaving deleted rules out of the rule side alone would mix the two.
+
+### Review 9: finish `-analyze-rules` and `-clean-rules`
+
+An audit found that every section the two commands print was exported, except for three gaps: an exception that stopped a store's analysis, a path whose environment variables could not be expanded, and the console-only debug trace. Review 9 closes the first two and the result and run status that depended on them, and adds the package each rule applies to.
+
+#### Result and run status
+
+- `json_export_incomplete` is now written only for `shields_up_change`, whose change is not exported. The console NOTE prints only when a Shields Up command is requested.
+- `FinishProfileJsonReport` sets each result's `status`. A result `RecordProfileJsonFailure` marked `failed` stays `failed`. Otherwise it is `completed` when the result has no diagnostics, every profile is `completed`, every store is `completed`, `not_present`, or `skipped`, no store section is `partial` or `failed`, and no store has an `error` diagnostic; else `partial`.
+- `run.status` is `failed` when the run stopped early, `completed` when it ran to the end with exit code 0, no report-level diagnostic, and every result `completed`, and `partial` otherwise.
+
+#### Interrupted stores
+
+When an exception stops a store's analysis, the store record gets a diagnostic, and the sections written before it are kept:
+
+```json
+{
+  "severity": "error",
+  "code": "store_analysis_interrupted",
+  "message": "An error stopped the analysis of this store; the sections written before it are kept.",
+  "operation": "check_duplicates",
+  "subject": { "property": "store", "store": "local" },
+  "error": { "domain": "hresult", "code": 2147942414, "hex": "0x8007000E" }
+}
+```
+
+- A `completed` store becomes `partial`. If the store had no record yet, a record with `status: "failed"` is written.
+- `operation` is the step that was running: `check_rule_status`, `check_missing_applications`, `check_missing_packages`, `delete_missing_application_rules`, `check_user_owners`, `delete_user_owner_rules`, `rank_filters`, `check_duplicates`, `delete_duplicates`, or `write_cleanup`. A non-HRESULT exception's text is appended to the message.
+- Under `-clean-rules`, `cleanup` still gets its `cleanup_interrupted` diagnostic (Review 8).
+
+#### Package identity on rule entries
+
+Every rule entry for a rule with a package ID or a package family name gets the package it applies to. This covers the rule-status `rules`, the application, app-package, and SID-owner lists, duplicate sets, and cleanup actions and their rules:
+
+```json
+{
+  "ruleId": "{6A1E...}",
+  "name": "Microsoft Edge (mDNS-In)",
+  "packageId": "S-1-15-2-1255970798-2717750985-...",
+  "packageIdSource": "derived_from_family_name",
+  "packageFamilyName": "Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe"
+}
+```
+
+- `packageIdSource` is `rule` when the rule has a package ID, or `derived_from_family_name` when the SID was derived from the family name with `DeriveAppContainerSidFromAppContainerName`.
+- If the derivation fails, `packageId` is `null` and `packageIdError` has the error. `packageFamilyName` is `null` when the rule has none.
+- Rules with neither have none of these keys. `keptRule` and the filter rankings' `ruleIds` do not get them.
+- Field order: after `application`: `packageId`, `packageIdSource`, `packageIdError`, `packageFamilyName`.
+
+#### Application paths that could not be checked
+
+A rule whose application path could not be expanded (`ExpandEnvironmentStringsW` failed) was silently skipped. It is now listed:
+
+- `uncheckedApplicationRuleCount` and `uncheckedApplicationRules` are written with and without `-verbose`. Each entry has `reason: "environment_expansion_failed"` and `error`. These rules are not counted as missing, and `-clean-rules` does not offer to delete them.
+- `applicationAnalysis.status` is `partial` when the list is not empty.
+- The console prints `count of rules with an application exe that could not be checked: N`, followed by the rules.
+- Field order: `uncheckedApplicationRuleCount` follows `missingApplicationRuleCount`; `uncheckedApplicationRules` follows `serviceProfileVariableRules`.
+
+#### Installed packages whose SID could not be derived
+
+FwDiagnose derives an app-container SID from each installed package's family name and from its full name. Each failure becomes a `packageAnalysis.diagnostics` entry with `code: "app_container_sid_not_derived"`, `operation: "derive_app_container_sid"`, `subject.property: "installedPackages"`, `subject.packageFamilyName` or `subject.packageFullName`, and the `error`.
+
+- A family-name failure is an `error`: a rule naming that package by package ID cannot be matched to it. `packageAnalysis.status` is `partial`, and the console prints a WARNING count, with the packages under `-verbose`.
+- A full-name failure is `info`: rules use the family-name SID, and a full name longer than 64 characters is never a valid app-container name (`E_INVALIDARG`). The status stays `completed`, and the console count prints only with `-verbose`. On a typical machine there are hundreds of these.
+
+#### Isolation stores
+
+- `userOwnerAnalysis.missingLocalProfileRulesRecreated` is `true` for the Application-Isolation and Interface-Isolation stores, whose rules Windows re-creates for a profile that comes back, and `false` for the others. It follows `localProfileCheck`. The console prints this as a NOTE only with `-verbose`.
+
+#### Not exported
+
+- The debug trace (`g_debugOutputEnabled` in `FwDiagnose.cpp`, off and with no switch) stays console-only. The errors it would print are exported above: owner lookups (`unresolvedSidRules`), file lookups (`file_lookup_failed`), path expansion, and package SID derivation.

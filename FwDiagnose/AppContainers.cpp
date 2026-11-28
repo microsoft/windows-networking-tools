@@ -107,6 +107,34 @@ PrintAllAppPackages()
 	}
 }
 
+//
+// ReturnAppContainerSidFailures
+//
+// Lists the installed packages whose app-container SID could not be derived from the full name or the
+// family name.
+//
+// Returns:
+//   One entry per failed derivation, in package order; empty when every SID was derived or the packages
+//   were not loaded.
+//
+std::vector<AppContainerSidFailure>
+ReturnAppContainerSidFailures()
+{
+	std::vector<AppContainerSidFailure> failures;
+	for (const auto& package : ReadAllAppPackages())
+	{
+		if (FAILED(package.family_name_sid_error))
+		{
+			failures.push_back({package.family_name.value, PackageNameKind::FamilyName, package.family_name_sid_error});
+		}
+		if (FAILED(package.full_name_sid_error))
+		{
+			failures.push_back({package.full_name.value, PackageNameKind::FullName, package.full_name_sid_error});
+		}
+	}
+	return failures;
+}
+
 // return {family_name_sid, AppContainerName}
 std::tuple<std::wstring, AppContainerName>
 FindPackageSid(PCWSTR package_sid) noexcept

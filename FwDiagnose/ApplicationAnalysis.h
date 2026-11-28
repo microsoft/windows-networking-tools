@@ -11,6 +11,7 @@
 
 #include "AnalysisOutput.h"
 #include "RuleDeletion.h"
+#include "RulePackageIdentity.h"
 
 struct NormalizedFirewallRule;
 
@@ -27,7 +28,9 @@ enum class ApplicationFindingReason : uint8_t
 {
 	PerUserEnvironmentVariable,
 	FileLookupFailed,
-	ServiceProfileEnvironmentVariable
+	ServiceProfileEnvironmentVariable,
+	// the file was not checked: the environment variables in its path could not be expanded
+	EnvironmentExpansionFailed
 };
 
 // one rule from the application analysis; the pointers refer to the analyzed rules, which must outlive the analysis
@@ -42,6 +45,8 @@ struct ApplicationRuleFinding
 	// the name with string resources resolved, for the console; empty when the rule has no name
 	PCWSTR displayName{L""};
 	PCSTR failureText{""};
+	// copied, because the rules are reordered before some findings are written
+	std::optional<RulePackageIdentity> packageIdentity;
 };
 
 struct ApplicationAnalysis
@@ -51,6 +56,8 @@ struct ApplicationAnalysis
 	size_t perUserVariableRuleCount{};
 	std::vector<ApplicationRuleFinding> missingApplicationRules;
 	std::vector<ApplicationRuleFinding> serviceProfileVariableRules;
+	// rules whose file could not be checked; they are not counted as missing
+	std::vector<ApplicationRuleFinding> uncheckedApplicationRules;
 };
 
 ApplicationAnalysis

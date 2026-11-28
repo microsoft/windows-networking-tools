@@ -77,6 +77,9 @@ bool
 ProfileJsonReportEnabled() noexcept;
 void
 InitializeProfileJsonReport(PCWSTR path, const std::vector<PCWSTR>& arguments);
+// true when a requested command is a Shields Up change, whose change is not yet exported
+bool
+ProfileJsonReportHasIncompleteCommand();
 void
 FinishProfileJsonReport(int exitCode, ReportRunOutcome outcome);
 void
@@ -117,3 +120,9 @@ WriteCleanupJson(
 // lists a store in the command's cleanupSummary as skipped when its record says it cannot be modified locally
 void
 WriteCleanupSkippedStoreJson(const FirewallPolicyObjects& policy, PCWSTR command);
+
+// marks the store record partial (or writes a failed record when there is none yet) after an error stopped
+// the store's analysis at the given step; detail is the exception text, or nullptr
+void
+WriteStoreInterruptedJson(
+    const FirewallPolicyObjects& policy, PCWSTR command, PCWSTR step, HRESULT error, PCSTR detail);

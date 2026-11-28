@@ -11,6 +11,7 @@
 
 #include "firewall.h"
 #include "NormalizedString.h"
+#include "RulePackageIdentity.h"
 #include "WfpCounters.h"
 
 // true for a 32-bit process on 64-bit Windows, where the paths it sees differ from the paths rules refer to
@@ -59,6 +60,11 @@ struct NormalizedFirewallRule
 	std::optional<bool> local_application_exists{std::nullopt};
 	// S_OK unless the file lookup itself failed
 	HRESULT local_application_lookup_error{S_OK};
+	// S_OK unless expanding the environment variables in the path failed, which left the file unchecked
+	HRESULT local_application_expand_error{S_OK};
+
+	// nullopt unless the rule has a package ID or a package family name
+	std::optional<RulePackageIdentity> package_identity;
 
 	bool is_rule_enabled = false;
 	bool is_rule_deleted = false;
@@ -117,6 +123,8 @@ struct NormalizedFirewallRule
 	CheckIfLocalApplicationExists();
 	void
 	ProcessLocalUserSid();
+	void
+	ProcessPackageIdentity();
 
 	void
 	AppendValue(const GUID& guid);

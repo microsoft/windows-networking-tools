@@ -10,11 +10,11 @@ FwDiagnose is a single-process C++ console application. It takes a snapshot of s
 | `FwDiagnose.h` | Option accessors, `GuidToString`, deletion prompts, `ChronoTimer`. |
 | `firewall.h` | Declarations for the undocumented-in-SDK `FW_*` types and functions from `FirewallAPI.dll`. |
 | `FirewallRules.*` | Loads rules from all stores; all rule analyses and deletion (except duplicate deletion, in `DuplicateAnalysis.*`); profile policy; Shields Up. |
-| `NormalizedFirewallRule.*` | Canonical per-rule record and comparison functions. |
+| `NormalizedFirewallRule.*` | Canonical per-rule record and comparison functions. Each record also holds the rule's package identity (`RulePackageIdentity.h`): its package ID, or the SID derived from its package family name, which findings and deletion records copy for the JSON report. |
 | `NormalizedString.h` | Case-insensitive string with an ASCII fast path. |
 | `ApplicationAnalysis.*`, `PackageAnalysis.*`, `UserOwnerAnalysis.*`, `FilterRanking.*`, `DuplicateAnalysis.*` | Per-store application, app-package, SID-owner, and duplicate analyses, and filter rankings. Each returns a result that both the console text and the JSON report are written from, so they can be tested with synthetic rules. Package lookups and filter counts are passed in, keeping WinRT and WFP out of these files. |
 | `AnalysisOutput.h` | Summary/verbose selector and the rule label shared by analysis console output. |
-| `AppContainers.*` | Installed-package inventory and SID derivation. |
+| `AppContainers.*` | Installed-package inventory and SID derivation. Each package records why its full-name or family-name SID could not be derived; `ReturnAppContainerSidFailures` lists them for the app-package analysis. |
 | `WfpCounters.*` | Shared WFP engine handle, layer names and ordering, shared WFP types. |
 | `WfpCallouts.cpp` | Callout inventory, built-in list, driver names from ETW, filter removal and restoration. |
 | `WfpFilters.cpp`, `WfpSublayers.cpp`, `WfpProviders.cpp` | Inventories, lookups, built-in lists, and printing. |

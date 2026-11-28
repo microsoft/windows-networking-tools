@@ -838,7 +838,8 @@ CheckForMissingAppPackage(FirewallPolicyObjects& policy)
 	    {
 		    return std::get<1>(FindPackageFamilyName(package_family_name)) != AppContainerName::None;
 	    }};
-	const auto analysis = AnalyzePackageRules(policy.normalizedRules, GetAppPackagesLoadResult(), lookups);
+	const auto analysis = AnalyzePackageRules(
+	    policy.normalizedRules, GetAppPackagesLoadResult(), lookups, ReturnAppContainerSidFailures());
 	if (FAILED(analysis.packagesLoadResult))
 	{
 		RecordOperationFailure(analysis.packagesLoadResult);
@@ -1754,6 +1755,24 @@ ProcessFirewallRules()
 		// declared outside the try, so the actions taken before an exception are still reported
 		StoreCleanup cleanup;
 		bool cleanup_started = false;
+		// the step that was running, for the JSON report when an exception stops this store's analysis
+		PCWSTR step = L"check_rule_status";
+		const auto writeInterruptedStore = [&](HRESULT error, PCSTR detail) noexcept
+		{
+			try
+			{
+				WriteStoreInterruptedJson(
+				    policy,
+				    CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules",
+				    step,
+				    error,
+				    detail);
+			}
+			catch (...)
+			{
+				RecordOperationFailure(wil::ResultFromCaughtException());
+			}
+		};
 		const auto writeInterruptedCleanup = [&](HRESULT error) noexcept
 		{
 			if (!cleanup_started)
@@ -1827,6 +1846,7 @@ ProcessFirewallRules()
 			{
 				std::printf("\n");
 			}
+			step = L"check_missing_applications";
 			timer.start("CheckForMissingAppRules");
 			details::CheckForMissingAppRules(policy);
 			timer.end();
@@ -1835,6 +1855,7 @@ ProcessFirewallRules()
 			{
 				std::printf("\n");
 			}
+			step = L"check_missing_packages";
 			timer.start("CheckForMissingAppPackage");
 			details::CheckForMissingAppPackage(policy);
 			timer.end();
@@ -1843,6 +1864,7 @@ ProcessFirewallRules()
 			{
 				std::printf("\n");
 				cleanup_started = true;
+				step = L"delete_missing_application_rules";
 				DeleteMissingAppRules(
 				    policy.normalizedRules,
 				    std::wcin,
@@ -1857,6 +1879,7 @@ ProcessFirewallRules()
 			{
 				std::printf("\n");
 			}
+			step = L"check_user_owners";
 			timer.start("CheckUnresolvedUserAccountRules");
 			details::CheckUnresolvedUserAccountRules(policy);
 			timer.end();
@@ -1864,6 +1887,7 @@ ProcessFirewallRules()
 			if (CleanBrokenRulesEnabled())
 			{
 				std::printf("\n");
+				step = L"delete_user_owner_rules";
 				DeleteUnresolvedUserAccountRules(
 				    policy.normalizedRules,
 				    std::wcin,
@@ -1879,10 +1903,12 @@ ProcessFirewallRules()
 				std::printf("\n");
 			}
 
+			step = L"rank_filters";
 			timer.start("RankRulesByFilterCounts");
 			details::RankRulesByFilterCounts(policy);
 			timer.end();
 
+			step = L"check_duplicates";
 			timer.start("Counting duplicate rules");
 			const auto duplicateRules =
 			    details::CheckForDuplicateRules(policy, CleanBrokenRulesEnabled() ? L"clean_rules" : L"analyze_rules");
@@ -1891,6 +1917,7 @@ ProcessFirewallRules()
 			if (CleanBrokenRulesEnabled())
 			{
 				std::printf("\n");
+				step = L"delete_duplicates";
 				DeleteDuplicateRules(
 				    duplicateRules,
 				    std::wcin,
@@ -1901,6 +1928,7 @@ ProcessFirewallRules()
 				    cleanup);
 				// a failure writing it is not reported again as an interrupted cleanup
 				cleanup_started = false;
+				step = L"write_cleanup";
 				WriteCleanupJson(policy, cleanup, L"clean_rules", S_OK);
 			}
 		}
@@ -1909,12 +1937,14 @@ ProcessFirewallRules()
 			std::printf(" -- an error occurred (0x%lx) -- \n", ex.GetErrorCode());
 			RecordOperationFailure(ex.GetErrorCode());
 			writeInterruptedCleanup(ex.GetErrorCode());
+			writeInterruptedStore(ex.GetErrorCode(), nullptr);
 		}
 		catch (const std::exception& ex)
 		{
 			std::printf(" -- an unexpected error occurred: %s -- \n", ex.what());
 			RecordOperationFailure(wil::ResultFromCaughtException());
 			writeInterruptedCleanup(wil::ResultFromCaughtException());
+			writeInterruptedStore(wil::ResultFromCaughtException(), ex.what());
 		}
 	}
 }
