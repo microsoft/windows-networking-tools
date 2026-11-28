@@ -1,5 +1,36 @@
 # FwDiagnose JSON Output Plan
 
+## Current status and next steps
+
+Last updated 2026-11-27, at commit `b52886e` on branch `khorton/FirewallRuleAnalysis` (pushed; working tree clean).
+
+### Where we left off
+
+- Reviews 1-7 (section 9) are implemented, tested, documented, and pushed. Every per-store analysis that `-analyze-rules` prints is now in the JSON report: `firewallProfiles`, and per store `ruleDetails`, `applicationAnalysis`, `packageAnalysis`, `userOwnerAnalysis`, `filterRankings`, and `duplicateAnalysis`.
+- Each analysis lives in its own module (`ApplicationAnalysis`, `PackageAnalysis`, `UserOwnerAnalysis`, `FilterRanking`, `DuplicateAnalysis`) and returns one result that both the console text and the JSON are written from.
+- Duplicate deletion (`DeleteDuplicateRules`) now lives in `DuplicateAnalysis.cpp` and takes the input stream and delete function as parameters, and is tested with scripted answers and a fake delete function. The other two deletions (`DeleteMissingAppRules`, `DeleteUnresolvedUserAccountRules` in `FirewallRules.cpp`) still read `std::wcin` and call `g_FWDeleteFirewallRule` directly, and have no tests.
+- Every report is still marked `partial` with a `json_export_incomplete` warning (`ProfileJsonReport.cpp`, about line 180), and the console prints a NOTE listing the exported sections (`FwDiagnose.cpp`, about line 800).
+- Tests: `NormalizedStringTests`, `FirewallRulePrintTests` (1225 checks), and `ProfileJsonReportTests` all pass.
+
+### What to do next, in order
+
+1. **Make the other two deletions testable** (TESTING-PLAN Phase 2). Give `DeleteMissingAppRules` and `DeleteUnresolvedUserAccountRules` the same `std::wistream& input` and `DeleteFirewallRuleFunction` parameters as `DeleteDuplicateRules`. Move them next to their analyses (`ApplicationAnalysis.cpp`, `UserOwnerAnalysis.cpp`) if that keeps `FirewallRules.cpp` out of the tests. Then test each prompt answer, end of input, and a failed deletion in `FirewallRulePrintTests`. Also fix the known issue in ARCHITECTURE.md: those earlier phases check `is_rule_deleted`, which is only ever set by the later duplicate phase.
+2. **Review 8: `-clean-rules` action history.** Propose the JSON for section 3's `-clean-rules` schema: one action record per prompted rule or set (reason, store, rule ID, decision, approval source, outcome, error), which rule was kept for duplicates, and the attempted, succeeded, failed, and skipped counts. Get approval, then implement it from the deletion functions' results (have them return their decisions rather than only printing).
+3. **Review 9: finish `-analyze-rules`.** Check whether any console output of `-analyze-rules` is still not exported. If nothing is left, stop marking `analyze_rules` partial: drop its `json_export_incomplete` warning, let `run.status` become `completed`, and update the console NOTE, `-?` help (`FwDiagnose.cpp`, about line 218), COMMAND-LINE.md, and the tests.
+4. **Then the other commands**, one review each, in this order: `-analyze-inbound-rules` (currently rejected with `-json`), `-list-app-packages`, `-analyze-app-package-rules`, `-analyze-wfp`, Shields Up outcomes, and callout removal and restoration.
+5. **Later:** `-jsonl` for `-wfp-events` and `-tcpip-events` (sections 4-6), and formal JSON Schema files (section 7, step 1).
+
+### How each review is done
+
+1. Propose the console and JSON design (a worked example like Reviews 1-7), and get the user's approval before coding.
+2. Put the analysis in its own module that returns a result. Write both the console text and the JSON from that result, never by querying again.
+3. Add console tests to `tests\FirewallRulePrintTests.cpp` and JSON tests to `tests\ProfileJsonReportTests.cpp`. Use synthetic rules only; never change the machine's firewall state.
+4. Build the solution, run the three test executables, and compare live read-only output (`.\x64\Debug\FwDiagnose.exe -analyze-rules [-verbose] -json <path>`) before and after the change.
+5. Add a Review section below and update COMMAND-LINE.md, ARCHITECTURE.md, and TESTING-PLAN.md.
+6. Commit and push only when the user asks.
+
+Follow `.github/copilot-instructions.md`: tabs, CRLF, no BOM; format only the changed lines with clang-format; `.has_value()`; `enum class` rather than bool parameters; `NormalizedString::AlphabeticalCompare` for any sort a user sees. Every new function gets a comment banner with its purpose, its `[in]`/`[out]` parameters, and its return value, and unusual C++ constructs are explained.
+
 ## Agreed behavior
 
 Add structured reporting alongside the existing console output. Do not redirect or parse console text.

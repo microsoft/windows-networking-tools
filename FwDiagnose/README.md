@@ -50,7 +50,8 @@ Use the published binaries in `LatestBuilds\` to run the tool, and a fresh build
 |---|---|
 | [COMMAND-LINE.md](COMMAND-LINE.md) | Options, combinations, privileges, exit codes |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Modules, execution flow, data model, design rules, known issues |
-| [JSON-OUTPUT-PLAN.md](JSON-OUTPUT-PLAN.md) | Design and per-command schema plan for `-json` / `-jsonl`; only partly implemented |
+| [JSON-OUTPUT-PLAN.md](JSON-OUTPUT-PLAN.md) | Design and per-command schema plan for `-json` / `-jsonl`; only partly implemented. Starts with the current status and the next steps. |
+| [TESTING-PLAN.md](TESTING-PLAN.md) | Test plan by phase, and what is covered so far |
 
 Coding conventions and build details for the whole repository are in [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 

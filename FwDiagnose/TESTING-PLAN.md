@@ -1,5 +1,7 @@
 # FwDiagnose test plan
 
+Status (2026-11-27): rule printing, the per-store analyses, duplicate deletion, and the JSON report sections are covered (see the tables below). Next: the Phase 2 seams for `DeleteMissingAppRules` and `DeleteUnresolvedUserAccountRules`, which is step 1 of "What to do next" in JSON-OUTPUT-PLAN.md.
+
 Principles: tests use synthetic data only, never read or change system firewall/WFP state, and return nonzero on failure. One test project per area, compiling the module's `.cpp` as a project source (like `FirewallRulePrintTests`), with stubs for global flags (`VerboseOutputEnabled`, `DebugOutputEnabled`).
 
 ## Phase 1 - pure functions (no seams needed)
